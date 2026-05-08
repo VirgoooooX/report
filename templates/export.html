@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Export - M60 EVT REL</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#1a1f36;color:#e0e4f0;min-height:100vh}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  background: #0f1425;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 0 32px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.nav-inner {
+  max-width: 1440px; margin: 0 auto;
+  display: flex; align-items: center;
+  height: 60px; gap: 24px;
+}
+.nav-brand {
+  display: flex; align-items: center; gap: 12px;
+  font-weight: 700; font-size: 1.05rem;
+  color: #e8eaf0; white-space: nowrap;
+}
+.nav-brand .badge {
+  background: #6366f1; color: #fff;
+  font-size: 0.6rem; padding: 2px 8px; border-radius: 10px;
+  font-weight: 600; letter-spacing: 0.3px;
+}
+.nav-links {
+  display: flex; gap: 4px; margin-left: auto; align-items: center;
+}
+.nav-links a {
+  color: #6b7194; text-decoration: none;
+  padding: 6px 14px; border-radius: 6px; font-size: 0.85rem;
+  font-weight: 500; transition: 0.25s ease;
+}
+.nav-links a:hover { color: #e8eaf0; background: rgba(255,255,255,0.06); }
+.nav-links a.active { color: #fff; background: rgba(99,102,241,0.2); }
+.container{max-width:1200px;margin:0 auto;padding:24px}
+h1{font-size:24px;font-weight:700;margin-bottom:4px}
+.card{background:#252b43;border-radius:12px;padding:24px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.filters{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.filters label{font-size:12px;color:#8b92b0;margin-bottom:4px;display:block}
+.filters input,.filters select{padding:10px 12px;border:2px solid #2a2f45;border-radius:6px;background:#1a1f36;color:#e0e4f0;font-size:14px;width:100%;outline:none}
+.filters input:focus,.filters select:focus{border-color:#3498db}
+.btn-group{display:flex;gap:12px;margin-bottom:20px}
+.btn-group button{padding:10px 24px;border:none;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600;transition:all .2s}
+.btn-preview{background:#3498db;color:#fff}.btn-preview:hover{background:#2980b9}
+.btn-json{background:#2a2f45;color:#e0e4f0}.btn-json:hover{background:#3a3f55}
+.btn-csv{background:#2ecc71;color:#fff}.btn-csv:hover{background:#27ae60}
+.preview-count{color:#8b92b0;font-size:13px;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:12px;max-height:500px;overflow:auto;display:block}
+th{background:#1a1f36;padding:8px 10px;text-align:left;font-weight:600;color:#8b92b0;border-bottom:2px solid #2a2f45;white-space:nowrap}
+td{padding:8px 10px;border-bottom:1px solid #2a2f45;white-space:nowrap}
+tr:hover td{background:rgba(52,152,219,.05)}
+.badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600}
+.badge-pass{background:#2ecc71;color:#fff}.badge-spec{background:#e74c3c;color:#fff}.badge-strife{background:#f39c12;color:#fff}
+.loading{text-align:center;padding:40px;color:#8b92b0}
+.error{text-align:center;padding:40px;color:#e74c3c}
+pre{background:#1a1f36;border-radius:8px;padding:16px;overflow:auto;max-height:500px;font-size:12px}
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="nav-brand">
+      <span class="badge">EVT REL</span>
+      M60 — Test Progress Dashboard
+    </div>
+    <div class="nav-links">
+      <a href="/">Dashboard</a>
+      <a href="/category/Drop">Categories</a>
+      <a href="/sn">SN Lookup</a>
+      <a href="/predictions">Predictions</a>
+      <a href="/export" class="active">Export</a>
+    </div>
+  </div>
+</nav>
+<div class="container">
+  <h1>Batch Export</h1>
+  <p style="color:#8b92b0;font-size:14px;margin-bottom:20px">Export SN test records with CP progress details</p>
+
+  <div class="card">
+    <div class="filters">
+      <div><label>WF Number</label><input type="text" id="wfFilter" placeholder="e.g. 10"></div>
+      <div><label>Config</label><select id="cfgFilter"><option value="">All</option><option>R1FNF</option><option>R2CNM</option><option>R3</option><option>R4</option></select></div>
+      <div><label>SN (optional)</label><input type="text" id="snFilter" placeholder="e.g. DQLW9..."></div>
+      <div><label>Format</label><select id="fmtFilter"><option value="json">JSON</option><option value="csv">CSV</option></select></div>
+    </div>
+    <div class="btn-group">
+      <button class="btn-preview" onclick="preview()">Preview</button>
+      <button class="btn-csv" onclick="exportData('csv')">Download CSV</button>
+      <button class="btn-json" onclick="exportData('json')">Download JSON</button>
+    </div>
+    <div id="resultArea"><div class="loading" style="display:none" id="loading">Loading...</div></div>
+  </div>
+</div>
+
+<script>
+function getFilters(){
+  return {
+    wf: document.getElementById('wfFilter').value.trim(),
+    config: document.getElementById('cfgFilter').value,
+    sn: document.getElementById('snFilter').value.trim(),
+  };
+}
+
+async function preview(){
+  const f = getFilters();
+  const params = new URLSearchParams();
+  if(f.wf) params.set('wf',f.wf); if(f.config) params.set('config',f.config); if(f.sn) params.set('sn',f.sn);
+  
+  const area = document.getElementById('resultArea');
+  area.innerHTML = '<div class="loading">Loading preview...</div>';
+  
+  try{
+    const r = await fetch(`/api/export?${params}`);
+    const data = await r.json();
+    renderPreview(data);
+  }catch(e){
+    area.innerHTML = `<div class="error">Error: ${e.message}</div>`;
+  }
+}
+
+function renderPreview(data){
+  const records = data.records || [];
+  const area = document.getElementById('resultArea');
+  
+  if(!records.length){ area.innerHTML = '<div class="loading">No records match the filter</div>'; return }
+  
+  area.innerHTML = `<div class="preview-count">Found <strong>${data.count}</strong> records</div>`;
+  
+  // Show first 50 as table preview
+  const preview = records.slice(0, 50);
+  let html = '<div style="overflow:auto"><table><thead><tr><th>SN</th><th>Unit</th><th>WF</th><th>Config</th><th>Current CP</th><th>Progress</th><th>CP Results</th></tr></thead><tbody>';
+  preview.forEach(r => {
+    const cps = (r.cp_results||[]).slice(0,5).map(cp=>{
+      const cls = cp.status==='pass'?'badge-pass':cp.status==='spec_fail'?'badge-spec':cp.status==='strife_fail'?'badge-strife':'';
+      return `<span class="badge ${cls}">${cp.cp_name}=${cp.status}</span>`;
+    }).join(' ');
+    html += `<tr><td>${r.sn}</td><td>${r.unit_num||'-'}</td><td>WF${r.wf_num}</td><td>${r.config}</td>
+      <td>${r.current_cp_name}</td><td>CP ${r.current_cp_idx+1}/${r.total_cps}</td>
+      <td>${cps}${(r.cp_results||[]).length>5?'...':''}</td></tr>`;
+  });
+  html += '</tbody></table></div>';
+  if(records.length > 50) html += `<p style="color:#8b92b0;font-size:12px;margin-top:8px">Showing 50 of ${data.count} records. Download for full dataset.</p>`;
+  area.innerHTML += html;
+}
+
+async function exportData(format){
+  const f = getFilters();
+  const params = new URLSearchParams();
+  if(f.wf) params.set('wf',f.wf); if(f.config) params.set('config',f.config); if(f.sn) params.set('sn',f.sn);
+  params.set('format', format);
+  
+  if(format === 'csv'){
+    window.location.href = `/api/export?${params}`;
+    return;
+  }
+  
+  // JSON download
+  try{
+    const r = await fetch(`/api/export?${params}`);
+    const data = await r.json();
+    const blob = new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `export_${new Date().toISOString().slice(0,10)}.json`;
+    a.click(); URL.revokeObjectURL(url);
+  }catch(e){ alert('Export failed: '+e.message) }
+}
+</script>
+</body>
+</html>

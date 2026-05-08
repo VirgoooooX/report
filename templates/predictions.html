@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Predictions - M60 EVT REL</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#1a1f36;color:#e0e4f0;min-height:100vh}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  background: #0f1425;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 0 32px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.nav-inner {
+  max-width: 1440px; margin: 0 auto;
+  display: flex; align-items: center;
+  height: 60px; gap: 24px;
+}
+.nav-brand {
+  display: flex; align-items: center; gap: 12px;
+  font-weight: 700; font-size: 1.05rem;
+  color: #e8eaf0; white-space: nowrap;
+}
+.nav-brand .badge {
+  background: #6366f1; color: #fff;
+  font-size: 0.6rem; padding: 2px 8px; border-radius: 10px;
+  font-weight: 600; letter-spacing: 0.3px;
+}
+.nav-links {
+  display: flex; gap: 4px; margin-left: auto; align-items: center;
+}
+.nav-links a {
+  color: #6b7194; text-decoration: none;
+  padding: 6px 14px; border-radius: 6px; font-size: 0.85rem;
+  font-weight: 500; transition: 0.25s ease;
+}
+.nav-links a:hover { color: #e8eaf0; background: rgba(255,255,255,0.06); }
+.nav-links a.active { color: #fff; background: rgba(99,102,241,0.2); }
+.container{max-width:1400px;margin:0 auto;padding:24px}
+h1{font-size:24px;font-weight:700;margin-bottom:4px}
+.card{background:#252b43;border-radius:12px;padding:24px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#1a1f36;padding:10px 12px;text-align:left;font-weight:600;color:#8b92b0;border-bottom:2px solid #2a2f45;position:sticky;top:60px;cursor:pointer}
+th:hover{color:#e0e4f0}
+td{padding:10px 12px;border-bottom:1px solid #2a2f45}
+tr:hover td{background:rgba(52,152,219,.05)}
+.progress-bar{height:6px;background:#1a1f36;border-radius:3px;overflow:hidden}
+.progress-fill{height:100%;border-radius:3px}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.badge-auto{background:#3498db;color:#fff}
+.badge-manual{background:#f39c12;color:#fff}
+.badge-done{background:#2ecc71;color:#fff}
+.filter{display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap}
+.filter input,.filter select{padding:8px 12px;border:2px solid #2a2f45;border-radius:6px;background:#1a1f36;color:#e0e4f0;font-size:13px;outline:none}
+.filter input:focus,.filter select:focus{border-color:#3498db}
+.filter button{padding:8px 16px;background:#3498db;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px}
+.filter button:hover{background:#2980b9}
+.editable{cursor:pointer;color:#3498db;text-decoration:underline}
+.editable:hover{color:#2980b9}
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center}
+.modal-overlay.show{display:flex}
+.modal{background:#252b43;border-radius:12px;padding:24px;width:400px;max-width:90vw}
+.modal h3{margin-bottom:16px}
+.modal input{padding:8px 12px;border:2px solid #2a2f45;border-radius:6px;background:#1a1f36;color:#e0e4f0;font-size:14px;width:100%;margin-bottom:12px;outline:none}
+.modal input:focus{border-color:#3498db}
+.modal button{padding:10px 20px;border:none;border-radius:6px;cursor:pointer;font-size:14px;margin-right:8px}
+.btn-save{background:#2ecc71;color:#fff}.btn-save:hover{background:#27ae60}
+.btn-cancel{background:#2a2f45;color:#8b92b0}.btn-cancel:hover{background:#3a3f55}
+.loading{text-align:center;padding:40px;color:#8b92b0}
+.summary-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.stat-card{background:#252b43;border-radius:10px;padding:16px;text-align:center}
+.stat-card .label{font-size:12px;color:#8b92b0;margin-bottom:4px}
+.stat-card .value{font-size:24px;font-weight:700;color:#3498db}
+@media(max-width:768px){.summary-stats{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="nav-brand">
+      <span class="badge">EVT REL</span>
+      M60 — Test Progress Dashboard
+    </div>
+    <div class="nav-links">
+      <a href="/">Dashboard</a>
+      <a href="/category/Drop">Categories</a>
+      <a href="/sn">SN Lookup</a>
+      <a href="/predictions" class="active">Predictions</a>
+      <a href="/export">Export</a>
+    </div>
+  </div>
+</nav>
+<div class="container">
+  <h1>Completion Predictions</h1>
+
+  <div class="summary-stats" id="stats"></div>
+
+  <div class="card">
+    <div class="filter">
+      <input type="text" id="filterWf" placeholder="Filter WF..." oninput="filterTable()">
+      <select id="filterCfg" onchange="filterTable()">
+        <option value="">All Configs</option>
+        <option>R1FNF</option><option>R2CNM</option><option>R3</option><option>R4</option>
+      </select>
+      <button onclick="load()">Refresh</button>
+    </div>
+    <div id="tableArea"><div class="loading">Loading...</div></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3>Edit Prediction</h3>
+    <label>Predicted Date</label>
+    <input type="date" id="editDate">
+    <input type="hidden" id="editWf"><input type="hidden" id="editCfg"><input type="hidden" id="editTi">
+    <div style="margin-top:16px">
+      <button class="btn-save" onclick="saveEdit()">Save</button>
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function fmt(n){return Number(n).toFixed(1)}
+function naturalSort(arr, keyFn){
+  return arr.sort((a,b)=>{
+    const ka = keyFn ? keyFn(a) : String(a);
+    const kb = keyFn ? keyFn(b) : String(b);
+    return ka.localeCompare(kb, undefined, {numeric:true, sensitivity:'base'});
+  });
+}
+
+async function load(){
+  document.getElementById('tableArea').innerHTML = '<div class="loading">Loading...</div>';
+  try{
+    const r = await fetch('/api/predictions');
+    const data = await r.json();
+    renderStats(data.predictions);
+    renderTable(data.predictions);
+  }catch(e){
+    document.getElementById('tableArea').innerHTML = `<div style="color:#e74c3c;text-align:center;padding:40px">Error: ${e.message}</div>`;
+  }
+}
+
+function renderStats(preds){
+  const total = preds.length;
+  const today = new Date().toISOString().slice(0,10);
+  const manual = preds.filter(p => Number(p.is_manual) === 1).length;
+  const overdue = preds.filter(p => p.predicted_date && p.predicted_date < today && p.remaining_days > 0).length;
+  const done = preds.filter(p => p.remaining_days <= 0 || p.current_max_cp >= p.total_cps).length;
+  document.getElementById('stats').innerHTML = `
+    <div class="stat-card"><div class="label">Total Predictions</div><div class="value">${total}</div></div>
+    <div class="stat-card"><div class="label">Manual Overrides</div><div class="value">${manual}</div></div>
+    <div class="stat-card"><div class="label">Overdue</div><div class="value" style="color:#e74c3c">${overdue}</div></div>
+    <div class="stat-card"><div class="label">Completed</div><div class="value" style="color:#2ecc71">${done}</div></div>
+  `;
+}
+
+function renderTable(preds){
+  if(!preds.length){ document.getElementById('tableArea').innerHTML='<div class="loading">No predictions yet. Process data first.</div>'; return }
+  const wfFilter = (document.getElementById('filterWf').value||'').toLowerCase();
+  const cfgFilter = document.getElementById('filterCfg').value;
+  let filtered = preds.filter(p=>{
+    if(wfFilter && !p.wf_num.toLowerCase().includes(wfFilter)) return false;
+    if(cfgFilter && p.config !== cfgFilter) return false;
+    return true;
+  });
+  naturalSort(filtered, p => p.wf_num);
+
+  let html = `<table><thead><tr>
+    <th onclick="sortBy('wf_num')">WF</th><th onclick="sortBy('config')">Config</th>
+    <th onclick="sortBy('test_idx')">Test</th><th>Progress</th>
+    <th onclick="sortBy('daily_rate')">Daily Rate</th><th onclick="sortBy('remaining_days')">Remaining Days</th>
+    <th onclick="sortBy('predicted_date')">Predicted Date</th><th>Type</th>
+  </tr></thead><tbody>`;
+
+  filtered.forEach(p => {
+    const pct = p.total_cps ? fmt(p.current_max_cp/p.total_cps*100) : 0;
+    const done = p.remaining_days <= 0;
+    const overdue = p.predicted_date && !done && p.predicted_date < new Date().toISOString().slice(0,10);
+    const badge = p.is_manual ? '<span class="badge badge-manual">Manual</span>' : '<span class="badge badge-auto">Auto</span>';
+    const dateColor = done ? '#2ecc71' : overdue ? '#e74c3c' : '#e0e4f0';
+    const fillColor = done ? '#2ecc71' : '#3498db';
+
+    html += `<tr>
+      <td>WF${p.wf_num}</td><td>${p.config}</td><td>Test${p.test_idx+1}</td>
+      <td><div class="progress-bar"><div class="progress-fill" style="width:${pct}%;background:${fillColor}"></div></div>
+          ${pct}% (CP ${p.current_max_cp}/${p.total_cps})</td>
+      <td>${fmt(p.daily_rate||0)} CP/day</td>
+      <td>${done?'<span class="badge badge-done">Done</span>':fmt(p.remaining_days||0)+' days'}</td>
+      <td style="color:${dateColor}"><span class="editable" onclick="openEdit('${p.wf_num}','${p.config}','${p.test_idx}','${p.predicted_date||''}')">${p.predicted_date||'-'}</span></td>
+      <td>${badge}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table><p style="color:#8b92b0;font-size:12px;margin-top:8px">Showing ${filtered.length} of ${preds.length} predictions. Click date to edit.</p>`;
+  document.getElementById('tableArea').innerHTML = html;
+}
+
+function openEdit(wf,cfg,ti,date){
+  document.getElementById('editWf').value = wf;
+  document.getElementById('editCfg').value = cfg;
+  document.getElementById('editTi').value = ti;
+  document.getElementById('editDate').value = date;
+  document.getElementById('modal').classList.add('show');
+}
+function closeModal(){ document.getElementById('modal').classList.remove('show') }
+
+async function saveEdit(){
+  const wf = document.getElementById('editWf').value;
+  const cfg = document.getElementById('editCfg').value;
+  const ti = parseInt(document.getElementById('editTi').value);
+  const date = document.getElementById('editDate').value;
+  try{
+    const r = await fetch('/api/predictions/update',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({wf_num:wf,config:cfg,test_idx:ti,predicted_date:date})
+    });
+    if(r.ok){ closeModal(); load() } else { alert('Failed to save') }
+  }catch(e){ alert('Error: '+e.message) }
+}
+
+let sortKey='';let sortDir=1;
+function sortBy(key){
+  if(sortKey===key) sortDir*=-1; else {sortKey=key;sortDir=1}
+  // This is a simple approach; full sorting would require re-fetching or client-side sort
+  load();
+}
+function filterTable(){ load() }
+
+load();
+</script>
+</body>
+</html>

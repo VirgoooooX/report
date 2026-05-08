@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SN Lookup - M60 EVT REL</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,-apple-system,sans-serif;background:#1a1f36;color:#e0e4f0;min-height:100vh}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  background: #0f1425;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  padding: 0 32px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+.nav-inner {
+  max-width: 1440px; margin: 0 auto;
+  display: flex; align-items: center;
+  height: 60px; gap: 24px;
+}
+.nav-brand {
+  display: flex; align-items: center; gap: 12px;
+  font-weight: 700; font-size: 1.05rem;
+  color: #e8eaf0; white-space: nowrap;
+}
+.nav-brand .badge {
+  background: #6366f1; color: #fff;
+  font-size: 0.6rem; padding: 2px 8px; border-radius: 10px;
+  font-weight: 600; letter-spacing: 0.3px;
+}
+.nav-links {
+  display: flex; gap: 4px; margin-left: auto; align-items: center;
+}
+.nav-links a {
+  color: #6b7194; text-decoration: none;
+  padding: 6px 14px; border-radius: 6px; font-size: 0.85rem;
+  font-weight: 500; transition: 0.25s ease;
+}
+.nav-links a:hover { color: #e8eaf0; background: rgba(255,255,255,0.06); }
+.nav-links a.active { color: #fff; background: rgba(99,102,241,0.2); }
+.container{max-width:1200px;margin:0 auto;padding:24px}
+h1{font-size:24px;font-weight:700;margin-bottom:4px}
+.subtitle{color:#8b92b0;font-size:14px;margin-bottom:24px}
+.card{background:#252b43;border-radius:12px;padding:24px;margin-bottom:20px;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.search-box{display:flex;gap:12px;margin-bottom:24px}
+.search-box input{flex:1;padding:12px 16px;border:2px solid #2a2f45;border-radius:8px;background:#1a1f36;color:#e0e4f0;font-size:15px;outline:none;transition:border-color .2s}
+.search-box input:focus{border-color:#3498db}
+.search-box button{padding:12px 24px;background:#3498db;color:#fff;border:none;border-radius:8px;font-size:15px;cursor:pointer;transition:background .2s}
+.search-box button:hover{background:#2980b9}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{background:#1a1f36;padding:10px 12px;text-align:left;font-weight:600;color:#8b92b0;border-bottom:2px solid #2a2f45}
+td{padding:10px 12px;border-bottom:1px solid #2a2f45}
+tr:hover td{background:rgba(52,152,219,.05)}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+.badge-pass{background:#2ecc71;color:#fff}.badge-spec{background:#e74c3c;color:#fff}.badge-strife{background:#f39c12;color:#fff}.badge-pending{background:#3498db;color:#fff}
+.history-row{cursor:pointer}
+.detail-row{display:none;background:#1a1f36}
+.detail-row.open{display:table-row}
+.detail-row td{padding:16px 24px}
+.loading{text-align:center;padding:40px;color:#8b92b0}
+.error{text-align:center;padding:40px;color:#e74c3c}
+.arrow{display:inline-block;transition:transform .2s}
+.arrow.rotated{transform:rotate(90deg)}
+.search-suggestions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.suggestion{padding:6px 12px;background:#2a2f45;border-radius:6px;color:#8b92b0;font-size:12px;cursor:pointer;transition:all .2s}
+.suggestion:hover{background:#3498db;color:#fff}
+</style>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-inner">
+    <div class="nav-brand">
+      <span class="badge">EVT REL</span>
+      M60 — Test Progress Dashboard
+    </div>
+    <div class="nav-links">
+      <a href="/">Dashboard</a>
+      <a href="/category/Drop">Categories</a>
+      <a href="/sn" class="active">SN Lookup</a>
+      <a href="/predictions">Predictions</a>
+      <a href="/export">Export</a>
+    </div>
+  </div>
+</nav>
+<div class="container">
+  <h1>SN Lookup</h1>
+  <p class="subtitle">Query test records and progress for any Serial Number</p>
+
+  <div class="card">
+    <div class="search-box">
+      <input type="text" id="snInput" placeholder="Enter SN (e.g. DQLW9J6DVH)..." onkeydown="if(event.key==='Enter')search()">
+      <button onclick="search()">Search</button>
+    </div>
+    <div id="results"><div class="loading" style="display:none" id="loading">Searching...</div></div>
+  </div>
+</div>
+
+<script>
+const input = document.getElementById('snInput');
+const results = document.getElementById('results');
+const loading = document.getElementById('loading');
+
+input.addEventListener('input', async function(){
+  const q = input.value.trim();
+  if(q.length < 3) return;
+  try{
+    const r = await fetch(`/api/sn/search?q=${encodeURIComponent(q)}`);
+    const sns = await r.json();
+    if(sns.length){
+      const existing = document.querySelector('.search-suggestions');
+      if(existing) existing.remove();
+      const div = document.createElement('div');
+      div.className = 'search-suggestions';
+      sns.forEach(sn => {
+        const span = document.createElement('span');
+        span.className = 'suggestion';
+        span.textContent = sn;
+        span.onclick = ()=>{input.value = sn; search()};
+        div.appendChild(span);
+      });
+      input.parentElement.parentElement.insertBefore(div, results);
+    }
+  }catch(e){}
+});
+
+async function search(){
+  const sn = input.value.trim();
+  if(!sn) return;
+  
+  loading.style.display = 'block';
+  results.innerHTML = '';
+  
+  try{
+    const r = await fetch(`/api/sn/${encodeURIComponent(sn)}`);
+    if(!r.ok){ results.innerHTML = `<div class="error">SN "${sn}" not found in database</div>`; return }
+    const data = await r.json();
+    render(data);
+  }catch(e){
+    results.innerHTML = `<div class="error">Error: ${e.message}</div>`;
+  }finally{ loading.style.display = 'none' }
+}
+
+function fmt(n){return Number(n).toFixed(1)}
+
+function render(data){
+  let html = `<h2 style="margin-bottom:16px">SN: <strong>${data.sn}</strong></h2>`;
+
+  // Failure summary
+  if(data.failures && data.failures.length){
+    html += `<div style="margin-bottom:16px;padding:12px;background:#2a1a1a;border-radius:8px;border-left:3px solid #e74c3c">
+      <strong style="color:#e74c3c">Failures Found:</strong> ${data.failures.length} records
+    </div>`;
+  }
+
+  const byWf = data.by_wf || [];
+  if(!byWf.length){
+    html += '<div class="loading">No records found</div>';
+    results.innerHTML = html;
+    return;
+  }
+
+  html += `<table><thead><tr>
+    <th></th><th>WF</th><th>Config</th><th>Latest Date</th><th>Progress</th><th>Status</th>
+  </tr></thead><tbody>`;
+
+  byWf.forEach((wf,i) => {
+    const latest = wf.latest;
+    const pct = latest.total_cps ? fmt(latest.cp_idx / latest.total_cps * 100) : 0;
+    html += `<tr class="history-row" onclick="toggle(${i})">
+      <td><span class="arrow" id="arr-${i}">&#9654;</span></td>
+      <td><strong>WF${wf.wf}</strong></td>
+      <td>${latest.config}</td>
+      <td>${latest.date}</td>
+      <td>CP ${latest.cp_idx+1}/${latest.total_cps} (${pct}%)</td>
+      <td>${latest.current_cp}</td>
+    </tr>`;
+    html += `<tr class="detail-row" id="det-${i}"><td colspan="6" style="padding:16px 24px">
+      <strong>History:</strong>
+      <table style="margin-top:8px;font-size:12px">
+        <thead><tr><th>Date</th><th>Current CP</th><th>Progress</th></tr></thead><tbody>`;
+    wf.history.forEach(h => {
+      html += `<tr><td>${h.date}</td><td>${h.current_cp}</td><td>CP ${h.cp_idx+1}/${h.total_cps}</td></tr>`;
+    });
+    html += `</tbody></table></td></tr>`;
+  });
+  
+  html += '</tbody></table>';
+  results.innerHTML = html;
+}
+
+window.toggle = function(i){
+  const det = document.getElementById('det-'+i);
+  const arr = document.getElementById('arr-'+i);
+  det.classList.toggle('open');
+  arr.classList.toggle('rotated');
+};
+</script>
+</body>
+</html>
