@@ -1,0 +1,348 @@
+<template>
+  <Teleport to="body">
+    <div
+      v-if="show"
+      class="cat-overlay"
+      @click.self="close"
+      @keydown.esc="close"
+      tabindex="-1"
+    >
+      <div class="cat-modal" :class="{ show: visible }">
+        <div class="cat-modal-header">
+          <h2 class="cat-modal-title">Manage Categories</h2>
+          <button class="cat-close-btn" @click="close">&times;</button>
+        </div>
+
+        <div class="cat-tabs">
+          <button
+            v-for="tab in categoryTabs"
+            :key="tab"
+            class="cat-tab"
+            :class="{ active: activeTab === tab }"
+            @click="activeTab = tab"
+          >
+            {{ tab }}
+          </button>
+        </div>
+
+        <div class="cat-modal-body">
+          <div class="cat-wf-list">
+            <span
+              v-for="wf in currentCategoryWfs"
+              :key="wf"
+              class="cat-wf-chip"
+            >
+              {{ wf }}
+              <button class="cat-chip-remove" @click="removeWf(wf)">&times;</button>
+            </span>
+            <span v-if="currentCategoryWfs.length === 0" class="cat-empty-wfs">
+              No WFs in this category
+            </span>
+          </div>
+
+          <div class="cat-add-area">
+            <input
+              v-model="newWfInput"
+              type="text"
+              class="cat-add-input"
+              placeholder="WFxx"
+              @keydown.enter="addWf"
+            />
+            <button class="cat-add-btn" :disabled="!newWfInput.trim()" @click="addWf">
+              Add
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+</template>
+
+<script setup>
+import { ref, computed, watch, nextTick } from 'vue'
+
+const props = defineProps({ show: Boolean })
+const emit = defineEmits(['close', 'updated'])
+
+const categoryTabs = ['Drop', 'Ingress', 'Environmental', 'Mechanical']
+const activeTab = ref('Drop')
+const categories = ref([])
+const newWfInput = ref('')
+const visible = ref(false)
+
+function close() {
+  emit('close')
+}
+
+const currentCategoryWfs = computed(() => {
+  const cat = categories.value.find(c => c.name === activeTab.value)
+  return cat ? (cat.wfs || []) : []
+})
+
+async function loadCategories() {
+  try {
+    const r = await fetch('/api/categories')
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    const d = await r.json()
+    categories.value = d.categories || []
+  } catch (e) {
+    categories.value = []
+  }
+}
+
+async function addWf() {
+  const wfNum = newWfInput.value.trim()
+  if (!wfNum) return
+  try {
+    const r = await fetch(`/api/categories/${activeTab.value}/add-wf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wf_num: wfNum })
+    })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    newWfInput.value = ''
+    await loadCategories()
+    emit('updated')
+  } catch (e) {
+    // silently fail for now
+  }
+}
+
+async function removeWf(wfNum) {
+  try {
+    const r = await fetch(`/api/categories/${activeTab.value}/remove-wf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wf_num: wfNum })
+    })
+    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    await loadCategories()
+    emit('updated')
+  } catch (e) {
+    // silently fail for now
+  }
+}
+
+watch(() => props.show, async (val) => {
+  if (val) {
+    await nextTick()
+    visible.value = true
+    newWfInput.value = ''
+    await loadCategories()
+  } else {
+    visible.value = false
+  }
+})
+</script>
+
+<style scoped>
+.cat-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(26, 35, 50, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+.cat-modal {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: var(--shadow-modal);
+  width: 90%;
+  max-width: 560px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  transform: scale(0.97) translateY(20px);
+  transition: opacity 300ms ease-out, transform 300ms ease-out;
+}
+
+.cat-modal.show {
+  opacity: 1;
+  transform: scale(1) translateY(0);
+}
+
+.cat-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-light);
+  flex-shrink: 0;
+}
+
+.cat-modal-title {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: #1a2332;
+  margin: 0;
+}
+
+.cat-close-btn {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--duration-fast) var(--ease-in-out),
+              color var(--duration-fast) var(--ease-in-out);
+}
+
+.cat-close-btn:hover {
+  background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+/* Tabs */
+.cat-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-light);
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+
+.cat-tab {
+  padding: 12px 16px;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-in-out),
+              border-color var(--duration-fast) var(--ease-in-out);
+}
+
+.cat-tab:hover {
+  color: var(--text-primary);
+}
+
+.cat-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-steel);
+}
+
+/* Body */
+.cat-modal-body {
+  padding: 20px 24px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* WF list */
+.cat-wf-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.cat-wf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  background: #f0f2f5;
+  border: 1px solid var(--border-light);
+  border-radius: 9999px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.cat-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  background: none;
+  border: none;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  border-radius: 50%;
+  transition: color var(--duration-fast) var(--ease-in-out),
+              background var(--duration-fast) var(--ease-in-out);
+}
+
+.cat-chip-remove:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
+}
+
+.cat-empty-wfs {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+}
+
+/* Add area */
+.cat-add-area {
+  display: flex;
+  gap: 8px;
+}
+
+.cat-add-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  background: var(--bg-input);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-in-out);
+}
+
+.cat-add-input::placeholder {
+  color: var(--text-muted);
+  font-family: var(--font-display);
+}
+
+.cat-add-input:focus {
+  border-color: var(--border-focus);
+}
+
+.cat-add-btn {
+  padding: 8px 18px;
+  background: #4f6f8f;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-in-out);
+  white-space: nowrap;
+}
+
+.cat-add-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.cat-add-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+</style>

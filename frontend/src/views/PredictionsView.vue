@@ -1,0 +1,604 @@
+<template>
+  <div class="page-container">
+    <h1 class="page-title">Predictions</h1>
+
+    <!-- Stats cards row -->
+    <div class="stats-row">
+      <div class="card stat-card">
+        <span class="stat-label">Total</span>
+        <span class="stat-value">{{ totalCount }}</span>
+      </div>
+      <div class="card stat-card">
+        <span class="stat-label">Manual</span>
+        <span class="stat-value">{{ manualCount }}</span>
+      </div>
+      <div class="card stat-card stat-overdue">
+        <span class="stat-label">Overdue</span>
+        <span class="stat-value">{{ overdueCount }}</span>
+      </div>
+      <div class="card stat-card stat-completed">
+        <span class="stat-label">Completed</span>
+        <span class="stat-value">{{ completedCount }}</span>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="card filter-card">
+      <div class="filter-row">
+        <div class="filter-group">
+          <label class="filter-label">WF</label>
+          <input v-model="filterWf" class="filter-input" placeholder="e.g. 1.1" />
+        </div>
+        <div class="filter-group">
+          <label class="filter-label">Config</label>
+          <select v-model="filterConfig" class="filter-select">
+            <option value="">All Configs</option>
+            <option v-for="c in configOptions" :key="c" :value="c">{{ c }}</option>
+          </select>
+        </div>
+        <button class="refresh-btn" :disabled="store.loading" @click="loadData">
+          {{ store.loading ? 'Loading...' : 'Refresh' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <LoadingState v-if="store.loading && !store.predictions.length" />
+
+    <!-- Predictions table -->
+    <div v-if="store.predictions.length" class="card table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th class="sortable" @click="sortBy('wf')">
+              WF <span class="sort-indicator">{{ sortIndicator('wf') }}</span>
+            </th>
+            <th class="sortable" @click="sortBy('config')">
+              Config <span class="sort-indicator">{{ sortIndicator('config') }}</span>
+            </th>
+            <th class="sortable" @click="sortBy('test')">
+              Test <span class="sort-indicator">{{ sortIndicator('test') }}</span>
+            </th>
+            <th>Progress</th>
+            <th class="sortable" @click="sortBy('daily_rate')">
+              Daily Rate <span class="sort-indicator">{{ sortIndicator('daily_rate') }}</span>
+            </th>
+            <th class="sortable" @click="sortBy('remaining_days')">
+              Remaining Days <span class="sort-indicator">{{ sortIndicator('remaining_days') }}</span>
+            </th>
+            <th class="sortable" @click="sortBy('predicted_date')">
+              Predicted Date <span class="sort-indicator">{{ sortIndicator('predicted_date') }}</span>
+            </th>
+            <th>Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="(row, idx) in sortedRows" :key="idx">
+            <td class="cell-mono">{{ row.wf }}</td>
+            <td class="cell-mono">{{ row.config }}</td>
+            <td class="cell-mono cell-test">{{ row.test }}</td>
+            <td>
+              <div class="progress-inline">
+                <div class="progress-track-sm">
+                  <div class="progress-fill-sm" :style="{ width: (row.progress ?? 0) + '%' }"></div>
+                </div>
+                <span class="progress-label">{{ row.progress ?? 0 }}%</span>
+              </div>
+            </td>
+            <td class="cell-num">{{ row.daily_rate ?? '—' }}</td>
+            <td class="cell-num">{{ row.remaining_days ?? '—' }}</td>
+            <td>
+              <span
+                class="editable-date"
+                @click="openEdit(row)"
+              >
+                {{ row.predicted_date || '—' }}
+              </span>
+            </td>
+            <td>
+              <StatusBadge :type="row.type === 'manual' ? 'manual' : 'auto'" />
+            </td>
+          </tr>
+          <tr v-if="!store.predictions.length">
+            <td colspan="8" class="empty-row">No predictions found</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Edit Date Modal -->
+    <div v-if="editModal" class="modal-overlay" @click.self="editModal = false">
+      <div class="modal-card">
+        <div class="modal-header">
+          <h3>Edit Predicted Date</h3>
+          <button class="modal-close" @click="editModal = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="modal-field">
+            <strong>Test:</strong> {{ editRow?.wf }} / {{ editRow?.config }} / {{ editRow?.test }}
+          </div>
+          <div class="modal-field">
+            <label class="field-label">Date</label>
+            <input v-model="editDate" type="date" class="date-input" />
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary" @click="editModal = false">Cancel</button>
+          <button class="btn-primary" @click="saveEdit">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useAppStore } from '@/stores/app'
+import StatusBadge from '@/components/StatusBadge.vue'
+import LoadingState from '@/components/LoadingState.vue'
+
+const store = useAppStore()
+const filterWf = ref('')
+const filterConfig = ref('')
+const sortField = ref('wf')
+const sortDir = ref('asc')
+const editModal = ref(false)
+const editRow = ref(null)
+const editDate = ref('')
+
+const configOptions = ['R1FNF', 'R2CNM', 'R3', 'R4']
+
+const totalCount = computed(() => store.predictions.length)
+const manualCount = computed(() => store.predictions.filter(p => p.type === 'manual').length)
+const overdueCount = computed(() => store.predictions.filter(p => p.overdue || p.status === 'overdue').length)
+const completedCount = computed(() => store.predictions.filter(p => p.status === 'completed' || (p.progress ?? 0) >= 100).length)
+
+function sortBy(field) {
+  if (sortField.value === field) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortField.value = field
+    sortDir.value = 'asc'
+  }
+}
+
+function sortIndicator(field) {
+  if (sortField.value !== field) return ''
+  return sortDir.value === 'asc' ? '▲' : '▼'
+}
+
+const sortedRows = computed(() => {
+  const rows = [...store.predictions]
+  rows.sort((a, b) => {
+    let va = a[sortField.value]
+    let vb = b[sortField.value]
+    if (va == null) va = ''
+    if (vb == null) vb = ''
+    if (typeof va === 'string') {
+      const cmp = va.localeCompare(String(vb))
+      return sortDir.value === 'asc' ? cmp : -cmp
+    }
+    return sortDir.value === 'asc' ? va - vb : vb - va
+  })
+  return rows
+})
+
+async function loadData() {
+  try {
+    await store.fetchPredictions(filterWf.value || null, filterConfig.value || null)
+  } catch {
+    // silently handle
+  }
+}
+
+function openEdit(row) {
+  editRow.value = row
+  editDate.value = row.predicted_date || ''
+  editModal.value = true
+}
+
+async function saveEdit() {
+  if (!editRow.value) return
+  try {
+    const r = await fetch('/api/predictions/update', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        wf: editRow.value.wf,
+        config: editRow.value.config,
+        test: editRow.value.test,
+        predicted_date: editDate.value
+      })
+    })
+    if (!r.ok) throw new Error('Update failed')
+    editRow.value.predicted_date = editDate.value
+    editModal.value = false
+  } catch {
+    // silently handle
+  }
+}
+
+onMounted(loadData)
+</script>
+
+<style scoped>
+.page-container {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 24px 32px 40px;
+}
+
+.page-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a2332;
+  margin-bottom: 24px;
+}
+
+/* Stats row */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.stat-value {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stat-overdue .stat-value {
+  color: var(--color-danger);
+}
+
+.stat-completed .stat-value {
+  color: var(--color-success);
+}
+
+/* Filter */
+.filter-card {
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.filter-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.filter-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.filter-input,
+.filter-select {
+  padding: 8px 12px;
+  font-size: 13px;
+  font-family: var(--font-mono);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  outline: none;
+  min-width: 160px;
+}
+
+.filter-input:focus,
+.filter-select:focus {
+  border-color: var(--border-focus);
+}
+
+.refresh-btn {
+  padding: 8px 20px;
+  font-size: 13px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent-steel);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity var(--duration-fast) var(--ease-in-out);
+}
+
+.refresh-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Table */
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th {
+  background: var(--bg-row-stripe);
+  padding: 10px 12px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.sortable:hover {
+  color: var(--text-primary);
+}
+
+.sort-indicator {
+  font-size: 9px;
+  margin-left: 2px;
+}
+
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 13px;
+}
+
+tr:hover td {
+  background: var(--bg-row-hover);
+}
+
+.cell-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.cell-test {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cell-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* Progress bar inline */
+.progress-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.progress-track-sm {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-progress-track);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-fill-sm {
+  height: 100%;
+  background: var(--accent-steel);
+  border-radius: var(--radius-full);
+  transition: width var(--duration-slow) var(--ease-out);
+}
+
+.progress-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* Editable date */
+.editable-date {
+  color: var(--accent-steel);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  cursor: pointer;
+}
+
+.editable-date:hover {
+  color: #1a2332;
+}
+
+.empty-row {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 32px 12px;
+}
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: var(--bg-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-modal);
+  width: 420px;
+  max-width: 90vw;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.modal-header h3 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 22px;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+}
+
+.modal-close:hover {
+  background: var(--bg-row-hover);
+  color: var(--text-primary);
+}
+
+.modal-body {
+  padding: 20px 24px;
+}
+
+.modal-field {
+  margin-bottom: 14px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.modal-field strong {
+  color: var(--text-primary);
+}
+
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.date-input {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: var(--font-mono);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.date-input:focus {
+  border-color: var(--border-focus);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 24px;
+  border-top: 1px solid var(--border-light);
+}
+
+.btn-secondary {
+  padding: 8px 20px;
+  font-size: 13px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-in-out);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-row-stripe);
+}
+
+.btn-primary {
+  padding: 8px 20px;
+  font-size: 13px;
+  font-family: var(--font-display);
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent-steel);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: opacity var(--duration-fast) var(--ease-in-out);
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+@media (max-width: 700px) {
+  .stats-row {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .filter-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-input,
+  .filter-select {
+    min-width: auto;
+  }
+}
+</style>

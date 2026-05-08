@@ -4,7 +4,7 @@ Enhanced Flask backend with progress tracking, predictions, and analytics.
 Usage: python api.py
 Access: http://localhost:5050
 """
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
 import os, sys, json, io, csv, datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -19,49 +19,44 @@ from db import (
     wf_sort_key, get_wf_names
 )
 
-app = Flask(__name__)
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+BASE_DIR = os.path.dirname(__file__)
+VUE_STATIC = os.path.join(BASE_DIR, 'static')
+VUE_INDEX = os.path.join(VUE_STATIC, 'index.html')
+
+app = Flask(__name__, static_folder=VUE_STATIC, static_url_path='')
+DATA_DIR = os.path.join(BASE_DIR, 'data')
 
 # ── Init ────────────────────────────────────────────────────────────────
 init_db()
 init_categories()
 
+# ── Serve Vue SPA assets ────────────────────────────────────────────────
+@app.route('/assets/<path:filename>')
+def serve_assets(filename):
+    return send_from_directory(os.path.join(VUE_STATIC, 'assets'), filename)
 
-# ═══════════════════════════════════════════════════════════════════════
-#  Pages
-# ═══════════════════════════════════════════════════════════════════════
+@app.route('/favicon.svg')
+def serve_favicon():
+    path = os.path.join(VUE_STATIC, 'favicon.svg')
+    if os.path.exists(path):
+        return send_file(path)
+    return '', 404
 
-@app.route('/')
-def index():
-    """Main dashboard page."""
+# ── SPA Catch-all (serve Vue index.html for all non-API routes) ─────────
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def spa_catchall(path):
+    # Skip API routes
+    if path.startswith('api/'):
+        return jsonify({'error': 'Not found'}), 404
+    # Skip static assets
+    if path.startswith('assets/') or path.startswith('favicon'):
+        return '', 404
+    # Serve Vue SPA
+    if os.path.exists(VUE_INDEX):
+        return send_file(VUE_INDEX)
+    # Fallback to Flask templates
     return render_template('dashboard.html')
-
-
-@app.route('/category/<name>')
-def category_detail(name):
-    """Category drill-down page."""
-    wfs = get_category_wfs(name)
-    if not wfs:
-        return f"Category '{name}' not found", 404
-    return render_template('category.html', category_name=name, wf_list=wfs)
-
-
-@app.route('/sn')
-def sn_page():
-    """SN lookup page."""
-    return render_template('sn_lookup.html')
-
-
-@app.route('/predictions')
-def predictions_page():
-    """Prediction management page."""
-    return render_template('predictions.html')
-
-
-@app.route('/export')
-def export_page():
-    """Batch export page."""
-    return render_template('export.html')
 
 
 # ═══════════════════════════════════════════════════════════════════════

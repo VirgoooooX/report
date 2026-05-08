@@ -1,4 +1,7 @@
 /data
 /docs
 /report.db
-/__pycache__
+/__pycache__/
+/output
+node_modules/
+.superpowers/

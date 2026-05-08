@@ -1,0 +1,105 @@
+@import url('https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&family=Source+Code+Pro:wght@400;500;600&display=swap');
+
+:root {
+  /* 背景 */
+  --bg-root: #f5f7fa;
+  --bg-card: #ffffff;
+  --bg-card-hover: #fafbfc;
+  --bg-nav: #ffffff;
+  --bg-input: #f5f7fa;
+  --bg-overlay: rgba(26, 35, 50, 0.4);
+  --bg-row-stripe: #fafbfc;
+  --bg-row-hover: #f0f4f8;
+  --bg-tag: #f0f2f5;
+  --bg-progress-track: #e8ecf2;
+
+  /* 文字 */
+  --text-primary: #1a2332;
+  --text-secondary: #4a5568;
+  --text-muted: #8e99a8;
+  --text-inverse: #ffffff;
+
+  /* 边框 */
+  --border-card: #e2e6ed;
+  --border-light: #edf0f4;
+  --border-input: #d1d5db;
+  --border-focus: #4f6f8f;
+
+  /* 功能色 */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #4f6f8f;
+  --color-success-bg: #f0fdf4;
+  --color-warning-bg: #fffbeb;
+  --color-danger-bg: #fef2f2;
+  --color-info-bg: #f0f4f8;
+
+  /* 品牌 & 图表 */
+  --accent-steel: #4f6f8f;
+  --accent-slate: #64748b;
+  --chart-r1fnf: #4f6f8f;
+  --chart-r2cnm: #0891b2;
+  --chart-r3: #d97706;
+  --chart-r4: #059669;
+  --chart-spec: #ef4444;
+  --chart-strife: #f59e0b;
+  --cat-drop: #ef4444;
+  --cat-ingress: #4f6f8f;
+  --cat-environmental: #22c55e;
+  --cat-mechanical: #d97706;
+
+  /* 字体 */
+  --font-display: 'Work Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Source Code Pro', 'JetBrains Mono', 'Cascadia Code', monospace;
+
+  /* 间距 */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 24px;
+  --space-2xl: 32px;
+  --space-3xl: 40px;
+
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-full: 9999px;
+
+  /* 阴影 */
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-card-hover: 0 4px 12px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-modal: 0 20px 60px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05);
+  --shadow-nav: 0 1px 0 rgba(0,0,0,0.05);
+
+  /* 动效 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 500ms;
+  --duration-page: 1200ms;
+}
+
+/* Reset */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 15px; scroll-behavior: smooth; }
+body {
+  font-family: var(--font-display);
+  background: var(--bg-root);
+  color: var(--text-primary);
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.2); }
+
+/* Page container */
+.main { max-width: 1440px; margin: 0 auto; padding: 24px 32px 40px; }
