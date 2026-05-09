@@ -1015,6 +1015,7 @@ def api_daily_issues():
                 )
                 loc = str(issue.get('Failed Location', '')).strip()
                 failed_cycle = str(issue.get('Failed Cycle Count', '')).strip()
+                failed_test = str(issue.get('Failed Test', '')).strip()
 
                 fa_issues.append({
                     'sn': sn,
@@ -1023,6 +1024,7 @@ def api_daily_issues():
                     'type': ft,
                     'location': loc,
                     'failed_cycle': failed_cycle,
+                    'failed_test': failed_test,
                     'symptom': str(issue.get('Failure Symptom / Failure Message', '')).strip(),
                     'fa_status': str(issue.get('FA Status', '')).strip(),
                     'fa_num': issue.get('_fa_num', ''),
@@ -1047,12 +1049,10 @@ def api_daily_issues():
         db = db_map[k]
         issues.append({
             'sn': db['sn'], 'wf': db['wf'], 'config': db['config'],
-            'test': db['location'], 'type': db['type'],
-            'location': db['location'],
+            'type': db['type'], 'location': db['location'],
+            'failed_test': fa.get('failed_test', ''),
             'failed_cycle': db.get('failed_cycle', '') or fa.get('failed_cycle', ''),
             'symptom': fa.get('symptom', ''),
-            'fa_status': fa.get('fa_status', ''),
-            'fa_num': fa.get('fa_num', ''),
             'source': 'matched',
         })
 
@@ -1060,23 +1060,20 @@ def api_daily_issues():
         db = db_map[k]
         issues.append({
             'sn': db['sn'], 'wf': db['wf'], 'config': db['config'],
-            'test': db['location'], 'type': db['type'],
-            'location': db['location'],
+            'type': db['type'], 'location': db['location'],
+            'failed_test': '',
             'failed_cycle': db.get('failed_cycle', ''),
-            'symptom': '', 'fa_status': '', 'fa_num': '',
-            'source': 'only_daily_report',
+            'symptom': '', 'source': 'only_daily_report',
         })
 
     for k in only_fa_keys:
         fa = fa_map[k]
         issues.append({
             'sn': fa['sn'], 'wf': fa['wf'], 'config': fa['config'],
-            'test': fa['location'], 'type': fa['type'],
-            'location': fa['location'],
+            'type': fa['type'], 'location': fa['location'],
+            'failed_test': fa.get('failed_test', ''),
             'failed_cycle': fa.get('failed_cycle', ''),
             'symptom': fa.get('symptom', ''),
-            'fa_status': fa.get('fa_status', ''),
-            'fa_num': fa.get('fa_num', ''),
             'source': 'only_fa_tracker',
         })
 

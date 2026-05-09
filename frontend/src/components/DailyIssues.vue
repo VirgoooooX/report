@@ -33,11 +33,11 @@
               <th>SN</th>
               <th>WF</th>
               <th>Config</th>
-              <th>Test</th>
+              <th>Failed Test</th>
+              <th>Failed Cycle</th>
               <th>Type</th>
               <th>Symptom</th>
               <th>Location</th>
-              <th>FA Status</th>
               <th>Source</th>
             </tr>
           </thead>
@@ -51,7 +51,8 @@
               <td class="mono">{{ row.sn }}</td>
               <td>WF{{ row.wf }}</td>
               <td>{{ row.config }}</td>
-              <td>{{ row.test }}</td>
+              <td>{{ row.failed_test }}</td>
+              <td class="text-ellipsis" :title="row.failed_cycle">{{ row.failed_cycle }}</td>
               <td>
                 <span :class="row.type === 'spec' ? 'type-spec' : row.type === 'strife' ? 'type-strife' : ''">
                   {{ row.type === 'spec' ? 'Spec' : row.type === 'strife' ? 'Strife' : row.type }}
@@ -59,7 +60,6 @@
               </td>
               <td class="text-ellipsis" :title="row.symptom">{{ row.symptom }}</td>
               <td>{{ row.location }}</td>
-              <td>{{ row.fa_status }}</td>
               <td>
                 <span class="source-badge" :class="'source-' + row.source">
                   {{ sourceLabel(row.source) }}
