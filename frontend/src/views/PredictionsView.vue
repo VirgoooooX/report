@@ -383,7 +383,7 @@ tr:hover td {
   background: var(--bg-row-hover);
 }
 
-.col-wf { text-align: left !important; min-width: 140px; }
+.col-wf { text-align: left !important; min-width: 320px; }
 .col-test { text-align: left !important; }
 .col-progress { text-align: center !important; min-width: 110px; }
 .col-num { text-align: center !important; min-width: 65px; }
@@ -393,7 +393,7 @@ tr:hover td {
 
 .cell-wf { text-align: left; white-space: nowrap; }
 .wf-num { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); }
-.wf-name { font-size: 12px; color: var(--text-muted); margin-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; display: inline-block; vertical-align: bottom; }
+.wf-name { font-size: 12px; color: var(--text-muted); margin-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 270px; display: inline-block; vertical-align: bottom; }
 
 .cell-test-name { font-size: 13px; white-space: nowrap; }
 .cell-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
