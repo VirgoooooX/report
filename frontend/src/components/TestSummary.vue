@@ -1,212 +1,176 @@
 <template>
-  <div class="card table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th class="corner-cell"></th>
-          <th v-for="cfg in configs" :key="cfg" class="cfg-header">{{ cfg }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="wf in wfs" :key="wf">
-          <td class="wf-header">WF{{ wf }}</td>
-          <td
-            v-for="cfg in configs"
-            :key="cfg"
-            class="result-cell"
-            :class="cellClass(wf, cfg)"
-            @click="onCellClick(wf, cfg)"
-          >
-            {{ cellText(wf, cfg) }}
-          </td>
-        </tr>
-      </tbody>
-    </table>
+  <div class="card ts-wrap">
+    <div class="ts-scroll">
+      <table class="ts-table">
+        <thead>
+          <tr>
+            <th class="ts-wf-hd" rowspan="2">WF</th>
+            <th v-for="cfg in configList" :key="cfg"
+                :colspan="maxTests" class="ts-cfg-hd"
+                :style="{ color: cfgColor(cfg) }">{{ cfg }}</th>
+          </tr>
+          <tr>
+            <template v-for="cfg in configList" :key="'h2-'+cfg">
+              <th v-for="ti in maxTests" :key="ti"
+                  class="ts-test-hd">{{ testNames[ti-1] }}</th>
+            </template>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="wf in sortedWfs" :key="wf.wf">
+            <td class="ts-wf-col">
+              <span class="ts-wf-num">WF{{ wf.wf }}</span>
+            </td>
+            <template v-for="cfg in configList" :key="cfg">
+              <td v-for="ti in maxTests" :key="ti"
+                  :class="cellClass(wf, cfg, ti-1)"
+                  @click="onCellClick(wf, cfg, ti-1)">
+                {{ cellText(wf, cfg, ti-1) }}
+              </td>
+            </template>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 
-const props = defineProps({
-  summaryData: { type: Object, default: () => ({}) }
-})
-
+const props = defineProps({ summaryData: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['cell-click'])
 
 const CFG_ORDER = ['R1FNF', 'R2CNM', 'R3', 'R4']
+const CFG_COLORS = { R1FNF: '#4f6f8f', R2CNM: '#0891b2', R3: '#d97706', R4: '#059669' }
 
 const summaryList = computed(() => props.summaryData?.summary ?? [])
 
-// Collect all configs from data
-const configs = computed(() => {
-  const cfgSet = new Set()
+// Collect configs from all WFs
+const configList = computed(() => {
+  const set = new Set()
   summaryList.value.forEach(wf => {
-    if (wf.configs) Object.keys(wf.configs).forEach(c => cfgSet.add(c))
+    if (wf.configs) Object.keys(wf.configs).forEach(c => set.add(c))
   })
-  const ordered = CFG_ORDER.filter(c => cfgSet.has(c))
-  CFG_ORDER.forEach(c => cfgSet.delete(c))
-  return [...ordered, ...cfgSet]
+  const ordered = CFG_ORDER.filter(c => set.has(c))
+  CFG_ORDER.forEach(c => set.delete(c))
+  return [...ordered, ...set]
 })
 
-const wfs = computed(() => {
-  return summaryList.value.map(w => w.wf).sort((a, b) =>
-    String(a).localeCompare(String(b), undefined, { numeric: true })
-  )
-})
-
-// Build normalized matrix from API data
-const matrix = computed(() => {
-  const m = {}
+// Max test count across all WFs and configs
+const maxTests = computed(() => {
+  let max = 0
   summaryList.value.forEach(wf => {
-    const wfKey = wf.wf
-    if (!m[wfKey]) m[wfKey] = {}
     if (wf.configs) {
-      Object.entries(wf.configs).forEach(([cfg, tests]) => {
-        let passCount = 0, specCount = 0, strifeCount = 0, totalCount = 0
-        let hasFail = false
-        let failureSns = []
-
-        Object.values(tests).forEach(test => {
-          totalCount++
-          if (test.spec > 0) { specCount++; hasFail = true; if (test.failure_sns) failureSns = failureSns.concat(test.failure_sns) }
-          else if (test.strife > 0) { strifeCount++ }
-          else { passCount++ }
-        })
-
-        m[wfKey][cfg] = { passCount, specCount, strifeCount, totalCount, hasFail, failureSns }
+      Object.values(wf.configs).forEach(tests => {
+        const n = Object.keys(tests).length
+        if (n > max) max = n
       })
     }
   })
-  return m
+  return max || 1
 })
 
-function getCell(wf, cfg) {
-  return matrix.value[wf]?.[cfg] || null
-}
-
-function cellStatus(wf, cfg) {
-  const cell = getCell(wf, cfg)
-  if (!cell) return 'empty'
-  if (cell.specCount > 0) return 'fail'
-  if (cell.strifeCount > 0) return 'strife'
-  if (cell.passCount > 0) return 'pass'
-  return 'empty'
-}
-
-function cellText(wf, cfg) {
-  const cell = getCell(wf, cfg)
-  if (!cell) return '—'
-  const parts = []
-  if (cell.specCount > 0) parts.push(cell.specCount + 'F')
-  if (cell.strifeCount > 0) parts.push('S' + cell.strifeCount)
-  if (cell.passCount > 0 && cell.specCount === 0 && cell.strifeCount === 0) {
-    return cell.passCount + 'P'
+// Build test names from first WF that has test_names
+const testNames = computed(() => {
+  const names = []
+  for (const wf of summaryList.value) {
+    const tn = wf.test_names || []
+    tn.forEach((n, i) => { if (n && !names[i]) names[i] = n })
   }
-  return parts.join('/') || '—'
+  for (let i = 0; i < maxTests.value; i++) {
+    if (!names[i]) names[i] = `Test${i + 1}`
+  }
+  return names
+})
+
+const sortedWfs = computed(() => {
+  return [...summaryList.value].sort((a, b) =>
+    String(a.wf).localeCompare(String(b.wf), undefined, { numeric: true })
+  )
+})
+
+function cfgColor(c) { return CFG_COLORS[c] || '#4f6f8f' }
+
+function getTest(wf, cfg, ti) {
+  const testName = testNames.value[ti]
+  return wf.configs?.[cfg]?.[testName] || null
 }
 
-function cellClass(wf, cfg) {
-  return `cell-${cellStatus(wf, cfg)}`
+function cellClass(wf, cfg, ti) {
+  const t = getTest(wf, cfg, ti)
+  if (!t) return 'ts-empty'
+  if (t.spec > 0) return 'ts-fail'
+  if (t.strife > 0) return 'ts-strife'
+  return 'ts-pass'
 }
 
-function onCellClick(wf, cfg) {
-  const status = cellStatus(wf, cfg)
-  if (status !== 'fail' && status !== 'strife') return
+function cellText(wf, cfg, ti) {
+  const t = getTest(wf, cfg, ti)
+  return t?.result || '—'
+}
 
-  const cell = getCell(wf, cfg)
-  if (!cell) return
-
+function onCellClick(wf, cfg, ti) {
+  const t = getTest(wf, cfg, ti)
+  if (!t || !t.has_failure) return
+  const testName = testNames.value[ti]
   emit('cell-click', {
-    wf: 'WF' + wf,
+    wf: 'WF' + wf.wf,
     cfg,
-    test: '',
-    failureSns: cell.failureSns || []
+    test: testName,
+    failureSns: t.failure_sns || []
   })
 }
 </script>
 
 <style scoped>
-.card {
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-card);
-  box-shadow: var(--shadow-card);
-  overflow: hidden;
-}
+.card { background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-card); box-shadow: var(--shadow-card); overflow: hidden; }
+.ts-scroll { overflow-x: auto; }
+.ts-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 700px; }
 
-.table-wrap {
-  overflow-x: auto;
+.ts-wf-hd {
+  padding: 8px 10px; font-size: 11px; font-weight: 600; text-align: left;
+  color: var(--text-muted); background: var(--bg-row-stripe);
+  text-transform: uppercase; letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-light);
+  position: sticky; left: 0; z-index: 2;
 }
-
-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-th, td {
-  padding: 8px 10px;
-  text-align: center;
+.ts-cfg-hd {
+  padding: 6px 4px; font-size: 11px; font-weight: 700;
+  background: var(--bg-row-stripe);
   border-bottom: 1px solid var(--border-light);
 }
-
-.corner-cell {
-  min-width: 70px;
-  width: 70px;
+.ts-test-hd {
+  padding: 5px 4px; font-size: 10px; font-weight: 400;
+  color: var(--text-muted); background: var(--bg-row-stripe);
+  border-bottom: 1px solid var(--border-light);
+  max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.cfg-header {
-  background: var(--bg-row-stripe);
-  font-weight: 600;
-  font-size: 11px;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  min-width: 80px;
+.ts-wf-col {
+  padding: 8px 10px; text-align: left; font-family: var(--font-mono);
+  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-card);
+  position: sticky; left: 0; z-index: 1;
+}
+.ts-wf-num { white-space: nowrap; }
+
+td {
+  padding: 6px 6px; text-align: center; font-family: var(--font-mono);
+  font-size: 11px; font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid var(--border-light);
+  transition: filter var(--duration-fast);
 }
 
-.wf-header {
-  background: var(--bg-row-stripe);
-  font-weight: 600;
-  font-size: 11px;
-  color: var(--text-primary);
-  text-align: left;
-  font-family: var(--font-mono);
-  width: 70px;
-  min-width: 70px;
-}
+.ts-pass { background: var(--color-success-bg); color: var(--color-success); }
+.ts-strife { background: var(--color-warning-bg); color: var(--color-warning); cursor: pointer; }
+.ts-fail { background: var(--color-danger-bg); color: var(--color-danger); font-weight: 700; cursor: pointer; }
+.ts-empty { color: var(--text-muted); opacity: 0.4; }
+.ts-strife:hover, .ts-fail:hover { filter: brightness(0.94); }
 
-.result-cell {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.cell-pass {
-  background: var(--color-success-bg);
-  color: var(--color-success);
-}
-
-.cell-strife {
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-  cursor: pointer;
-}
-
-.cell-fail {
-  background: var(--color-danger-bg);
-  color: var(--color-danger);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.cell-empty {
-  color: var(--text-muted);
-}
-
-.result-cell:hover {
-  filter: brightness(0.96);
-}
+tr:nth-child(even) td { background-color: rgba(0,0,0,0.01); }
+tr:nth-child(even) td.ts-pass { background: var(--color-success-bg); }
+tr:nth-child(even) td.ts-strife { background: var(--color-warning-bg); }
+tr:nth-child(even) td.ts-fail { background: var(--color-danger-bg); }
 </style>
