@@ -10,7 +10,7 @@
       <div v-if="!wfUpdates.length" class="daily-empty">No updates today</div>
       <div v-for="wf in wfUpdates" :key="wf.wf" class="wf-group">
         <div class="wf-row">
-          <span class="wf-pill">{{ wf.wf }}</span>
+          <span class="wf-pill">WF{{ wf.wf }}</span>
           <span class="wf-name">{{ wfName(wf.wf) }}</span>
         </div>
         <div v-for="cfg in wf.configs" :key="cfg.config" class="cfg-row">

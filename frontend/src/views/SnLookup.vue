@@ -100,7 +100,7 @@
         </div>
       </div>
 
-      <div v-if="!wfGroups.length" class="empty-result">No work-flow data found for this SN</div>
+      <div v-if="!wfGroups.length" class="empty-result">No waterfall data found for this SN</div>
     </div>
   </div>
 </template>

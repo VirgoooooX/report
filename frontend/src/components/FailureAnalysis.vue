@@ -63,7 +63,7 @@ const emit = defineEmits(['drill-down'])
 const tabs = [
   { key: 'top_failures', label: 'By Test Item' },
   { key: 'by_config', label: 'By Config' },
-  { key: 'by_wf', label: 'By WF' },
+  { key: 'by_wf', label: 'By Waterfall' },
   { key: 'top_n', label: 'Top N' }
 ]
 

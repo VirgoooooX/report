@@ -11,7 +11,7 @@
     <div class="page-header">
       <div>
         <h1 class="page-title">{{ categoryName }} Category</h1>
-        <p class="page-subtitle">Completion breakdown by config and work-flow</p>
+        <p class="page-subtitle">Completion breakdown by config and waterfall</p>
       </div>
       <router-link to="/" class="back-btn">&larr; Back to Dashboard</router-link>
     </div>
@@ -65,12 +65,12 @@
       <!-- WF Accordion -->
       <section class="section">
         <div class="section-header">
-          <h2>Work-Flows</h2>
+          <h2>Waterfalls</h2>
           <div class="divider"></div>
           <span class="wf-count">{{ sortedWfs.length }} WFs</span>
         </div>
 
-        <div v-if="!sortedWfs.length" class="empty-state">No work-flow data available</div>
+        <div v-if="!sortedWfs.length" class="empty-state">No waterfall data available</div>
 
         <div v-for="wf in sortedWfs" :key="wf.name" class="card wf-card">
           <div class="wf-row" @click="toggleWf(wf.name)">
