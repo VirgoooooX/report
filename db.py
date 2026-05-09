@@ -19,6 +19,59 @@ def get_conn():
     return conn
 
 
+def _execute_with_optional_conn(conn, fn):
+    owns_conn = conn is None
+    if conn is None:
+        conn = get_conn()
+    try:
+        return fn(conn)
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def create_report_version(conn, report_date, excel_path, source_file_name='', source_file_mtime='', source_file_hash='', notes='', ts_test_names=None):
+    existing = conn.execute(
+        "SELECT COALESCE(MAX(version), 0) AS max_version FROM reports WHERE report_date = ?",
+        (report_date,),
+    ).fetchone()
+    next_version = (existing['max_version'] or 0) + 1
+
+    conn.execute(
+        "UPDATE reports SET is_active = 0 WHERE report_date = ?",
+        (report_date,),
+    )
+
+    cur = conn.execute(
+        """INSERT INTO reports
+           (report_date, version, is_active, excel_path, source_file_name,
+            source_file_mtime, source_file_hash, notes, ts_test_names)
+           VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)""",
+        (
+            report_date,
+            next_version,
+            excel_path,
+            source_file_name,
+            source_file_mtime,
+            source_file_hash,
+            notes,
+            json.dumps(ts_test_names) if ts_test_names else '{}',
+        ),
+    )
+    return cur.lastrowid
+
+
+def get_latest_active_report(conn=None):
+    def _get(c):
+        return c.execute(
+            """SELECT * FROM reports
+               WHERE is_active = 1
+               ORDER BY report_date DESC, version DESC
+               LIMIT 1"""
+        ).fetchone()
+    return _execute_with_optional_conn(conn, _get)
+
+
 def wf_sort_key(wfn):
     """自然排序键：WF1, WF2, ..., WF10, WF11, WF14.1, WF14.2"""
     try:
@@ -118,15 +171,19 @@ def get_wf_cps(wf_num=None):
         return result
 
 
-def init_db(drop_all=False):
-    """Create tables if they don't exist.
-
-    Args:
-        drop_all: 如果为 True，先删除所有已有表再重建。
-    """
-    conn = get_conn()
+def init_db(drop_all=False, conn=None):
+    """Create tables if they don't exist."""
+    owns_conn = conn is None
+    if conn is None:
+        conn = get_conn()
     if drop_all:
         conn.executescript("""
+            DROP TABLE IF EXISTS sn_check_results;
+            DROP TABLE IF EXISTS sn_cp_results;
+            DROP TABLE IF EXISTS report_cps;
+            DROP TABLE IF EXISTS report_test_names;
+            DROP TABLE IF EXISTS report_wf_meta;
+            DROP TABLE IF EXISTS definition_changes;
             DROP TABLE IF EXISTS predictions;
             DROP TABLE IF EXISTS wf_categories;
             DROP TABLE IF EXISTS categories;
@@ -134,15 +191,25 @@ def init_db(drop_all=False):
             DROP TABLE IF EXISTS sn_progress;
             DROP TABLE IF EXISTS report_stats;
             DROP TABLE IF EXISTS wf_results;
+            DROP TABLE IF EXISTS wf_cps;
+            DROP TABLE IF EXISTS wf_names;
             DROP TABLE IF EXISTS reports;
         """)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS reports (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             report_date TEXT NOT NULL,
+            version INTEGER NOT NULL DEFAULT 1,
+            is_active INTEGER NOT NULL DEFAULT 1,
             uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             excel_path TEXT NOT NULL,
-            ts_test_names TEXT DEFAULT '{}'
+            source_file_name TEXT DEFAULT '',
+            source_file_mtime TEXT DEFAULT '',
+            source_file_hash TEXT DEFAULT '',
+            notes TEXT DEFAULT '',
+            ts_test_names TEXT DEFAULT '{}',
+            UNIQUE(report_date, version)
         );
 
         CREATE TABLE IF NOT EXISTS wf_results (
@@ -250,6 +317,19 @@ def init_db(drop_all=False):
         conn.execute("ALTER TABLE reports ADD COLUMN ts_test_names TEXT DEFAULT '{}'")
     except:
         pass
+    for ddl in [
+        "ALTER TABLE reports ADD COLUMN version INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE reports ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE reports ADD COLUMN imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        "ALTER TABLE reports ADD COLUMN source_file_name TEXT DEFAULT ''",
+        "ALTER TABLE reports ADD COLUMN source_file_mtime TEXT DEFAULT ''",
+        "ALTER TABLE reports ADD COLUMN source_file_hash TEXT DEFAULT ''",
+        "ALTER TABLE reports ADD COLUMN notes TEXT DEFAULT ''",
+    ]:
+        try:
+            conn.execute(ddl)
+        except Exception:
+            pass
     try:
         conn.execute("ALTER TABLE wf_names ADD COLUMN test_names TEXT DEFAULT '[]'")
     except:
@@ -273,7 +353,8 @@ def init_db(drop_all=False):
     except sqlite3.OperationalError:
         pass  # Column already exists
     conn.commit()
-    conn.close()
+    if owns_conn:
+        conn.close()
 
 
 # ── Save ───────────────────────────────────────────────────────────────
