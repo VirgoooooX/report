@@ -297,7 +297,10 @@ def _parse_wf_sheet(ws, wfn, ts_names):
             
             # Init results
             if config not in results:
-                results[config] = {ti: {'total': 0, 'spec_fails': [], 'strife_fails': []} for ti in range(num_tests)}
+                results[config] = {
+                    ti: {'total': 0, 'spec_fails': [], 'strife_fails': [], 'failure_details': []}
+                    for ti in range(num_tests)
+                }
             
             # Process data rows
             dr = r + 2
@@ -318,7 +321,10 @@ def _parse_wf_sheet(ws, wfn, ts_names):
                 if row_cfg not in results:
                     results[row_cfg] = {}
                     for ti in range(num_tests):
-                        results[row_cfg][ti] = {'total': 0, 'spec_fails': [], 'strife_fails': []}
+                        results[row_cfg][ti] = {
+                            'total': 0, 'spec_fails': [], 'strife_fails': [],
+                            'failure_details': []
+                        }
                 
                 # Find last real CP
                 last_real = None
@@ -347,8 +353,23 @@ def _parse_wf_sheet(ws, wfn, ts_names):
                     if ft == 'strife': has_strife = True
                 
                 sn_str = str(sn).strip()
-                if has_spec: results[row_cfg][test_idx]['spec_fails'].append(sn_str)
-                elif has_strife: results[row_cfg][test_idx]['strife_fails'].append(sn_str)
+                type_str = 'spec' if has_spec else ('strife' if has_strife else None)
+                location = (
+                    ts_names[test_idx] if test_idx < len(ts_names) and ts_names[test_idx]
+                    else f'Test{test_idx + 1}'
+                )
+
+                if has_spec:
+                    results[row_cfg][test_idx]['spec_fails'].append(sn_str)
+                elif has_strife:
+                    results[row_cfg][test_idx]['strife_fails'].append(sn_str)
+
+                if type_str:
+                    results[row_cfg][test_idx]['failure_details'].append({
+                        'sn': sn_str,
+                        'type': type_str,
+                        'location': location,
+                    })
                 
                 dr += 1
             r = dr
