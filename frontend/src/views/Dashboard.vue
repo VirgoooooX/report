@@ -15,7 +15,6 @@
         <button class="edit-btn" @click="showCatModal = true">Edit</button>
       </div>
       <CategoryCards
-        :completion-data="overviewCompletion"
         @category-click="goCategory"
       />
     </section>

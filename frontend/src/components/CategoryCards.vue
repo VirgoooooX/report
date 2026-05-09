@@ -24,11 +24,9 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useAppStore } from '@/stores/app'
 
-const props = defineProps({
-  completionData: { type: Object, default: () => ({}) }
-})
-
+const store = useAppStore()
 const emit = defineEmits(['category-click'])
 
 const CATEGORY_META = [
@@ -39,11 +37,11 @@ const CATEGORY_META = [
 ]
 
 const categories = computed(() => {
-  const byCat = props.completionData?.by_category ?? {}
+  const byCat = store.overviewData?.completion?.by_category ?? {}
   return CATEGORY_META.map(meta => {
     const data = byCat[meta.name] ?? {}
-    const total = data.total_cps ?? data.total ?? 0
-    const completed = data.completed_cps ?? data.completed ?? 0
+    const total = data.total_cps ?? 0
+    const completed = data.completed_cps ?? 0
     const pct = total > 0 ? Math.round((completed / total) * 1000) / 10 : 0
     return { ...meta, total, completed, pct }
   })
