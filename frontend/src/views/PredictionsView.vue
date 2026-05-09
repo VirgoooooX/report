@@ -64,7 +64,7 @@
           <tr v-for="(row, idx) in sortedRows" :key="idx">
             <td class="cell-wf"><span class="wf-num">WF{{ row.wf_num }}</span><span class="wf-name" :title="wfName(row.wf_num)">{{ wfName(row.wf_num) }}</span></td>
             <td class="cell-mono col-config">{{ row.config }}</td>
-            <td class="col-test"><span class="cell-test" :title="row.test_name">{{ row.test_name || 'Test' + ((row.test_idx || 0) + 1) }}</span></td>
+            <td class="col-test cell-test-name">{{ row.test_name || 'Test' + ((row.test_idx || 0) + 1) }}</td>
             <td class="col-progress">
               <div class="progress-inline">
                 <div class="progress-track-sm">
@@ -383,19 +383,19 @@ tr:hover td {
   background: var(--bg-row-hover);
 }
 
-.col-wf { text-align: left !important; min-width: 150px; }
-.col-test { text-align: center !important; min-width: 140px; }
-.col-progress { text-align: center !important; min-width: 130px; }
-.col-num { text-align: center !important; min-width: 80px; }
-.col-date { text-align: center !important; min-width: 100px; }
-.col-type { text-align: center !important; min-width: 60px; }
-.col-config { text-align: center !important; min-width: 60px; }
+.col-wf { text-align: left !important; min-width: 140px; }
+.col-test { text-align: left !important; }
+.col-progress { text-align: center !important; min-width: 110px; }
+.col-num { text-align: center !important; min-width: 65px; }
+.col-date { text-align: center !important; min-width: 85px; }
+.col-type { text-align: center !important; min-width: 50px; }
+.col-config { text-align: center !important; min-width: 50px; }
 
-.cell-wf { text-align: left; }
-.wf-num { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); white-space: nowrap; }
-.wf-name { font-size: 12px; color: var(--text-muted); margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80px; display: inline-block; vertical-align: bottom; }
-.cell-test { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
+.cell-wf { text-align: left; white-space: nowrap; }
+.wf-num { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); }
+.wf-name { font-size: 12px; color: var(--text-muted); margin-left: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px; display: inline-block; vertical-align: bottom; }
 
+.cell-test-name { font-size: 13px; white-space: nowrap; }
 .cell-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .cell-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
