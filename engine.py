@@ -48,6 +48,66 @@ def get_failure_type(cell):
     except: pass
     return None
 
+
+def cell_color_rgb(cell):
+    try:
+        fg = cell.fill.fgColor
+        if fg and fg.type == 'rgb':
+            return str(fg.rgb).upper()
+    except Exception:
+        pass
+    return ''
+
+
+def font_color_rgb(cell):
+    try:
+        fc = cell.font.color
+        if fc and fc.type == 'rgb':
+            return str(fc.rgb).upper()
+    except Exception:
+        pass
+    return ''
+
+
+def normalize_cell_value(value):
+    if value is None:
+        return ''
+    return str(value).strip()
+
+
+def status_from_cell(cell, is_pending=False):
+    if is_pending:
+        return 'pending', None
+    raw = normalize_cell_value(cell.value)
+    if raw == '/':
+        return 'skip', None
+    failure_type = get_failure_type(cell)
+    if failure_type == 'spec':
+        return 'spec_fail', 'spec'
+    if failure_type == 'strife':
+        return 'strife_fail', 'strife'
+    if raw:
+        return 'pass', None
+    return 'pending', None
+
+
+def aggregate_cp_status(check_rows, cp_idx, last_real):
+    rows = [r for r in check_rows if r['cp_idx'] == cp_idx]
+    if cp_idx > last_real:
+        return 'pending', None, 0
+    if not rows:
+        return 'pending', None, 0
+    if all(r['status'] == 'skip' for r in rows):
+        return 'skip', None, 0
+    has_data = any(r['status'] not in ('skip', 'pending') for r in rows)
+    if any(r['failure_type'] == 'spec' for r in rows):
+        return 'spec_fail', 'spec', int(has_data)
+    if any(r['failure_type'] == 'strife' for r in rows):
+        return 'strife_fail', 'strife', int(has_data)
+    if has_data:
+        return 'pass', None, 1
+    return 'pending', None, 0
+
 # ── CP-to-Test mapping ─────────────────────────────────────────────────
 
 def map_cps_to_tests(cp_names, ts_names):
@@ -731,6 +791,140 @@ def _extract_wf_progress(ws, ts_names):
             r += 1
 
     return results
+
+
+def extract_wf_fact_rows(ws, wf_num, report_id, report_date, ts_names):
+    """Extract relational CP and check-item fact rows from one WF sheet."""
+    cp_fact_rows = []
+    check_fact_rows = []
+
+    r = 1
+    while r <= ws.max_row:
+        if ws.cell(r, 3).value == 'Config' and ws.cell(r, 4).value == 'Unit #':
+            cp_list = []
+            ls = None
+            ln = ''
+            for c in range(7, ws.max_column + 1):
+                v = ws.cell(r, c).value
+                if v and isinstance(v, str) and v.strip():
+                    cv = v.strip()
+                    if cv not in CHECK_NAMES and cv not in ('Comments', 'Overall Result', 'Return to Summary') and len(cv) > 1:
+                        if ls is not None:
+                            cp_list.append((ls, c - 1, ln))
+                        ls = c
+                        ln = cv
+            if ls is not None:
+                ec = ws.max_column
+                for c in range(ls, ws.max_column + 1):
+                    v = ws.cell(r, c).value
+                    if v and isinstance(v, str) and v.strip() in ('Comments', 'Overall Result'):
+                        ec = c - 1
+                        break
+                cp_list.append((ls, ec, ln))
+
+            if not cp_list:
+                r += 1
+                continue
+
+            cp_names = [(ps, pn) for ps, pe, pn in cp_list]
+            cp_test_map = map_cps_to_tests(cp_names, ts_names)
+
+            dr = r + 2
+            default_config = None
+            while dr <= ws.max_row:
+                cv = ws.cell(dr, 3).value
+                if cv in ('R1FNF', 'R2CNM', 'R3', 'R4'):
+                    default_config = cv
+                    break
+                dr += 1
+            if not default_config:
+                r += 1
+                continue
+
+            dr = r + 2
+            while dr <= ws.max_row:
+                dc1 = ws.cell(dr, 1).value
+                dcfg = ws.cell(dr, 3).value
+                if dc1 == '%' and dcfg == 'Config' and ws.cell(dr, 4).value == 'Unit #':
+                    break
+
+                sn = ws.cell(dr, 5).value
+                t0 = ws.cell(dr, 6).value
+                if dcfg == 'Config' or (sn and str(sn).strip() == 'S/N') or not sn or not t0:
+                    dr += 1
+                    continue
+
+                row_cfg = str(dcfg).strip() if dcfg and str(dcfg).strip() in ('R1FNF', 'R2CNM', 'R3', 'R4') else default_config
+                unit_num = ws.cell(dr, 4).value
+                unit_num_str = str(unit_num).strip() if unit_num is not None else ''
+                sn_str = str(sn).strip()
+
+                last_real = None
+                for pi in range(len(cp_list) - 1, -1, -1):
+                    ps, pe, _ = cp_list[pi]
+                    if any(ws.cell(dr, cc).value is not None and str(ws.cell(dr, cc).value).strip() != '/' for cc in range(ps, pe + 1)):
+                        last_real = pi
+                        break
+                if last_real is None:
+                    dr += 1
+                    continue
+
+                row_checks = []
+                for pi, (ps, pe, _cp_name) in enumerate(cp_list):
+                    check_idx = 0
+                    for cc in range(ps, pe + 1):
+                        check_name = ws.cell(r + 1, cc).value
+                        if not check_name or not isinstance(check_name, str) or not check_name.strip():
+                            continue
+                        check_name = check_name.strip()
+                        cell = ws.cell(dr, cc)
+                        status, failure_type = status_from_cell(cell, is_pending=pi > last_real)
+                        check_row = {
+                            'report_id': report_id,
+                            'report_date': report_date,
+                            'wf_num': wf_num,
+                            'config': row_cfg,
+                            'sn': sn_str,
+                            'unit_num': unit_num_str,
+                            'test_idx': cp_test_map[pi],
+                            'cp_idx': pi,
+                            'check_item_idx': check_idx,
+                            'check_item': check_name,
+                            'raw_value': normalize_cell_value(cell.value),
+                            'normalized_value': normalize_cell_value(cell.value),
+                            'status': status,
+                            'failure_type': failure_type,
+                            'fill_color': cell_color_rgb(cell),
+                            'font_color': font_color_rgb(cell),
+                            'source_row': dr,
+                            'source_col': cc,
+                        }
+                        row_checks.append(check_row)
+                        check_idx += 1
+
+                for pi, (_ps, _pe, _cp_name) in enumerate(cp_list):
+                    status, failure_type, has_data = aggregate_cp_status(row_checks, pi, last_real)
+                    cp_fact_rows.append({
+                        'report_id': report_id,
+                        'report_date': report_date,
+                        'wf_num': wf_num,
+                        'config': row_cfg,
+                        'sn': sn_str,
+                        'unit_num': unit_num_str,
+                        'test_idx': cp_test_map[pi],
+                        'cp_idx': pi,
+                        'status': status,
+                        'failure_type': failure_type,
+                        'has_data': has_data,
+                        'is_current_cp': int(pi == last_real),
+                    })
+                check_fact_rows.extend(row_checks)
+                dr += 1
+            r = dr
+        else:
+            r += 1
+
+    return cp_fact_rows, check_fact_rows
 
 
 # ── CLI self-test ───────────────────────────────────────────────────────
