@@ -560,7 +560,7 @@ def init_db(drop_all=False, conn=None):
 
 # ── Save ───────────────────────────────────────────────────────────────
 
-def save_report(report_date, results, fa_stats, excel_path, ts_test_names=None):
+def save_report(report_date, results, fa_stats, excel_path, ts_test_names=None, report_id=None):
     """
     Saves an analysis snapshot to the database.
     results: engine.analyze() output
@@ -572,11 +572,13 @@ def save_report(report_date, results, fa_stats, excel_path, ts_test_names=None):
     
     # Insert report record
     ts_names_json = json.dumps(ts_test_names) if ts_test_names else '{}'
-    cur = conn.execute(
-        "INSERT INTO reports (report_date, excel_path, ts_test_names) VALUES (?, ?, ?)",
-        (report_date, excel_path, ts_names_json)
-    )
-    report_id = cur.lastrowid
+    if report_id is None:
+        report_id = create_report_version(conn, report_date, excel_path, ts_test_names=ts_test_names)
+    else:
+        conn.execute(
+            "UPDATE reports SET ts_test_names = ? WHERE id = ?",
+            (ts_names_json, report_id),
+        )
     
     # Insert per-WF results
     total_spec = 0

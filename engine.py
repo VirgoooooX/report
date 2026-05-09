@@ -184,6 +184,22 @@ def map_cps_to_tests(cp_names, ts_names):
     
     return [min(g2t[g], nt - 1) for g in groups]
 
+
+def attach_test_idx_to_cps(cp_structures, ts_test_names):
+    """Attach test_idx to each CP definition using the same mapping as result parsing."""
+    result = {}
+    for wfn, cps in cp_structures.items():
+        ts_names = ts_test_names.get(wfn, ['(unnamed)'])
+        cp_names = [(cp['cp_idx'], cp['cp_name']) for cp in cps]
+        cp_test_map = map_cps_to_tests(cp_names, ts_names)
+        mapped = []
+        for cp, test_idx in zip(cps, cp_test_map):
+            item = dict(cp)
+            item['test_idx'] = test_idx
+            mapped.append(item)
+        result[wfn] = mapped
+    return result
+
 # ── Test Summary reader ────────────────────────────────────────────────
 
 def read_test_summary(daily_path):
