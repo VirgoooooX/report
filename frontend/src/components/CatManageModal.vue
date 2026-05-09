@@ -26,19 +26,23 @@
         </div>
 
         <div class="cat-modal-body">
-          <div class="cat-wf-list">
-            <span
-              v-for="wf in currentCategoryWfs"
-              :key="wf"
-              class="cat-wf-chip"
-            >
-              {{ wf }}
-              <button class="cat-chip-remove" @click="removeWf(wf)">&times;</button>
-            </span>
-            <span v-if="currentCategoryWfs.length === 0" class="cat-empty-wfs">
-              No WFs in this category
-            </span>
+          <div v-if="currentCategoryWfs.length === 0" class="cat-empty-wfs">
+            No WFs in this category
           </div>
+          <table v-else class="cat-wf-table">
+            <thead>
+              <tr><th>WF</th><th>Name</th><th></th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="wf in currentCategoryWfs" :key="wf">
+                <td class="cell-wf">{{ wf }}</td>
+                <td class="cell-name">{{ wfName(wf) }}</td>
+                <td class="cell-action">
+                  <button class="cat-chip-remove" @click="removeWf(wf)">&times;</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
 
           <div class="cat-add-area">
             <input
@@ -60,9 +64,11 @@
 
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
+import { useAppStore } from '@/stores/app'
 
 const props = defineProps({ show: Boolean })
 const emit = defineEmits(['close', 'updated'])
+const store = useAppStore()
 
 const categoryTabs = ['Drop', 'Ingress', 'Environmental', 'Mechanical']
 const activeTab = ref('Drop')
@@ -72,6 +78,11 @@ const visible = ref(false)
 
 function close() {
   emit('close')
+}
+
+function wfName(wfNum) {
+  const key = String(wfNum).replace(/^WF/i, '')
+  return store.wfNames[key] || ''
 }
 
 const currentCategoryWfs = computed(() => {
@@ -246,24 +257,37 @@ watch(() => props.show, async (val) => {
   gap: 20px;
 }
 
-/* WF list */
-.cat-wf-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.cat-wf-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  background: #f0f2f5;
-  border: 1px solid var(--border-light);
-  border-radius: 9999px;
+/* WF table */
+.cat-wf-table {
+  width: 100%;
+  border-collapse: collapse;
   font-size: 13px;
+}
+.cat-wf-table th {
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--border-light);
+}
+.cat-wf-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-light);
+}
+.cell-wf {
   font-family: var(--font-mono);
+  font-weight: 600;
   color: var(--text-primary);
+}
+.cell-name {
+  color: var(--text-secondary);
+}
+.cell-action {
+  text-align: right;
+  width: 32px;
 }
 
 .cat-chip-remove {
