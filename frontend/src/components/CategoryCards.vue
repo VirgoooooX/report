@@ -4,7 +4,6 @@
       v-for="cat in categories"
       :key="cat.name"
       class="card cat-card"
-      :style="{ borderLeft: `4px solid var(${cat.colorVar})` }"
       @click="emit('category-click', cat.name)"
     >
       <div class="cat-name" :style="{ color: `var(${cat.colorVar})` }">{{ cat.name }}</div>
@@ -65,7 +64,6 @@ const categories = computed(() => {
   border-radius: var(--radius-md);
   background: var(--bg-card);
   border: 1px solid var(--border-card);
-  border-left: 4px solid;
   box-shadow: var(--shadow-card);
   transition: box-shadow var(--duration-fast) var(--ease-in-out);
 }

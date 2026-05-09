@@ -8,9 +8,9 @@
              :stroke-dasharray="circ" :stroke-dashoffset="offset"
              :transform="`rotate(-90 ${vb/2} ${vb/2})`"
              class="ring-circle" />
-     <text :x="vb/2" :y="yPct" text-anchor="middle" fill="var(--text-primary)"
+     <text :x="vb/2" :y="pctY" text-anchor="middle" fill="var(--text-primary)"
            :font-size="fsPct" font-weight="700" font-family="var(--font-display)">{{ Number(pct).toFixed(1) }}%</text>
-     <text :x="vb/2" :y="yLabel" text-anchor="middle" fill="var(--text-secondary)"
+     <text v-if="label" :x="vb/2" :y="yLabel" text-anchor="middle" fill="var(--text-secondary)"
            :font-size="fsLabel" font-family="var(--font-display)">{{ label }}</text>
      <text v-if="sublabel" :x="vb/2" :y="ySub" text-anchor="middle" fill="var(--text-muted)"
            :font-size="fsSub" font-family="var(--font-display)">{{ sublabel }}</text>
@@ -34,10 +34,10 @@ const configs = {
   small:  { vb: 90,  r: 35, sw: 7,  fsPct: 17, fsLabel: 9,  fsSub: 7,  yPct: 40, yLabel: 55, ySub: 65, maxWidth: 100 },
 }
 
-const c = computed(() => configs[props.size] || configs.medium)
 const { vb, r, sw, fsPct, fsLabel, fsSub, yPct, yLabel, ySub, maxWidth } = configs[props.size] || configs.medium
 const circ = 2 * Math.PI * r
 const offset = computed(() => circ * (1 - Math.min(props.pct, 100) / 100))
+const pctY = computed(() => (props.label || props.sublabel) ? yPct : (vb / 2 + fsPct / 3))
 </script>
 
 <style scoped>

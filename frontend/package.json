@@ -12,6 +12,7 @@
     "@ant-design/icons-vue": "^7.0.1",
     "ant-design-vue": "^4.2.6",
     "chart.js": "^4.4",
+    "chartjs-plugin-datalabels": "^2.2.0",
     "pinia": "^2.1",
     "vue": "^3.4",
     "vue-chartjs": "^5.3",

@@ -104,9 +104,13 @@ function goCategory(name) {
   router.push({ name: 'category', params: { name } })
 }
 
+async function loadAll() {
+  await store.fetchOverview()
+}
+
 onMounted(async () => {
   try {
-    await store.fetchOverview()
+    await loadAll()
   } catch {
     // silently handle
   }

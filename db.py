@@ -617,7 +617,19 @@ def get_completion_stats(report_id):
             by_category[cat_name]['total_cps'] += total
             by_category[cat_name]['completed_cps'] += completed
 
-    result = {'by_config': {}, 'by_category': {}}
+    overall_total_cps = sum(d['total_cps'] for d in by_config.values())
+    overall_completed_cps = sum(d['completed_cps'] for d in by_config.values())
+
+    result = {
+        'overall': {
+            'total_cps': overall_total_cps,
+            'completed_cps': overall_completed_cps,
+            'pct': round(overall_completed_cps / overall_total_cps * 100, 1)
+                   if overall_total_cps else 0,
+        },
+        'by_config': {},
+        'by_category': {},
+    }
     for cfg, d in by_config.items():
         result['by_config'][cfg] = {
             'total_cps': d['total_cps'],
