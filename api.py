@@ -731,6 +731,158 @@ def api_wf_cps():
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  API: Failure Cross Analysis & Drill-down
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/api/failures/cross')
+def api_failures_cross():
+    """交叉分析热力图数据。dim1/dim2: config, wf, test
+    返回 2D 矩阵: { dim1, dim2, dim1Values, dim2Values, matrix: [{dim1Value, dim2Value, specCount, strifeCount, totalCount, totalUnits, specRate, strifeRate, totalRate, sns}] }
+    """
+    dim1 = request.args.get('dim1', 'config')
+    dim2 = request.args.get('dim2', 'wf')
+    allowed = {'config', 'wf', 'test'}
+    if dim1 not in allowed or dim2 not in allowed or dim1 == dim2:
+        return jsonify({'error': 'Invalid dimensions'}), 400
+
+    conn = get_conn()
+    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()
+    if not rid or not rid['MAX(id)']:
+        conn.close()
+        return jsonify({'error': 'No data'}), 404
+    rid = rid['MAX(id)']
+
+    rows = conn.execute(
+        "SELECT wf_num, config, test_idx, spec_fail_count, strife_fail_count, total_units, failure_sns FROM wf_results WHERE report_id = ?",
+        (rid,)
+    ).fetchall()
+    conn.close()
+
+    wf_names = get_wf_names()
+
+    # Map dimension field names
+    def dim_value(row, dim):
+        if dim == 'config': return row['config']
+        if dim == 'wf': return row['wf_num']
+        # test: use real test name
+        ti = row['test_idx']
+        wf = row['wf_num']
+        names = wf_names.get(wf, {})
+        test_names = names.get('test_names', [])
+        return test_names[ti] if ti < len(test_names) else f'Test{ti+1}'
+
+    # Aggregate by (dim1, dim2)
+    agg = {}
+    for r in rows:
+        d1 = dim_value(r, dim1)
+        d2 = dim_value(r, dim2)
+        key = (d1, d2)
+        if key not in agg:
+            agg[key] = {'spec': 0, 'strife': 0, 'totalUnits': 0, 'sns': []}
+        agg[key]['spec'] += r['spec_fail_count'] or 0
+        agg[key]['strife'] += r['strife_fail_count'] or 0
+        agg[key]['totalUnits'] += r['total_units'] or 0
+        try:
+            sns = json.loads(r['failure_sns']) if r['failure_sns'] else []
+        except:
+            sns = []
+        agg[key]['sns'].extend(sns)
+
+    dim1Values = sorted(set(d1 for d1, _ in agg.keys()), key=str)
+    dim2Values = sorted(set(d2 for _, d2 in agg.keys()), key=str)
+
+    # Sort dim2Values if WF dimension
+    if dim2 == 'wf':
+        try:
+            dim2Values.sort(key=wf_sort_key)
+        except:
+            pass
+    if dim1 == 'wf':
+        try:
+            dim1Values.sort(key=wf_sort_key)
+        except:
+            pass
+
+    totalUnitsAll = sum(a['totalUnits'] for a in agg.values()) or 1
+
+    matrix = []
+    for (d1, d2), a in agg.items():
+        total = a['spec'] + a['strife']
+        matrix.append({
+            'dim1Value': d1, 'dim2Value': d2,
+            'specCount': a['spec'], 'strifeCount': a['strife'],
+            'totalCount': total, 'totalUnits': a['totalUnits'],
+            'specRate': round(a['spec'] / a['totalUnits'] * 100, 1) if a['totalUnits'] else 0,
+            'strifeRate': round(a['strife'] / a['totalUnits'] * 100, 1) if a['totalUnits'] else 0,
+            'totalRate': round(total / a['totalUnits'] * 100, 1) if a['totalUnits'] else 0,
+            'percentage': round(total / totalUnitsAll * 100, 1),
+            'sns': list(set(a['sns'])),
+        })
+
+    return jsonify({
+        'dim1': dim1, 'dim2': dim2,
+        'dim1Values': dim1Values, 'dim2Values': dim2Values,
+        'matrix': matrix,
+    })
+
+
+@app.route('/api/failures/detail')
+def api_failures_detail():
+    """失败详情（弹窗用）。支持 wf, config, test_idx 组合筛选。"""
+    wf = request.args.get('wf', '')
+    config = request.args.get('config', '')
+    test_idx = request.args.get('test_idx', '')
+
+    conn = get_conn()
+    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()
+    if not rid or not rid['MAX(id)']:
+        conn.close()
+        return jsonify({'records': []})
+    rid = rid['MAX(id)']
+
+    where = ['report_id = ?']
+    params = [rid]
+    if wf:
+        where.append('wf_num = ?')
+        params.append(wf)
+    if config:
+        where.append('config = ?')
+        params.append(config)
+    if test_idx:
+        where.append('test_idx = ?')
+        params.append(int(test_idx))
+
+    rows = conn.execute(
+        f"SELECT * FROM wf_results WHERE {' AND '.join(where)}",
+        params
+    ).fetchall()
+    conn.close()
+
+    wf_names = get_wf_names()
+    records = []
+    for r in rows:
+        wfn = r['wf_num']
+        ti = r['test_idx']
+        names = wf_names.get(wfn, {})
+        test_names = names.get('test_names', [])
+        tname = test_names[ti] if ti < len(test_names) else f'Test{ti+1}'
+        try:
+            sns = json.loads(r['failure_sns']) if r['failure_sns'] else []
+        except:
+            sns = []
+        records.append({
+            'wf_num': wfn, 'config': r['config'],
+            'test_idx': ti, 'test_name': tname,
+            'spec_fail_count': r['spec_fail_count'] or 0,
+            'strife_fail_count': r['strife_fail_count'] or 0,
+            'total_units': r['total_units'] or 0,
+            'failure_sns': sns,
+        })
+
+    return jsonify({'records': records})
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  API: FA Tracker (for drill-through)
 # ═══════════════════════════════════════════════════════════════════════
 

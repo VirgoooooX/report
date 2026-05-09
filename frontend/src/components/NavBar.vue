@@ -9,6 +9,7 @@
         <router-link to="/">Dashboard</router-link>
         <router-link to="/category/Drop">Categories</router-link>
         <router-link to="/test-summary">Test Summary</router-link>
+        <router-link to="/failure-analysis">Failure Analysis</router-link>
         <router-link to="/sn">SN Lookup</router-link>
         <router-link to="/predictions">Predictions</router-link>
         <router-link to="/export">Export</router-link>

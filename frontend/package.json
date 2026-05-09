@@ -9,11 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "vue": "^3.4",
-    "vue-router": "^4.3",
-    "pinia": "^2.1",
+    "@ant-design/icons-vue": "^7.0.1",
+    "ant-design-vue": "^4.2.6",
     "chart.js": "^4.4",
-    "vue-chartjs": "^5.3"
+    "pinia": "^2.1",
+    "vue": "^3.4",
+    "vue-chartjs": "^5.3",
+    "vue-router": "^4.3"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0",

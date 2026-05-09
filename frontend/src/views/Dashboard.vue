@@ -42,18 +42,6 @@
       <DailyUpdates :daily-data="store.overviewData?.daily_updates" />
     </section>
 
-    <!-- 5. Failure Analysis -->
-    <section class="section">
-      <div class="section-header">
-        <h2>Failure Analysis</h2>
-        <div class="divider"></div>
-      </div>
-      <FailureAnalysis
-        :failures-data="store.overviewData?.failures"
-        @drill-down="onFailDrillDown"
-      />
-    </section>
-
     <!-- Footer -->
     <footer class="page-footer">
       <span>Report Date: {{ store.reportDate || '—' }}</span>
@@ -61,27 +49,6 @@
       <span>{{ wfCount }} WFs</span>
       <span>{{ failureCount }} Failures</span>
     </footer>
-
-    <!-- FA Modal -->
-    <div v-if="showFAModal" class="modal-overlay" @click.self="showFAModal = false">
-      <div class="modal-card">
-        <div class="modal-header">
-          <h3>{{ faTitle || 'Failure Analysis' }}</h3>
-          <button class="modal-close" @click="showFAModal = false">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="modal-field"><strong>WF:</strong> {{ faWf || '—' }}</div>
-          <div class="modal-field"><strong>SNs:</strong> {{ faSns?.length || 0 }} affected</div>
-          <ul v-if="faSns?.length" class="sns-list">
-            <li v-for="sn in faSns" :key="sn">{{ sn }}</li>
-          </ul>
-          <div v-else class="modal-empty">No detailed SN data available</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-secondary" @click="showFAModal = false">Close</button>
-        </div>
-      </div>
-    </div>
 
     <!-- CatManage Modal -->
     <CatManageModal :show="showCatModal" @close="showCatModal = false" @updated="loadAll" />
@@ -97,16 +64,11 @@ import CategoryCards from '@/components/CategoryCards.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import TopFailChart from '@/components/TopFailChart.vue'
 import DailyUpdates from '@/components/DailyUpdates.vue'
-import FailureAnalysis from '@/components/FailureAnalysis.vue'
 import CatManageModal from '@/components/CatManageModal.vue'
 
 const store = useAppStore()
 const router = useRouter()
 
-const showFAModal = ref(false)
-const faWf = ref('')
-const faTitle = ref('')
-const faSns = ref([])
 const showCatModal = ref(false)
 
 const trendData = computed(() => {
@@ -140,14 +102,6 @@ const failureCount = computed(() => {
 
 function goCategory(name) {
   router.push({ name: 'category', params: { name } })
-}
-
-function onFailDrillDown(payload) {
-  if (!payload) return
-  showFAModal.value = true
-  faWf.value = payload.wf || ''
-  faTitle.value = payload.test || payload.dim || 'Failure Detail'
-  faSns.value = []
 }
 
 onMounted(async () => {
@@ -245,128 +199,6 @@ onMounted(async () => {
   border-top: 1px solid var(--border-light);
   font-size: 13px;
   color: var(--text-muted);
-}
-
-/* Modal */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  background: var(--bg-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.modal-card {
-  background: var(--bg-card);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-modal);
-  width: 480px;
-  max-width: 90vw;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 18px 24px;
-  border-bottom: 1px solid var(--border-light);
-}
-
-.modal-header h3 {
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 22px;
-  color: var(--text-muted);
-  cursor: pointer;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-sm);
-}
-
-.modal-close:hover {
-  background: var(--bg-row-hover);
-  color: var(--text-primary);
-}
-
-.modal-body {
-  padding: 20px 24px;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.modal-field {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin-bottom: 8px;
-}
-
-.modal-field strong {
-  color: var(--text-primary);
-}
-
-.sns-list {
-  list-style: none;
-  padding: 0;
-  margin: 8px 0 0;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.sns-list li {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  padding: 4px 10px;
-  background: var(--bg-tag);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-}
-
-.modal-empty {
-  font-size: 13px;
-  color: var(--text-muted);
-  padding: 24px 0;
-  text-align: center;
-}
-
-.modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 14px 24px;
-  border-top: 1px solid var(--border-light);
-}
-
-.btn-secondary {
-  padding: 8px 20px;
-  font-size: 13px;
-  font-family: var(--font-display);
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-in-out);
-}
-
-.btn-secondary:hover {
-  background: var(--bg-row-stripe);
 }
 
 @media (max-width: 900px) {

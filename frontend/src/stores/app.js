@@ -13,7 +13,6 @@ export const useAppStore = defineStore('app', () => {
   const predictions = ref([])
   const snResult = ref(null)
   const exportData = ref(null)
-
   const configColors = {
     overall: '#4f6f8f',
     R1FNF: '#4f6f8f',

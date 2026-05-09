@@ -24,6 +24,11 @@ const routes = [
     component: () => import('@/views/TestSummaryView.vue')
   },
   {
+    path: '/failure-analysis',
+    name: 'failure-analysis',
+    component: () => import('@/views/FailureMatrixPage.vue')
+  },
+  {
     path: '/export',
     name: 'export',
     component: () => import('@/views/ExportView.vue')
