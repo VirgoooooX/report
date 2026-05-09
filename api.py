@@ -5,7 +5,7 @@ Usage: python api.py
 Access: http://localhost:5050
 """
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
-import os, sys, json, io, csv, datetime
+import os, sys, json, io, csv, datetime, re
 
 sys.path.insert(0, os.path.dirname(__file__))
 from engine import analyze, build_summary_table, build_failure_detail
@@ -17,7 +17,7 @@ from db import (
     get_sn_history, get_daily_changes_by_cp, get_completion_stats,
     get_failure_rate_stats, get_predictions, update_prediction,
     init_categories, get_category_wfs, export_sn_records,
-    wf_sort_key, get_wf_names, get_wf_cps
+    wf_sort_key, get_wf_names, get_wf_cps, get_wf_config_progress_rows
 )
 
 BASE_DIR = os.path.dirname(__file__)
@@ -30,6 +30,71 @@ DATA_DIR = os.path.join(BASE_DIR, 'data')
 # ── Init ────────────────────────────────────────────────────────────────
 init_db()
 init_categories()
+
+# ── Daily Issue helpers ─────────────────────────────────────────────────
+
+def _normalize_wf(val):
+    """Unify WF number format: strip WF prefix, handle int/float/string."""
+    if val is None:
+        return ''
+    if isinstance(val, (int, float)):
+        return str(int(val))
+    s = str(val).strip()
+    for prefix in ('WF', 'Wf', 'wf'):
+        if s.upper().startswith(prefix.upper()):
+            s = s[len(prefix):].strip()
+            break
+    try:
+        return str(int(float(s)))
+    except (ValueError, TypeError):
+        return s
+
+
+def _normalize_failure_type(ft):
+    """Normalize to 'spec' / 'strife' / other."""
+    s = str(ft or '').strip().lower()
+    if 'spec' in s:
+        return 'spec'
+    if 'strife' in s:
+        return 'strife'
+    return s if s else 'unknown'
+
+
+def _parse_date_value(val):
+    """Parse cell value to 'YYYY-MM-DD' date string. Returns None on failure."""
+    if isinstance(val, datetime.datetime):
+        return val.strftime('%Y-%m-%d')
+    if isinstance(val, datetime.date):
+        return val.strftime('%Y-%m-%d')
+    if isinstance(val, str):
+        val = val.strip()
+        for fmt in ('%Y-%m-%d', '%Y/%m/%d', '%m/%d/%Y', '%m/%d/%y'):
+            try:
+                return datetime.datetime.strptime(val[:10], fmt).strftime('%Y-%m-%d')
+            except ValueError:
+                pass
+    return None
+
+
+def _find_fa_tracker_by_date(date_str):
+    """Find FA Tracker file matching the given date, or the latest available."""
+    fas = []
+    for fname in os.listdir(DATA_DIR):
+        if 'FA Tracker' in fname and fname.endswith('.xlsx') and not fname.startswith('~$'):
+            m = re.search(r'(\d{8})', fname)
+            if m:
+                raw = m.group(1)
+                df = f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
+                fas.append((df, os.path.join(DATA_DIR, fname)))
+    if not fas:
+        return None
+    fas.sort(key=lambda x: x[0])
+    if date_str:
+        for d, fp in fas:
+            if d == date_str:
+                return fp
+    return fas[-1][1]  # fallback to latest
+
 
 # ── Serve Vue SPA assets ────────────────────────────────────────────────
 @app.route('/assets/<path:filename>')
@@ -98,13 +163,7 @@ def api_overview():
         yesterday_map = {}
     
     # 获取今天各 WF+Config 的 latest CP 信息
-    cp_info_rows = conn.execute(
-        """SELECT wf_num, config, MAX(current_cp_idx) as max_cp_idx,
-                  MAX(current_cp_name) as cp_name, MAX(total_cps) as total_cps,
-                  COUNT(*) as sn_count
-           FROM sn_progress WHERE report_id = ?
-           GROUP BY wf_num, config""", (rid,)
-    ).fetchall()
+    cp_info_rows = get_wf_config_progress_rows(conn, rid)
     
     # 构建每日更新：每个 WF+Config，cp_delta = 今天 max_cp - 昨天 max_cp
     wf_updates = {}
@@ -653,6 +712,10 @@ def api_test_summary():
     """Generate a test summary table similar to Daily Report's Test Summary."""
     conn = get_conn()
     rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+    report_row = conn.execute(
+        "SELECT ts_test_names FROM reports WHERE id = ?",
+        (rid,)
+    ).fetchone()
 
     rows = conn.execute(
         """SELECT wf_num, config, test_idx, total_units, spec_fail_count,
@@ -665,16 +728,24 @@ def api_test_summary():
 
     # Load real test names from wf_names table
     wf_names = get_wf_names()
+    report_test_names = {}
+    if report_row and report_row.get('ts_test_names'):
+        try:
+            report_test_names = json.loads(report_row['ts_test_names']) or {}
+        except Exception:
+            report_test_names = {}
 
     summary = {}
     for r in rows:
         wf = r['wf_num']
+        # Prefer per-report TS names; fallback to wf_names metadata table
+        wf_real_names = report_test_names.get(wf) or wf_names.get(wf, {}).get('test_names', [])
         if wf not in summary:
             summary[wf] = {
                 'wf': wf,
                 'wf_name': wf_names.get(wf, {}).get('name', ''),
                 'configs': {},
-                'test_names': list(wf_names.get(wf, {}).get('test_names', [])),
+                'test_names': list(wf_real_names),
             }
 
         cfg = r['config']
@@ -684,8 +755,7 @@ def api_test_summary():
         t = r['total_units']
 
         # Use real test name if available, fallback to TestN
-        real_names = wf_names.get(wf, {}).get('test_names', [])
-        tname = real_names[ti] if ti < len(real_names) else f'Test{ti+1}'
+        tname = wf_real_names[ti] if ti < len(wf_real_names) else f'Test{ti+1}'
 
         # Ensure test_names array covers this index
         tn_list = summary[wf]['test_names']
@@ -817,6 +887,157 @@ def api_fa_list():
         fa_records = [f for f in fa_records if str(f.get('FA Status', '')).strip() == status]
     
     return jsonify({'records': fa_records, 'count': len(fa_records)})
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  API: Daily Issues (cross-referenced from Daily Report + FA Tracker)
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/api/daily/issues')
+def api_daily_issues():
+    """Get today's defects, cross-referenced between Daily Report DB and FA Tracker."""
+    conn = get_conn()
+
+    # 1. Get latest report
+    latest = conn.execute("SELECT MAX(id) as id FROM reports").fetchone()
+    if not latest or not latest['id']:
+        conn.close()
+        return jsonify({'error': 'No data', 'issues': [], 'consistency': {'is_consistent': True}}), 404
+    rid = latest['id']
+
+    rpt = conn.execute("SELECT report_date FROM reports WHERE id = ?", (rid,)).fetchone()
+    report_date = rpt['report_date'] if rpt else ''
+
+    # 2. Get failure_details from DB
+    rows = conn.execute(
+        """SELECT wf_num, config, test_idx, failure_details
+           FROM wf_results
+           WHERE report_id = ? AND failure_details IS NOT NULL AND failure_details != '[]'""",
+        (rid,)
+    ).fetchall()
+
+    wf_names_map = get_wf_names()
+    db_issues = []
+    for row in rows:
+        wf = row['wf_num']
+        cfg = row['config']
+        ti = row['test_idx']
+        try:
+            details = json.loads(row['failure_details'] or '[]')
+        except (json.JSONDecodeError, TypeError):
+            details = []
+
+        wf_info = wf_names_map.get(wf, {})
+        test_names = wf_info.get('test_names', [])
+        fallback_location = test_names[ti] if ti < len(test_names) and test_names[ti] else f'Test{ti + 1}'
+
+        for d in details:
+            db_issues.append({
+                'sn': str(d.get('sn', '')).strip(),
+                'wf': wf,
+                'config': cfg,
+                'type': d.get('type', ''),
+                'location': d.get('location', '') or fallback_location,
+            })
+
+    # 3. Get FA Tracker issues filtered by date
+    fa_issues = []
+    fa_path = _find_fa_tracker_by_date(report_date)
+    if fa_path:
+        try:
+            all_issues = fa_analysis.read_fa_tracker(fa_path)
+            for issue in all_issues:
+                # Filter by Open Date
+                open_date_raw = issue.get('Open Date', '')
+                if open_date_raw:
+                    issue_date = _parse_date_value(open_date_raw)
+                    if issue_date and issue_date != report_date:
+                        continue
+
+                sn = str(issue.get('SN', '')).strip()
+                if not sn:
+                    continue
+
+                wf_num = _normalize_wf(issue.get('WF', ''))
+                cfg = str(issue.get('Config', '')).strip()
+                ft = _normalize_failure_type(
+                    issue.get('Failure Type (Spec. or Strife)', '')
+                )
+                loc = str(issue.get('Failed Location', '')).strip()
+
+                fa_issues.append({
+                    'sn': sn,
+                    'wf': wf_num,
+                    'config': cfg,
+                    'type': ft,
+                    'location': loc,
+                    'symptom': str(issue.get('Failure Symptom / Failure Message', '')).strip(),
+                    'fa_status': str(issue.get('FA Status', '')).strip(),
+                    'fa_num': issue.get('_fa_num', ''),
+                })
+        except Exception:
+            pass  # FA Tracker read failed; db_issues will still be returned
+
+    conn.close()
+
+    # 4. Cross-reference by 5-dimension key: (sn, wf, config, type, location)
+    def _key(d):
+        return (d['sn'], d['wf'], d['config'], d['type'], d['location'])
+
+    db_map = {_key(d): d for d in db_issues}
+    fa_map = {_key(f): f for f in fa_issues}
+
+    matched_keys = set(db_map) & set(fa_map)
+    only_db_keys = set(db_map) - set(fa_map)
+    only_fa_keys = set(fa_map) - set(db_map)
+
+    issues = []
+
+    for k in matched_keys:
+        fa = fa_map[k]
+        db = db_map[k]
+        issues.append({
+            'sn': db['sn'], 'wf': db['wf'], 'config': db['config'],
+            'test': db['location'], 'type': db['type'],
+            'location': db['location'],
+            'symptom': fa.get('symptom', ''),
+            'fa_status': fa.get('fa_status', ''),
+            'fa_num': fa.get('fa_num', ''),
+            'source': 'matched',
+        })
+
+    for k in only_db_keys:
+        db = db_map[k]
+        issues.append({
+            'sn': db['sn'], 'wf': db['wf'], 'config': db['config'],
+            'test': db['location'], 'type': db['type'],
+            'location': db['location'],
+            'symptom': '', 'fa_status': '', 'fa_num': '',
+            'source': 'only_daily_report',
+        })
+
+    for k in only_fa_keys:
+        fa = fa_map[k]
+        issues.append({
+            'sn': fa['sn'], 'wf': fa['wf'], 'config': fa['config'],
+            'test': fa['location'], 'type': fa['type'],
+            'location': fa['location'],
+            'symptom': fa.get('symptom', ''),
+            'fa_status': fa.get('fa_status', ''),
+            'fa_num': fa.get('fa_num', ''),
+            'source': 'only_fa_tracker',
+        })
+
+    return jsonify({
+        'report_date': report_date,
+        'consistency': {
+            'matched': len(matched_keys),
+            'only_daily_report': len(only_db_keys),
+            'only_fa_tracker': len(only_fa_keys),
+            'is_consistent': len(only_db_keys) == 0 and len(only_fa_keys) == 0,
+        },
+        'issues': sorted(issues, key=lambda x: (x['wf'], x['config'], x['sn'])),
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════
