@@ -17,7 +17,9 @@ from db import (
     get_sn_history, get_daily_changes_by_cp, get_completion_stats,
     get_failure_rate_stats, get_predictions, update_prediction,
     init_categories, get_category_wfs, export_sn_records,
-    wf_sort_key, get_wf_names, get_wf_cps, get_wf_config_progress_rows
+    wf_sort_key, get_wf_names, get_wf_cps, get_wf_config_progress_rows,
+    get_sn_fact_history, get_sn_check_details,
+    get_latest_wf_config_progress, get_failure_rate_stats_from_facts,
 )
 
 BASE_DIR = os.path.dirname(__file__)
@@ -56,6 +58,13 @@ def _normalize_failure_type(ft):
     if 'strife' in s:
         return 'strife'
     return s if s else 'unknown'
+
+
+def latest_active_report_id(conn):
+    row = conn.execute(
+        "SELECT id FROM reports WHERE is_active = 1 ORDER BY report_date DESC, version DESC LIMIT 1"
+    ).fetchone()
+    return row['id'] if row else None
 
 
 def _parse_date_value(val):
@@ -141,11 +150,10 @@ def spa_catchall(path):
 def api_overview():
     """Dashboard overview: completion, daily updates, failure summary."""
     conn = get_conn()
-    latest = conn.execute("SELECT MAX(id) as id FROM reports").fetchone()
-    if not latest or not latest['id']:
+    rid = latest_active_report_id(conn)
+    if not rid:
         conn.close()
         return jsonify({'error': 'No data'}), 404
-    rid = latest['id']
     
     # Completion stats
     completion = get_completion_stats(rid)
@@ -171,7 +179,7 @@ def api_overview():
         yesterday_map = {}
     
     # 获取今天各 WF+Config 的 latest CP 信息
-    cp_info_rows = get_wf_config_progress_rows(conn, rid)
+    cp_info_rows = get_latest_wf_config_progress(conn, rid)
     
     # 构建每日更新：每个 WF+Config，cp_delta = 今天 max_cp - 昨天 max_cp
     wf_updates = {}
@@ -190,7 +198,7 @@ def api_overview():
                 'sn_count': row['sn_count'] or 0,
                 'latest_cp': row['cp_name'] or '',
                 'latest_cp_idx': today_cp,
-                'total_cps': row['total_cps'] or 0,
+                'total_cps': row.get('total_cps') or 0,
             }
     
     # WF names mapping
@@ -253,7 +261,7 @@ def api_overview():
 @app.route('/api/completion/by-config')
 def api_completion_config():
     conn = get_conn()
-    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+    rid = latest_active_report_id(conn)
     stats = get_completion_stats(rid)
     conn.close()
     return jsonify(stats.get('by_config', {}))
@@ -262,7 +270,7 @@ def api_completion_config():
 @app.route('/api/completion/by-category')
 def api_completion_category():
     conn = get_conn()
-    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+    rid = latest_active_report_id(conn)
     stats = get_completion_stats(rid)
     conn.close()
     return jsonify(stats.get('by_category', {}))
@@ -276,7 +284,7 @@ def api_category_wf_detail(name):
         return jsonify({'error': f'Category {name} not found'}), 404
     
     conn = get_conn()
-    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+    rid = latest_active_report_id(conn)
     
     wf_details = []
     for wf in wfs:
@@ -317,7 +325,7 @@ def api_category_wf_detail(name):
 def api_wf_completion(wfn):
     """Per-WF completion detail across configs."""
     conn = get_conn()
-    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+    rid = latest_active_report_id(conn)
     
     rows = conn.execute(
         """SELECT config, total_cps, cp_results_json
@@ -508,9 +516,74 @@ def api_daily_updates():
 def api_failure_stats():
     """Multi-dimensional failure rate stats."""
     conn = get_conn()
-    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
-    stats = get_failure_rate_stats(rid)
+    rid = latest_active_report_id(conn)
     conn.close()
+
+    if not rid:
+        return jsonify({'by_config': {}, 'by_test': {}, 'by_wf': {}, 'top_failures': []})
+
+    # Try fact tables first, fall back to old wf_results table
+    fact_rows = get_failure_rate_stats_from_facts(rid)
+    if fact_rows:
+        by_config = {}
+        by_wf = {}
+        by_test = {}
+        top = []
+
+        for r in fact_rows:
+            cfg = r['config']
+            if cfg not in by_config:
+                by_config[cfg] = {'spec_fails': 0, 'strife_fails': 0, 'total_tests': 0}
+            by_config[cfg]['spec_fails'] += r['spec']
+            by_config[cfg]['strife_fails'] += r['strife']
+            by_config[cfg]['total_tests'] += r['total']
+
+            wfn = r['wf_num']
+            if wfn not in by_wf:
+                by_wf[wfn] = {'spec_fails': 0, 'strife_fails': 0, 'total_tests': 0}
+            by_wf[wfn]['spec_fails'] += r['spec']
+            by_wf[wfn]['strife_fails'] += r['strife']
+            by_wf[wfn]['total_tests'] += r['total']
+
+            t_total = r['total'] or 0
+            total_fails = r['spec'] + r['strife']
+            key = f"{wfn}_{cfg}_Test{r['test_idx']+1}"
+            by_test[key] = {
+                'wf': wfn, 'config': cfg, 'test_idx': r['test_idx'],
+                'spec': r['spec'], 'strife': r['strife'], 'total': t_total,
+                'spec_rate': round(r['spec'] / t_total * 100, 1) if t_total else 0,
+                'strife_rate': round(r['strife'] / t_total * 100, 1) if t_total else 0,
+                'total_rate': round(total_fails / t_total * 100, 1) if t_total else 0,
+            }
+            top.append({
+                'wf': wfn, 'cfg': cfg, 'test': f"Test{r['test_idx']+1}",
+                'spec': r['spec'], 'strife': r['strife'], 'total': t_total,
+                'rate': round(total_fails / t_total * 100, 1) if t_total else 0,
+            })
+
+        for d in by_config.values():
+            t = d['total_tests'] or 0
+            d['spec_rate'] = round(d['spec_fails'] / t * 100, 1) if t else 0
+            d['strife_rate'] = round(d['strife_fails'] / t * 100, 1) if t else 0
+            d['total_rate'] = round((d['spec_fails'] + d['strife_fails']) / t * 100, 1) if t else 0
+
+        for d in by_wf.values():
+            t = d['total_tests'] or 0
+            d['spec_rate'] = round(d['spec_fails'] / t * 100, 1) if t else 0
+            d['strife_rate'] = round(d['strife_fails'] / t * 100, 1) if t else 0
+            d['total_rate'] = round((d['spec_fails'] + d['strife_fails']) / t * 100, 1) if t else 0
+
+        top.sort(key=lambda x: x['rate'], reverse=True)
+
+        stats = {
+            'by_config': by_config,
+            'by_test': by_test,
+            'by_wf': by_wf,
+            'top_failures': top[:50],
+        }
+    else:
+        stats = get_failure_rate_stats(rid)
+
     return jsonify(stats)
 
 
@@ -521,7 +594,7 @@ def api_failure_top():
     by_dim = request.args.get('by', 'test')  # config, wf, test
     
     conn = get_conn()
-    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+    rid = latest_active_report_id(conn)
     stats = get_failure_rate_stats(rid)
     conn.close()
     
@@ -543,7 +616,7 @@ def api_failure_top():
 def api_wf_failures(wfn):
     """Per-WF failure detail with per-SN information."""
     conn = get_conn()
-    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+    rid = latest_active_report_id(conn)
     
     rows = conn.execute(
         """SELECT wf_num, config, test_idx, spec_fail_count, strife_fail_count,
@@ -603,7 +676,24 @@ def api_predictions_update():
 @app.route('/api/sn/<sn>')
 def api_sn_lookup(sn):
     """Get all test records for an SN across all dates."""
-    history = get_sn_history(sn)
+    # Load from fact tables (sn_cp_results) via new helper
+    history_rows = get_sn_fact_history(sn)
+    history = []
+    for row in history_rows:
+        if row['is_current_cp']:
+            history.append({
+                'date': row['report_date'],
+                'wf': row['wf_num'],
+                'config': row['config'],
+                'sn': row['sn'],
+                'unit_num': row['unit_num'],
+                'current_cp': row['cp_name'] or f"CP{row['cp_idx'] + 1}",
+                'cp_idx': row['cp_idx'],
+                'test_idx': row['test_idx'],
+                'test_name': row['test_name'] or f"Test{row['test_idx'] + 1}",
+                'status': row['status'],
+                'failure_type': row['failure_type'],
+            })
     
     if not history:
         return jsonify({'sn': sn, 'records': [], 'message': 'SN not found'}), 404
@@ -611,7 +701,7 @@ def api_sn_lookup(sn):
     # Group by WF for cleaner display
     by_wf = {}
     for h in history:
-        wf = h['wf_num']
+        wf = h['wf']
         if wf not in by_wf:
             by_wf[wf] = {
                 'wf': wf,
@@ -619,12 +709,15 @@ def api_sn_lookup(sn):
                 'latest': None,
             }
         entry = {
-            'date': h['report_date'],
+            'date': h['date'],
             'config': h['config'],
             'unit': h.get('unit_num', ''),
-            'current_cp': h['current_cp_name'],
-            'cp_idx': h['current_cp_idx'],
-            'total_cps': h['total_cps'],
+            'current_cp': h['current_cp'],
+            'cp_idx': h['cp_idx'],
+            'test_idx': h['test_idx'],
+            'test_name': h['test_name'],
+            'status': h['status'],
+            'failure_type': h['failure_type'],
         }
         by_wf[wf]['history'].append(entry)
         by_wf[wf]['latest'] = entry
@@ -719,11 +812,21 @@ def api_export():
 def api_test_summary():
     """Generate a test summary table similar to Daily Report's Test Summary."""
     conn = get_conn()
-    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
-    report_row = conn.execute(
-        "SELECT ts_test_names FROM reports WHERE id = ?",
-        (rid,)
-    ).fetchone()
+    rid = latest_active_report_id(conn)
+
+    # Load test names from report_test_names table
+    report_test_names = {}
+    for row in conn.execute(
+        """SELECT wf_num, test_idx, test_name
+           FROM report_test_names
+           WHERE report_id = ?
+           ORDER BY wf_num, test_idx""",
+        (rid,),
+    ).fetchall():
+        names = report_test_names.setdefault(row['wf_num'], [])
+        while len(names) <= row['test_idx']:
+            names.append('')
+        names[row['test_idx']] = row['test_name']
 
     rows = conn.execute(
         """SELECT wf_num, config, test_idx, total_units, spec_fail_count,
@@ -734,14 +837,8 @@ def api_test_summary():
     ).fetchall()
     conn.close()
 
-    # Load real test names from wf_names table
+    # Load real test names from wf_names table for fallback
     wf_names = get_wf_names()
-    report_test_names = {}
-    if report_row and report_row.get('ts_test_names'):
-        try:
-            report_test_names = json.loads(report_row['ts_test_names']) or {}
-        except Exception:
-            report_test_names = {}
 
     summary = {}
     for r in rows:

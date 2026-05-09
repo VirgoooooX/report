@@ -288,6 +288,83 @@ def get_sn_cp_current_progress(conn, report_id):
     return rows
 
 
+def get_sn_fact_history(sn):
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT r.report_date, f.report_id, f.wf_num, f.config, f.sn, f.unit_num,
+                  f.test_idx, tn.test_name, f.cp_idx, c.cp_name,
+                  f.status, f.failure_type, f.is_current_cp
+           FROM sn_cp_results f
+           JOIN reports r ON r.id = f.report_id AND r.is_active = 1
+           LEFT JOIN report_cps c
+             ON c.report_id = f.report_id AND c.wf_num = f.wf_num AND c.cp_idx = f.cp_idx
+           LEFT JOIN report_test_names tn
+             ON tn.report_id = f.report_id AND tn.wf_num = f.wf_num AND tn.test_idx = f.test_idx
+           WHERE f.sn = ?
+           ORDER BY r.report_date, f.wf_num, f.config, f.cp_idx""",
+        (sn,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_sn_check_details(report_id, wf_num, config, sn, cp_idx):
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT check_item_idx, check_item, raw_value, normalized_value,
+                  status, failure_type, fill_color, font_color, source_row, source_col
+           FROM sn_check_results
+           WHERE report_id = ? AND wf_num = ? AND config = ? AND sn = ? AND cp_idx = ?
+           ORDER BY check_item_idx""",
+        (report_id, wf_num, config, sn, cp_idx),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
+def get_latest_wf_config_progress(conn, report_id):
+    return conn.execute(
+        """WITH per_sn AS (
+               SELECT wf_num, config, sn,
+                      MAX(CASE WHEN is_current_cp = 1 THEN cp_idx ELSE NULL END) AS current_cp_idx
+               FROM sn_cp_results
+               WHERE report_id = ?
+               GROUP BY wf_num, config, sn
+           ),
+           per_cfg AS (
+               SELECT wf_num, config,
+                      MAX(current_cp_idx) AS max_cp_idx,
+                      COUNT(*) AS sn_count
+               FROM per_sn
+               GROUP BY wf_num, config
+           )
+           SELECT p.wf_num, p.config, p.max_cp_idx,
+                  c.cp_name, c.test_idx, p.sn_count
+           FROM per_cfg p
+           LEFT JOIN report_cps c
+             ON c.report_id = ?
+            AND c.wf_num = p.wf_num
+            AND c.cp_idx = p.max_cp_idx""",
+        (report_id, report_id),
+    ).fetchall()
+
+
+def get_failure_rate_stats_from_facts(report_id):
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT wf_num, config, test_idx,
+                  COUNT(DISTINCT CASE WHEN status IN ('pass', 'spec_fail', 'strife_fail') THEN sn END) AS total,
+                  COUNT(DISTINCT CASE WHEN failure_type = 'spec' THEN sn END) AS spec,
+                  COUNT(DISTINCT CASE WHEN failure_type = 'strife' THEN sn END) AS strife
+           FROM sn_cp_results
+           WHERE report_id = ?
+           GROUP BY wf_num, config, test_idx""",
+        (report_id,),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
 def get_wf_cps(wf_num=None):
     """获取 CP 信息。如果指定 wf_num 返回单个 WF 的列表，否则返回 {wf_num: [...]}
     """
