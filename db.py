@@ -155,6 +155,7 @@ def init_db(drop_all=False):
             spec_fail_count INTEGER DEFAULT 0,
             strife_fail_count INTEGER DEFAULT 0,
             failure_sns TEXT DEFAULT '[]',
+            failure_details TEXT DEFAULT '[]',
             UNIQUE(report_id, wf_num, config, test_idx)
         );
 
@@ -267,6 +268,10 @@ def init_db(drop_all=False):
         """)
     except:
         pass
+    try:
+        conn.execute("ALTER TABLE wf_results ADD COLUMN failure_details TEXT DEFAULT '[]'")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     conn.commit()
     conn.close()
 
@@ -311,11 +316,21 @@ def save_report(report_date, results, fa_stats, excel_path, ts_test_names=None):
                 total_strife += stf
                 if sf > 0 or stf > 0: has_fail = True
                 
+                fd = d.get('failure_details', [])
+                # Backward compat: if no failure_details (old engine data), generate from old format
+                if not fd and (d.get('spec_fails') or d.get('strife_fails')):
+                    for sn in d.get('spec_fails', []):
+                        fd.append({'sn': sn, 'type': 'spec', 'location': ''})
+                    for sn in d.get('strife_fails', []):
+                        fd.append({'sn': sn, 'type': 'strife', 'location': ''})
+
                 conn.execute(
                     """INSERT OR REPLACE INTO wf_results 
-                       (report_id, wf_num, config, test_idx, total_units, spec_fail_count, strife_fail_count, failure_sns)
-                       VALUES (?,?,?,?,?,?,?,?)""",
-                    (report_id, wfn, cfg, ti, t, sf, stf, json.dumps(d['spec_fails'] + d['strife_fails']))
+                       (report_id, wf_num, config, test_idx, total_units, spec_fail_count, strife_fail_count, failure_sns, failure_details)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (report_id, wfn, cfg, ti, t, sf, stf,
+                     json.dumps(d['spec_fails'] + d['strife_fails']),
+                     json.dumps(fd))
                 )
         if has_fail: wfs_with_fails += 1
     
@@ -569,6 +584,39 @@ def get_daily_changes_by_cp(report_id):
             })
 
     return changes
+
+
+def get_wf_config_progress_rows(conn, report_id):
+    """
+    Return one progress row per WF+Config.
+
+    The CP name is selected from a row whose current_cp_idx equals the max
+    current_cp_idx, so a slower SN cannot win by text ordering of its CP name.
+    """
+    return conn.execute(
+        """
+        WITH max_progress AS (
+            SELECT wf_num, config,
+                   MAX(current_cp_idx) as max_cp_idx,
+                   MAX(total_cps) as total_cps,
+                   COUNT(*) as sn_count
+            FROM sn_progress
+            WHERE report_id = ?
+            GROUP BY wf_num, config
+        )
+        SELECT mp.wf_num, mp.config, mp.max_cp_idx,
+               MIN(sp.current_cp_name) as cp_name,
+               mp.total_cps, mp.sn_count
+        FROM max_progress mp
+        JOIN sn_progress sp
+          ON sp.report_id = ?
+         AND sp.wf_num = mp.wf_num
+         AND sp.config = mp.config
+         AND sp.current_cp_idx = mp.max_cp_idx
+        GROUP BY mp.wf_num, mp.config, mp.max_cp_idx, mp.total_cps, mp.sn_count
+        """,
+        (report_id, report_id),
+    ).fetchall()
 
 
 # ── Completion & Failure Stats ──────────────────────────────────────────
