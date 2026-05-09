@@ -8,15 +8,19 @@
     </div>
     <div class="daily-body" :class="{ collapsed: !expanded }">
       <div v-if="!wfUpdates.length" class="daily-empty">No updates today</div>
-      <div v-for="wf in wfUpdates" :key="wf.wf" class="wf-group">
-        <div class="wf-row">
-          <span class="wf-pill">WF{{ wf.wf }}</span>
-          <span class="wf-name">{{ wfName(wf.wf) }}</span>
-        </div>
-        <div v-for="cfg in wf.configs" :key="cfg.config" class="cfg-row">
-          <span class="cfg-name" :style="{ color: `var(${cfgColor(cfg.config)})` }">{{ cfg.config }}</span>
-          <span class="cfg-count">+{{ cfg.cp_delta }} CPs</span>
-          <span class="cfg-latest">{{ cfg.latest_cp }}</span>
+      <div class="wf-grid" v-else>
+        <div v-for="wf in wfUpdates" :key="wf.wf" class="wf-card">
+          <div class="wf-head">
+            <span class="wf-pill">WF{{ wf.wf }}</span>
+            <span class="wf-name">{{ wfName(wf.wf) }}</span>
+          </div>
+          <div class="cfg-list">
+            <div v-for="cfg in wf.configs" :key="cfg.config" class="cfg-item">
+              <span class="cfg-tag" :style="cfgStyle(cfg.config)">{{ cfg.config }}</span>
+              <span class="cfg-delta">+{{ cfg.cp_delta }} CP</span>
+              <span class="cfg-info">{{ cfg.latest_cp }} <span class="cfg-progress">({{ cfg.latest_cp_idx != null ? cfg.latest_cp_idx + 1 : '—' }}/{{ cfg.total_cps }})</span></span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -33,158 +37,92 @@ const props = defineProps({
 
 const store = useAppStore()
 const expanded = ref(true)
-
 const toggle = () => { expanded.value = !expanded.value }
 
 const wfUpdates = computed(() => props.dailyData?.wf_updates ?? [])
 const wfCount = computed(() => wfUpdates.value.length)
 
-function wfName(key) {
-  return store.wfNames[key] || key
-}
+function wfName(key) { return store.wfNames[key] || '' }
 
-function cfgColor(name) {
-  const map = {
-    R1FNF: '--chart-r1fnf',
-    R2CNM: '--chart-r2cnm',
-    R3: '--chart-r3',
-    R4: '--chart-r4'
-  }
-  return map[name] || '--accent-steel'
+const CFG_COLORS = { R1FNF: '#4f6f8f', R2CNM: '#0891b2', R3: '#d97706', R4: '#059669' }
+function cfgStyle(name) {
+  const c = CFG_COLORS[name] || '#4f6f8f'
+  return { background: c + '14', color: c, borderColor: c + '30' }
 }
 </script>
 
 <style scoped>
-.daily-card {
-  overflow: hidden;
-}
-
+.daily-card { overflow: hidden; }
 .daily-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 20px;
-  cursor: pointer;
-  user-select: none;
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 20px; cursor: pointer; user-select: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--duration-fast);
+}
+.daily-card:has(.daily-body:not(.collapsed)) .daily-header {
+  border-bottom-color: var(--border-light);
 }
 
 .chevron {
-  font-size: 10px;
-  color: var(--text-muted);
+  font-size: 10px; color: var(--text-muted);
   transition: transform var(--duration-fast) var(--ease-in-out);
 }
-
-.chevron.open {
-  transform: rotate(90deg);
-}
-
-.daily-title {
-  font-family: var(--font-display);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.daily-count {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
+.chevron.open { transform: rotate(90deg); }
+.daily-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.daily-count { font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
 .toggle-btn {
-  margin-left: auto;
-  padding: 4px 12px;
-  font-size: 12px;
-  font-family: var(--font-display);
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background var(--duration-fast) var(--ease-in-out);
+  margin-left: auto; padding: 4px 12px; font-size: 12px;
+  color: var(--text-secondary); background: transparent;
+  border: 1px solid var(--border-input); border-radius: var(--radius-sm);
+  cursor: pointer; transition: background var(--duration-fast);
 }
+.toggle-btn:hover { background: var(--bg-row-stripe); }
 
-.toggle-btn:hover {
-  background: var(--bg-row-stripe);
+.daily-body { max-height: 6000px; overflow: hidden; transition: max-height var(--duration-normal) var(--ease-in-out); }
+.daily-body.collapsed { max-height: 0; }
+.daily-empty { padding: 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+/* WF Grid */
+.wf-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 1px;
+  background: var(--border-light);
 }
-
-.daily-body {
-  max-height: 6000px;
-  overflow: hidden;
-  transition: max-height var(--duration-normal) var(--ease-in-out);
-  padding: 0 20px 14px;
+.wf-card {
+  background: var(--bg-card);
+  padding: 12px 16px;
 }
-
-.daily-body.collapsed {
-  max-height: 0;
-  padding: 0 20px;
+.wf-head {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 6px;
 }
-
-.daily-empty {
-  padding: 20px 0;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.wf-group {
-  margin-bottom: 10px;
-}
-
-.wf-group:last-child {
-  margin-bottom: 0;
-}
-
-.wf-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-
 .wf-pill {
-  display: inline-block;
-  padding: 2px 8px;
-  background: #1a2332;
-  color: #ffffff;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  border-radius: var(--radius-sm);
+  padding: 2px 8px; background: #1a2332; color: #fff;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  border-radius: var(--radius-sm); flex-shrink: 0;
 }
-
 .wf-name {
-  font-family: var(--font-display);
-  font-size: 13px;
-  color: var(--text-muted);
+  font-size: 13px; color: var(--text-secondary);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; min-width: 0;
 }
 
-.cfg-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-left: 24px;
-  margin-top: 3px;
+/* Config list */
+.cfg-list { display: flex; flex-direction: column; gap: 2px; }
+.cfg-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 0; font-size: 12px;
 }
-
-.cfg-name {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 500;
-  min-width: 60px;
+.cfg-tag {
+  padding: 0 6px; font-family: var(--font-mono); font-size: 11px;
+  font-weight: 600; border-radius: 3px; border: 1px solid;
+  flex-shrink: 0;
 }
-
-.cfg-count {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-success);
+.cfg-delta {
+  font-family: var(--font-mono); font-weight: 600;
+  color: var(--color-success); flex-shrink: 0; min-width: 52px;
 }
-
-.cfg-latest {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-muted);
-}
+.cfg-info { color: var(--text-secondary); font-size: 12px; }
+.cfg-progress { color: var(--text-muted); font-size: 11px; }
 </style>
