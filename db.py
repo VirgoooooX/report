@@ -729,6 +729,8 @@ def init_db(drop_all=False, conn=None):
 
 # ── Save ───────────────────────────────────────────────────────────────
 
+# wf_results is maintained as a derived compatibility summary during migration.
+# SN-level facts are stored in sn_cp_results/sn_check_results.
 def save_report(report_date, results, fa_stats, excel_path, ts_test_names=None, report_id=None):
     """
     Saves an analysis snapshot to the database.
@@ -937,6 +939,8 @@ def get_overview_stats():
 
 # ── SN Progress ─────────────────────────────────────────────────────────
 
+# Compatibility path during the SN fact-table migration.
+# New read APIs should prefer sn_cp_results/sn_check_results.
 def save_sn_progress(report_id, progress_data):
     """
     保存 per-SN CP 进度快照。
