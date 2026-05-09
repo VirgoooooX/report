@@ -5,14 +5,14 @@
         <thead>
           <tr>
             <th class="ts-wf-hd" rowspan="2">WF</th>
-            <th v-for="n in 3" :key="'tn'+n" class="ts-tn-hd" rowspan="2">Test{{ n }}</th>
             <template v-for="(t, ti) in tests" :key="ti">
-              <th class="ts-test-hd" :colspan="4">{{ t }}</th>
+              <th class="ts-test-hd" :colspan="5">{{ t }}</th>
               <th v-if="ti < tests.length - 1" class="ts-gap"></th>
             </template>
           </tr>
           <tr>
             <template v-for="(t, ti) in tests" :key="'sub-'+ti">
+              <th class="ts-tn-sub">Name</th>
               <th v-for="cfg in configList" :key="cfg" class="ts-cfg-sub"
                   :style="{ color: cfgColor(cfg) }">{{ cfg }}</th>
               <th v-if="ti < tests.length - 1" class="ts-gap"></th>
@@ -22,10 +22,8 @@
         <tbody>
           <tr v-for="wf in sortedWfs" :key="wf.wf">
             <td class="ts-wf-col">WF{{ wf.wf }}</td>
-            <td v-for="n in 3" :key="'tn'+n" class="ts-tn-col">
-              {{ wfTestName(wf, n-1) }}
-            </td>
             <template v-for="(t, ti) in tests" :key="ti">
+              <td class="ts-tn-col">{{ wfTestName(wf, ti) }}</td>
               <td v-for="cfg in configList" :key="cfg"
                   :class="cellClass(wf, cfg, ti)"
                   @click="onCellClick(wf, cfg, ti)">
@@ -87,19 +85,12 @@ const sortedWfs = computed(() => {
   )
 })
 
-function wfTestName(wf, slot) {
+function wfTestName(wf, ti) {
+  // Use wf.test_names per slot
   const tn = wf.test_names
-  if (tn && tn[slot]) return tn[slot]
-  // Fallback: get from config data
-  const cfg = wf.configs
-  if (cfg) {
-    const firstCfg = Object.values(cfg)[0]
-    if (firstCfg) {
-      const keys = Object.keys(firstCfg)
-      if (keys[slot]) return keys[slot]
-    }
-  }
-  return '—'
+  if (tn && tn[ti]) return tn[ti]
+  // Fallback: use the global test name for this index
+  return tests.value[ti] || '—'
 }
 
 function cfgColor(c) { return CFG_COLORS[c] || '#4f6f8f' }
@@ -145,18 +136,19 @@ function onCellClick(wf, cfg, ti) {
   background: var(--bg-row-stripe); border-bottom: 1px solid var(--border-light);
   position: sticky; left: 0; z-index: 3;
 }
-.ts-tn-hd {
-  padding: 6px 4px; font-size: 10px; font-weight: 600; text-align: left;
-  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
-  background: var(--bg-row-stripe); border-bottom: 1px solid var(--border-light);
-  min-width: 120px; max-width: 200px;
-}
 .ts-test-hd {
   padding: 5px 2px; font-size: 11px; font-weight: 600;
   color: var(--text-primary); background: var(--bg-row-stripe);
   border-bottom: 1px solid var(--border-light);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   max-width: 120px;
+}
+.ts-tn-sub {
+  padding: 4px 6px; font-size: 10px; font-weight: 400;
+  color: var(--text-muted); background: var(--bg-row-stripe);
+  border-bottom: 1px solid var(--border-light);
+  min-width: 60px; max-width: 140px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ts-cfg-sub {
   padding: 4px 6px; font-size: 10px; font-weight: 600;
@@ -165,28 +157,26 @@ function onCellClick(wf, cfg, ti) {
 .ts-gap { width: 3px; min-width: 3px; background: var(--border-light); padding: 0 !important; border-bottom: 1px solid var(--border-light); }
 
 .ts-wf-col {
-  padding: 6px 8px; text-align: left; font-family: var(--font-mono);
+  padding: 6px 6px; text-align: left; font-family: var(--font-mono);
   font-size: 11px; font-weight: 600; color: var(--text-secondary);
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-card);
-  position: sticky; left: 0; z-index: 1;
-  white-space: nowrap;
+  position: sticky; left: 0; z-index: 1; white-space: nowrap;
 }
 .ts-tn-col {
-  padding: 5px 8px; text-align: left;
+  padding: 5px 6px; text-align: left;
   font-size: 11px; color: var(--text-secondary);
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-card);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  max-width: 200px;
+  max-width: 140px; font-weight: 500;
 }
 
 td {
   padding: 5px 4px; text-align: center; font-family: var(--font-mono);
   font-size: 11px; font-variant-numeric: tabular-nums;
   border-bottom: 1px solid var(--border-light);
-  transition: filter var(--duration-fast);
-  white-space: nowrap;
+  transition: filter var(--duration-fast); white-space: nowrap;
 }
 
 .ts-pass { background: var(--color-success-bg); color: var(--color-success); }
