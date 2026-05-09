@@ -137,6 +137,96 @@ def save_wf_cps(wf_num, cp_list):
     conn.close()
 
 
+def save_report_wf_meta(conn, report_id, wf_names):
+    conn.executemany(
+        """INSERT OR REPLACE INTO report_wf_meta (report_id, wf_num, wf_name)
+           VALUES (?, ?, ?)""",
+        [(report_id, str(wf), name or '') for wf, name in wf_names.items()],
+    )
+
+
+def save_report_test_names(conn, report_id, test_names_by_wf):
+    rows = []
+    for wf, names in test_names_by_wf.items():
+        for idx, name in enumerate(names or []):
+            if name:
+                rows.append((report_id, str(wf), idx, str(name)))
+    conn.executemany(
+        """INSERT OR REPLACE INTO report_test_names
+           (report_id, wf_num, test_idx, test_name)
+           VALUES (?, ?, ?, ?)""",
+        rows,
+    )
+
+
+def save_report_cps(conn, report_id, cps_by_wf):
+    rows = []
+    for wf, cps in cps_by_wf.items():
+        for cp in cps:
+            rows.append((
+                report_id,
+                str(wf),
+                int(cp['cp_idx']),
+                str(cp['cp_name']),
+                cp.get('test_idx'),
+                json.dumps(cp.get('check_items', [])),
+            ))
+    conn.executemany(
+        """INSERT OR REPLACE INTO report_cps
+           (report_id, wf_num, cp_idx, cp_name, test_idx, check_items)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        rows,
+    )
+
+
+def get_report_wf_meta(conn, report_id):
+    rows = conn.execute(
+        "SELECT wf_num, wf_name FROM report_wf_meta WHERE report_id = ?",
+        (report_id,),
+    ).fetchall()
+    return {r['wf_num']: r['wf_name'] for r in rows}
+
+
+def get_report_test_names(conn, report_id):
+    rows = conn.execute(
+        """SELECT wf_num, test_idx, test_name
+           FROM report_test_names
+           WHERE report_id = ?
+           ORDER BY wf_num, test_idx""",
+        (report_id,),
+    ).fetchall()
+    result = {}
+    for r in rows:
+        names = result.setdefault(r['wf_num'], [])
+        while len(names) <= r['test_idx']:
+            names.append('')
+        names[r['test_idx']] = r['test_name']
+    return result
+
+
+def get_report_cps(conn, report_id, wf_num):
+    rows = conn.execute(
+        """SELECT cp_idx, cp_name, test_idx, check_items
+           FROM report_cps
+           WHERE report_id = ? AND wf_num = ?
+           ORDER BY cp_idx""",
+        (report_id, wf_num),
+    ).fetchall()
+    result = {}
+    for r in rows:
+        try:
+            check_items = json.loads(r['check_items'] or '[]')
+        except Exception:
+            check_items = []
+        result[r['cp_idx']] = {
+            'cp_idx': r['cp_idx'],
+            'cp_name': r['cp_name'],
+            'test_idx': r['test_idx'],
+            'check_items': check_items,
+        }
+    return result
+
+
 def get_wf_cps(wf_num=None):
     """获取 CP 信息。如果指定 wf_num 返回单个 WF 的列表，否则返回 {wf_num: [...]}
     """
@@ -302,6 +392,31 @@ def init_db(drop_all=False, conn=None):
             check_items TEXT DEFAULT '[]',
             UNIQUE(wf_num, cp_idx),
             FOREIGN KEY(wf_num) REFERENCES wf_names(wf_num)
+        );
+
+        CREATE TABLE IF NOT EXISTS report_wf_meta (
+            report_id INTEGER NOT NULL REFERENCES reports(id),
+            wf_num TEXT NOT NULL,
+            wf_name TEXT DEFAULT '',
+            PRIMARY KEY (report_id, wf_num)
+        );
+
+        CREATE TABLE IF NOT EXISTS report_test_names (
+            report_id INTEGER NOT NULL REFERENCES reports(id),
+            wf_num TEXT NOT NULL,
+            test_idx INTEGER NOT NULL,
+            test_name TEXT NOT NULL,
+            PRIMARY KEY (report_id, wf_num, test_idx)
+        );
+
+        CREATE TABLE IF NOT EXISTS report_cps (
+            report_id INTEGER NOT NULL REFERENCES reports(id),
+            wf_num TEXT NOT NULL,
+            cp_idx INTEGER NOT NULL,
+            cp_name TEXT NOT NULL,
+            test_idx INTEGER,
+            check_items TEXT DEFAULT '[]',
+            PRIMARY KEY (report_id, wf_num, cp_idx)
         );
 
         CREATE INDEX IF NOT EXISTS idx_wf_results_report ON wf_results(report_id);

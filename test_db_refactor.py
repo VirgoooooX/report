@@ -69,5 +69,34 @@ class ReportVersioningTests(unittest.TestCase):
             os.remove(path)
 
 
+class DefinitionSnapshotTests(unittest.TestCase):
+    def test_save_and_load_report_definitions(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            report_id = db.create_report_version(conn, '2026-05-09', 'report.xlsx')
+
+            db.save_report_wf_meta(conn, report_id, {'16.1': 'THC X 6 + Repetitive HSD PB'})
+            db.save_report_test_names(conn, report_id, {'16.1': ['THC X 6', 'Repetitive HSD PB']})
+            db.save_report_cps(conn, report_id, {
+                '16.1': [
+                    {'cp_idx': 0, 'cp_name': 'THC X 6', 'test_idx': 0, 'check_items': ['Cosmetic', 'ISB']},
+                    {'cp_idx': 49, 'cp_name': 'Bottom Surface After 450Cyc', 'test_idx': 1, 'check_items': ['FACT']},
+                ]
+            })
+
+            wf_meta = db.get_report_wf_meta(conn, report_id)
+            tests = db.get_report_test_names(conn, report_id)
+            cps = db.get_report_cps(conn, report_id, '16.1')
+
+            self.assertEqual(wf_meta['16.1'], 'THC X 6 + Repetitive HSD PB')
+            self.assertEqual(tests['16.1'][1], 'Repetitive HSD PB')
+            self.assertEqual(cps[49]['cp_name'], 'Bottom Surface After 450Cyc')
+            self.assertEqual(cps[49]['check_items'], ['FACT'])
+        finally:
+            conn.close()
+            os.remove(path)
+
+
 if __name__ == '__main__':
     unittest.main()
