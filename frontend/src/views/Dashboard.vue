@@ -42,6 +42,15 @@
       <DailyUpdates :daily-data="store.overviewData?.daily_updates" />
     </section>
 
+    <!-- 5. Daily Issues -->
+    <section class="section">
+      <div class="section-header">
+        <h2>Daily Issues</h2>
+        <div class="divider"></div>
+      </div>
+      <DailyIssues :consistency="dailyIssuesConsistency" :issues="dailyIssues" />
+    </section>
+
     <!-- Footer -->
     <footer class="page-footer">
       <span>Report Date: {{ store.reportDate || '—' }}</span>
@@ -64,12 +73,28 @@ import CategoryCards from '@/components/CategoryCards.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import TopFailChart from '@/components/TopFailChart.vue'
 import DailyUpdates from '@/components/DailyUpdates.vue'
+import DailyIssues from '@/components/DailyIssues.vue'
 import CatManageModal from '@/components/CatManageModal.vue'
 
 const store = useAppStore()
 const router = useRouter()
 
 const showCatModal = ref(false)
+
+const dailyIssues = ref([])
+const dailyIssuesConsistency = ref({})
+
+async function fetchDailyIssues() {
+  try {
+    const r = await fetch('/api/daily/issues')
+    if (!r.ok) return
+    const data = await r.json()
+    dailyIssues.value = data.issues || []
+    dailyIssuesConsistency.value = data.consistency || {}
+  } catch {
+    // silently handle
+  }
+}
 
 const trendData = computed(() => {
   return store.overviewData?.trend ?? []
@@ -105,7 +130,10 @@ function goCategory(name) {
 }
 
 async function loadAll() {
-  await store.fetchOverview()
+  await Promise.all([
+    store.fetchOverview(),
+    fetchDailyIssues(),
+  ])
 }
 
 onMounted(async () => {
