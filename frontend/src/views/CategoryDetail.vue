@@ -34,7 +34,7 @@
             </div>
             <div class="summary-info">
               <div class="summary-label">Overall</div>
-              <div class="summary-pct">{{ overallPct }}%</div>
+              <div class="summary-pct">{{ overallPct.toFixed(1) }}%</div>
               <div class="summary-cps">{{ overallCompleted }} / {{ overallTotal }} CPs</div>
             </div>
           </div>

@@ -63,7 +63,7 @@
           <span class="wf-group-name">{{ groupName(group.wf) }}</span>
           <span class="wf-group-config">{{ group.config }}</span>
           <span class="wf-group-date">{{ group.latest_date || '—' }}</span>
-          <span class="wf-group-progress">{{ group.pct }}%</span>
+          <span class="wf-group-progress">{{ Number(group.pct).toFixed(1) }}%</span>
           <StatusBadge v-if="group.cp_status" :type="group.cp_status" />
         </div>
         <div v-show="expanded[group.wf]" class="wf-group-body">
@@ -85,7 +85,7 @@
                     <div class="inline-track">
                       <div class="inline-fill" :style="{ width: (row.pct ?? 0) + '%' }"></div>
                     </div>
-                    <span class="inline-label">{{ row.pct ?? 0 }}%</span>
+                    <span class="inline-label">{{ Number(row.pct ?? 0).toFixed(1) }}%</span>
                   </div>
                 </td>
                 <td>
