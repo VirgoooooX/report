@@ -268,6 +268,20 @@ def save_sn_check_results(conn, rows):
     return len(values)
 
 
+def get_sn_cp_current_progress(conn, report_id):
+    rows = conn.execute(
+        """SELECT wf_num, config, sn, unit_num,
+                  MAX(CASE WHEN is_current_cp = 1 THEN cp_idx ELSE NULL END) AS current_cp_idx,
+                  MAX(test_idx) AS test_idx,
+                  COUNT(*) AS cp_rows
+           FROM sn_cp_results
+           WHERE report_id = ?
+           GROUP BY wf_num, config, sn, unit_num""",
+        (report_id,),
+    ).fetchall()
+    return rows
+
+
 def get_wf_cps(wf_num=None):
     """获取 CP 信息。如果指定 wf_num 返回单个 WF 的列表，否则返回 {wf_num: [...]}
     """

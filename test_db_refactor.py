@@ -171,5 +171,24 @@ class SnFactPersistenceTests(unittest.TestCase):
             os.remove(path)
 
 
+class FactAggregateTests(unittest.TestCase):
+    def test_get_sn_cp_current_progress_uses_current_marker(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            report_id = db.create_report_version(conn, '2026-05-09', 'report.xlsx')
+            db.save_sn_cp_results(conn, [
+                {'report_id': report_id, 'report_date': '2026-05-09', 'wf_num': '16.1', 'config': 'R3', 'sn': 'SN1', 'unit_num': 'U1', 'test_idx': 0, 'cp_idx': 0, 'status': 'pass', 'failure_type': None, 'has_data': 1, 'is_current_cp': 0},
+                {'report_id': report_id, 'report_date': '2026-05-09', 'wf_num': '16.1', 'config': 'R3', 'sn': 'SN1', 'unit_num': 'U1', 'test_idx': 1, 'cp_idx': 49, 'status': 'pass', 'failure_type': None, 'has_data': 1, 'is_current_cp': 1},
+            ])
+
+            rows = db.get_sn_cp_current_progress(conn, report_id)
+
+            self.assertEqual(rows[0]['current_cp_idx'], 49)
+        finally:
+            conn.close()
+            os.remove(path)
+
+
 if __name__ == '__main__':
     unittest.main()
