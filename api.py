@@ -363,6 +363,34 @@ def api_category_remove_wf(name):
     return jsonify({'status': 'ok'})
 
 
+@app.route('/api/categories/<name>', methods=['DELETE'])
+def api_category_delete(name):
+    """删除一个分类。"""
+    conn = get_conn()
+    conn.execute("DELETE FROM wf_categories WHERE category_name = ?", (name,))
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/api/categories', methods=['POST'])
+def api_category_create():
+    """创建新分类。Body: {name: 'xxx', display_order: N}"""
+    data = request.get_json()
+    if not data or 'name' not in data:
+        return jsonify({'error': 'Missing name'}), 400
+    name = data['name'].strip()
+    display_order = data.get('display_order', 99)
+    conn = get_conn()
+    conn.execute(
+        "INSERT OR IGNORE INTO wf_categories (category_name, wf_nums, display_order) VALUES (?, '', ?)",
+        (name, display_order)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'status': 'ok'})
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  API: Daily Updates
 # ═══════════════════════════════════════════════════════════════════════
