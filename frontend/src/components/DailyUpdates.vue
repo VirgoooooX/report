@@ -83,26 +83,30 @@ function cfgProgress(cfg) {
 .daily-empty { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
 /* Flow list */
-.flow-list { padding: 8px 20px 16px; }
-.flow-block { padding: 10px 0; border-bottom: 1px solid var(--border-light); }
-.flow-block:last-child { border-bottom: none; }
+.flow-list { padding: 0 20px 16px; }
+.flow-block {
+  padding: 12px 0 12px 14px; border-left: 3px solid transparent;
+  transition: border-color var(--duration-fast);
+}
+.flow-block:hover { border-left-color: var(--border-card); }
+.flow-block + .flow-block { border-top: 1px solid var(--border-light); }
 
-.flow-label { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.flow-label { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .flow-pill {
-  padding: 2px 8px; background: #1a2332; color: #fff;
-  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-  border-radius: var(--radius-sm); flex-shrink: 0;
+  padding: 3px 10px; background: #1a2332; color: #fff;
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  border-radius: var(--radius-sm); flex-shrink: 0; letter-spacing: 0.3px;
 }
 .flow-name {
-  font-size: 13px; color: var(--text-secondary); font-weight: 500;
+  font-size: 14px; color: var(--text-primary); font-weight: 600;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* Config rows */
-.flow-configs { display: flex; flex-direction: column; gap: 4px; padding-left: 4px; }
+.flow-configs { display: flex; flex-direction: column; gap: 2px; padding-left: 6px; }
 .flow-cfg {
-  display: flex; align-items: center; gap: 8px;
-  padding: 4px 8px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; gap: 10px;
+  padding: 3px 6px; border-radius: var(--radius-sm);
   transition: background var(--duration-fast);
 }
 .flow-cfg:hover { background: var(--bg-root); }
@@ -110,23 +114,23 @@ function cfgProgress(cfg) {
 .cfg-badge {
   font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   padding: 1px 8px; border-radius: 3px; border: 1px solid;
-  flex-shrink: 0; min-width: 54px; text-align: center; white-space: nowrap;
+  flex-shrink: 0; min-width: 54px; text-align: center;
 }
 .cfg-delta {
-  font-family: var(--font-mono); font-size: 12px; font-weight: 700;
-  color: var(--color-success); flex-shrink: 0; min-width: 30px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  color: var(--color-success); flex-shrink: 0; min-width: 28px;
 }
 
-.cfg-progress-bar { flex: 1; min-width: 60px; }
-.cfg-bar-track { height: 4px; background: var(--bg-progress-track); border-radius: 2px; overflow: hidden; }
-.cfg-bar-fill { height: 100%; border-radius: 2px; transition: width 0.8s var(--ease-out); }
+.cfg-progress-bar { flex: 1; min-width: 50px; }
+.cfg-bar-track { height: 3px; background: var(--bg-progress-track); border-radius: 2px; overflow: hidden; }
+.cfg-bar-fill { height: 100%; border-radius: 2px; opacity: 0.45; transition: width 0.8s var(--ease-out); }
 
 .cfg-end {
-  font-family: var(--font-mono); font-size: 12px; color: var(--text-primary);
-  font-weight: 500; flex-shrink: 0; min-width: 48px; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);
+  flex-shrink: 0; min-width: 44px; white-space: nowrap;
 }
 .cfg-idx {
   font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);
-  flex-shrink: 0; min-width: 40px; text-align: right;
+  flex-shrink: 0; min-width: 36px; text-align: right;
 }
 </style>
