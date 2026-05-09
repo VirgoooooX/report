@@ -9,7 +9,7 @@
       </thead>
       <tbody>
         <tr v-for="wf in wfs" :key="wf">
-          <td class="wf-header">{{ wf }}</td>
+          <td class="wf-header">WF{{ wf }}</td>
           <td
             v-for="cfg in configs"
             :key="cfg"
@@ -118,7 +118,7 @@ function onCellClick(wf, cfg) {
   if (!cell) return
 
   emit('cell-click', {
-    wf,
+    wf: 'WF' + wf,
     cfg,
     test: '',
     failureSns: cell.failureSns || []
