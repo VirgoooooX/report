@@ -34,20 +34,18 @@ init_categories()
 # ── Daily Issue helpers ─────────────────────────────────────────────────
 
 def _normalize_wf(val):
-    """Unify WF number format: strip WF prefix, handle int/float/string."""
+    """Unify WF number format: strip WF prefix, handle int/float/string.
+    Preserve decimal WF numbers like 15.2, 15.3."""
     if val is None:
         return ''
     if isinstance(val, (int, float)):
-        return str(int(val))
+        return str(val)
     s = str(val).strip()
     for prefix in ('WF', 'Wf', 'wf'):
         if s.upper().startswith(prefix.upper()):
             s = s[len(prefix):].strip()
             break
-    try:
-        return str(int(float(s)))
-    except (ValueError, TypeError):
-        return s
+    return s.strip()
 
 
 def _normalize_failure_type(ft):
@@ -908,9 +906,9 @@ def api_daily_issues():
     rpt = conn.execute("SELECT report_date FROM reports WHERE id = ?", (rid,)).fetchone()
     report_date = rpt['report_date'] if rpt else ''
     
-    # Key function for 5-dimension comparison
+    # Key function for 6-dimension comparison
     def _key(d):
-        return (d['sn'], d['wf'], d['config'], d['type'], d['location'])
+        return (d['sn'], d['wf'], d['config'], d['type'], d['location'], d.get('failed_cycle', ''))
     
     # Get previous report for diff (Daily Report is cumulative)
     prev = conn.execute("SELECT id FROM reports WHERE id < ? ORDER BY id DESC LIMIT 1", (rid,)).fetchone()
@@ -946,6 +944,7 @@ def api_daily_issues():
                 'config': cfg,
                 'type': d.get('type', ''),
                 'location': d.get('location', '') or fallback_location,
+                'failed_cycle': d.get('failed_cp', ''),
             })
     
     # 2b. Filter to only NEW failures (not present in previous report)
@@ -976,6 +975,7 @@ def api_daily_issues():
                     'config': pcfg,
                     'type': d.get('type', ''),
                     'location': d.get('location', '') or pfallback,
+                    'failed_cycle': d.get('failed_cp', ''),
                 }))
         
         db_issues = [d for d in db_issues if _key(d) not in yesterday_keys]
@@ -1001,9 +1001,10 @@ def api_daily_issues():
                 wf_num = _normalize_wf(issue.get('WF', ''))
                 cfg = str(issue.get('Config', '')).strip()
                 ft = _normalize_failure_type(
-                    issue.get('Failure Type (Spec. or Strife)', '')
+                    issue.get('Failure Type \n(Spec. or Strife)', '')
                 )
                 loc = str(issue.get('Failed Location', '')).strip()
+                failed_cycle = str(issue.get('Failed Cycle Count', '')).strip()
 
                 fa_issues.append({
                     'sn': sn,
@@ -1011,6 +1012,7 @@ def api_daily_issues():
                     'config': cfg,
                     'type': ft,
                     'location': loc,
+                    'failed_cycle': failed_cycle,
                     'symptom': str(issue.get('Failure Symptom / Failure Message', '')).strip(),
                     'fa_status': str(issue.get('FA Status', '')).strip(),
                     'fa_num': issue.get('_fa_num', ''),
@@ -1037,6 +1039,7 @@ def api_daily_issues():
             'sn': db['sn'], 'wf': db['wf'], 'config': db['config'],
             'test': db['location'], 'type': db['type'],
             'location': db['location'],
+            'failed_cycle': db.get('failed_cycle', '') or fa.get('failed_cycle', ''),
             'symptom': fa.get('symptom', ''),
             'fa_status': fa.get('fa_status', ''),
             'fa_num': fa.get('fa_num', ''),
@@ -1049,6 +1052,7 @@ def api_daily_issues():
             'sn': db['sn'], 'wf': db['wf'], 'config': db['config'],
             'test': db['location'], 'type': db['type'],
             'location': db['location'],
+            'failed_cycle': db.get('failed_cycle', ''),
             'symptom': '', 'fa_status': '', 'fa_num': '',
             'source': 'only_daily_report',
         })
@@ -1059,6 +1063,7 @@ def api_daily_issues():
             'sn': fa['sn'], 'wf': fa['wf'], 'config': fa['config'],
             'test': fa['location'], 'type': fa['type'],
             'location': fa['location'],
+            'failed_cycle': fa.get('failed_cycle', ''),
             'symptom': fa.get('symptom', ''),
             'fa_status': fa.get('fa_status', ''),
             'fa_num': fa.get('fa_num', ''),

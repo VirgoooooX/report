@@ -339,7 +339,7 @@ def _parse_wf_sheet(ws, wfn, ts_names):
                 if last_real is None: dr += 1; continue
                 
                 test_idx = cp_test_map[last_real]
-                cs, ce, _ = cp_list[last_real]
+                cs, ce, cp_name = cp_list[last_real]
                 
                 # Count unit in all tests
                 for ti in range(num_tests):
@@ -369,6 +369,7 @@ def _parse_wf_sheet(ws, wfn, ts_names):
                         'sn': sn_str,
                         'type': type_str,
                         'location': location,
+                        'failed_cp': cp_name,
                     })
                 
                 dr += 1
