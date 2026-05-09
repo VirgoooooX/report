@@ -907,15 +907,23 @@ def api_daily_issues():
 
     rpt = conn.execute("SELECT report_date FROM reports WHERE id = ?", (rid,)).fetchone()
     report_date = rpt['report_date'] if rpt else ''
-
-    # 2. Get failure_details from DB
+    
+    # Key function for 5-dimension comparison
+    def _key(d):
+        return (d['sn'], d['wf'], d['config'], d['type'], d['location'])
+    
+    # Get previous report for diff (Daily Report is cumulative)
+    prev = conn.execute("SELECT id FROM reports WHERE id < ? ORDER BY id DESC LIMIT 1", (rid,)).fetchone()
+    prev_rid = prev['id'] if prev else None
+    
+    # 2. Get today's failure_details from DB
     rows = conn.execute(
         """SELECT wf_num, config, test_idx, failure_details
            FROM wf_results
            WHERE report_id = ? AND failure_details IS NOT NULL AND failure_details != '[]'""",
         (rid,)
     ).fetchall()
-
+    
     wf_names_map = get_wf_names()
     db_issues = []
     for row in rows:
@@ -926,11 +934,11 @@ def api_daily_issues():
             details = json.loads(row['failure_details'] or '[]')
         except (json.JSONDecodeError, TypeError):
             details = []
-
+        
         wf_info = wf_names_map.get(wf, {})
         test_names = wf_info.get('test_names', [])
         fallback_location = test_names[ti] if ti < len(test_names) and test_names[ti] else f'Test{ti + 1}'
-
+        
         for d in details:
             db_issues.append({
                 'sn': str(d.get('sn', '')).strip(),
@@ -939,6 +947,38 @@ def api_daily_issues():
                 'type': d.get('type', ''),
                 'location': d.get('location', '') or fallback_location,
             })
+    
+    # 2b. Filter to only NEW failures (not present in previous report)
+    if prev_rid:
+        prev_rows = conn.execute(
+            """SELECT wf_num, config, test_idx, failure_details
+               FROM wf_results
+               WHERE report_id = ? AND failure_details IS NOT NULL AND failure_details != '[]'""",
+            (prev_rid,)
+        ).fetchall()
+        
+        yesterday_keys = set()
+        for row in prev_rows:
+            pwf = row['wf_num']
+            pcfg = row['config']
+            pti = row['test_idx']
+            try:
+                pdetails = json.loads(row['failure_details'] or '[]')
+            except:
+                pdetails = []
+            pwf_info = wf_names_map.get(pwf, {})
+            ptest_names = pwf_info.get('test_names', [])
+            pfallback = ptest_names[pti] if pti < len(ptest_names) and ptest_names[pti] else f'Test{pti + 1}'
+            for d in pdetails:
+                yesterday_keys.add(_key({
+                    'sn': str(d.get('sn', '')).strip(),
+                    'wf': pwf,
+                    'config': pcfg,
+                    'type': d.get('type', ''),
+                    'location': d.get('location', '') or pfallback,
+                }))
+        
+        db_issues = [d for d in db_issues if _key(d) not in yesterday_keys]
 
     # 3. Get FA Tracker issues filtered by date
     fa_issues = []
@@ -981,9 +1021,6 @@ def api_daily_issues():
     conn.close()
 
     # 4. Cross-reference by 5-dimension key: (sn, wf, config, type, location)
-    def _key(d):
-        return (d['sn'], d['wf'], d['config'], d['type'], d['location'])
-
     db_map = {_key(d): d for d in db_issues}
     fa_map = {_key(f): f for f in fa_issues}
 
