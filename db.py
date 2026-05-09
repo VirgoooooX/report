@@ -227,6 +227,47 @@ def get_report_cps(conn, report_id, wf_num):
     return result
 
 
+def save_sn_cp_results(conn, rows):
+    values = [
+        (
+            r['report_id'], r['report_date'], r['wf_num'], r['config'], r['sn'],
+            r.get('unit_num', ''), r['test_idx'], r['cp_idx'], r['status'],
+            r.get('failure_type'), int(r.get('has_data', 0)), int(r.get('is_current_cp', 0)),
+        )
+        for r in rows
+    ]
+    conn.executemany(
+        """INSERT OR REPLACE INTO sn_cp_results
+           (report_id, report_date, wf_num, config, sn, unit_num, test_idx,
+            cp_idx, status, failure_type, has_data, is_current_cp)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        values,
+    )
+    return len(values)
+
+
+def save_sn_check_results(conn, rows):
+    values = [
+        (
+            r['report_id'], r['report_date'], r['wf_num'], r['config'], r['sn'],
+            r.get('unit_num', ''), r['test_idx'], r['cp_idx'], r['check_item_idx'],
+            r['check_item'], r.get('raw_value'), r.get('normalized_value'),
+            r['status'], r.get('failure_type'), r.get('fill_color'),
+            r.get('font_color'), r.get('source_row'), r.get('source_col'),
+        )
+        for r in rows
+    ]
+    conn.executemany(
+        """INSERT OR REPLACE INTO sn_check_results
+           (report_id, report_date, wf_num, config, sn, unit_num, test_idx,
+            cp_idx, check_item_idx, check_item, raw_value, normalized_value,
+            status, failure_type, fill_color, font_color, source_row, source_col)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        values,
+    )
+    return len(values)
+
+
 def get_wf_cps(wf_num=None):
     """获取 CP 信息。如果指定 wf_num 返回单个 WF 的列表，否则返回 {wf_num: [...]}
     """
@@ -419,6 +460,44 @@ def init_db(drop_all=False, conn=None):
             PRIMARY KEY (report_id, wf_num, cp_idx)
         );
 
+        CREATE TABLE IF NOT EXISTS sn_cp_results (
+            report_id INTEGER NOT NULL REFERENCES reports(id),
+            report_date TEXT NOT NULL,
+            wf_num TEXT NOT NULL,
+            config TEXT NOT NULL,
+            sn TEXT NOT NULL,
+            unit_num TEXT DEFAULT '',
+            test_idx INTEGER NOT NULL,
+            cp_idx INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            failure_type TEXT,
+            has_data INTEGER NOT NULL DEFAULT 0,
+            is_current_cp INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (report_id, wf_num, config, sn, cp_idx)
+        );
+
+        CREATE TABLE IF NOT EXISTS sn_check_results (
+            report_id INTEGER NOT NULL REFERENCES reports(id),
+            report_date TEXT NOT NULL,
+            wf_num TEXT NOT NULL,
+            config TEXT NOT NULL,
+            sn TEXT NOT NULL,
+            unit_num TEXT DEFAULT '',
+            test_idx INTEGER NOT NULL,
+            cp_idx INTEGER NOT NULL,
+            check_item_idx INTEGER NOT NULL,
+            check_item TEXT NOT NULL,
+            raw_value TEXT,
+            normalized_value TEXT,
+            status TEXT NOT NULL,
+            failure_type TEXT,
+            fill_color TEXT,
+            font_color TEXT,
+            source_row INTEGER,
+            source_col INTEGER,
+            PRIMARY KEY (report_id, wf_num, config, sn, cp_idx, check_item_idx)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_wf_results_report ON wf_results(report_id);
         CREATE INDEX IF NOT EXISTS idx_wf_results_wf ON wf_results(wf_num, config, test_idx);
         CREATE INDEX IF NOT EXISTS idx_daily_changes_report ON daily_changes(report_id);
@@ -426,6 +505,13 @@ def init_db(drop_all=False, conn=None):
         CREATE INDEX IF NOT EXISTS idx_sn_progress_sn ON sn_progress(sn);
         CREATE INDEX IF NOT EXISTS idx_sn_progress_wf ON sn_progress(wf_num, config);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_sn_progress_unique ON sn_progress(report_id, wf_num, config, sn);
+
+        CREATE INDEX IF NOT EXISTS idx_reports_active_date ON reports(report_date, is_active);
+        CREATE INDEX IF NOT EXISTS idx_sn_cp_report_wf_cfg ON sn_cp_results(report_id, wf_num, config, test_idx);
+        CREATE INDEX IF NOT EXISTS idx_sn_cp_sn ON sn_cp_results(sn, report_id);
+        CREATE INDEX IF NOT EXISTS idx_sn_cp_progress ON sn_cp_results(report_id, wf_num, config, sn, cp_idx);
+        CREATE INDEX IF NOT EXISTS idx_sn_check_report_wf_cfg ON sn_check_results(report_id, wf_num, config, test_idx, cp_idx);
+        CREATE INDEX IF NOT EXISTS idx_sn_check_sn ON sn_check_results(sn, report_id);
     """)
     # Migrations for existing databases
     try:

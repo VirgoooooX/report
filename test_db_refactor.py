@@ -98,5 +98,78 @@ class DefinitionSnapshotTests(unittest.TestCase):
             os.remove(path)
 
 
+class SnFactPersistenceTests(unittest.TestCase):
+    def test_save_and_query_sn_cp_results(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            report_id = db.create_report_version(conn, '2026-05-09', 'report.xlsx')
+            rows = [
+                {
+                    'report_id': report_id,
+                    'report_date': '2026-05-09',
+                    'wf_num': '16.1',
+                    'config': 'R3',
+                    'sn': 'D06P3Q46X0',
+                    'unit_num': 'ER3-16.1-6',
+                    'test_idx': 1,
+                    'cp_idx': 49,
+                    'status': 'pass',
+                    'failure_type': None,
+                    'has_data': 1,
+                    'is_current_cp': 1,
+                }
+            ]
+
+            db.save_sn_cp_results(conn, rows)
+
+            saved = conn.execute('SELECT * FROM sn_cp_results').fetchone()
+            self.assertEqual(saved['sn'], 'D06P3Q46X0')
+            self.assertEqual(saved['cp_idx'], 49)
+            self.assertEqual(saved['status'], 'pass')
+            self.assertEqual(saved['is_current_cp'], 1)
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_save_and_query_sn_check_results(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            report_id = db.create_report_version(conn, '2026-05-09', 'report.xlsx')
+            rows = [
+                {
+                    'report_id': report_id,
+                    'report_date': '2026-05-09',
+                    'wf_num': '16.1',
+                    'config': 'R3',
+                    'sn': 'D06P3Q46X0',
+                    'unit_num': 'ER3-16.1-6',
+                    'test_idx': 1,
+                    'cp_idx': 49,
+                    'check_item_idx': 0,
+                    'check_item': 'FACT',
+                    'raw_value': 'PASS',
+                    'normalized_value': 'PASS',
+                    'status': 'pass',
+                    'failure_type': None,
+                    'fill_color': '00000000',
+                    'font_color': '',
+                    'source_row': 20,
+                    'source_col': 42,
+                }
+            ]
+
+            db.save_sn_check_results(conn, rows)
+
+            saved = conn.execute('SELECT * FROM sn_check_results').fetchone()
+            self.assertEqual(saved['check_item'], 'FACT')
+            self.assertEqual(saved['source_row'], 20)
+            self.assertEqual(saved['status'], 'pass')
+        finally:
+            conn.close()
+            os.remove(path)
+
+
 if __name__ == '__main__':
     unittest.main()
