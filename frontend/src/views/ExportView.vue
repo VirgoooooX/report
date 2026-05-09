@@ -104,6 +104,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { requestJson } from '@/composables/useApi'
 import LoadingState from '@/components/LoadingState.vue'
 
 const store = useAppStore()
@@ -145,8 +146,8 @@ async function previewData() {
       config: filters.value.config || null,
       sn: filters.value.sn || null
     })
-  } catch {
-    // silently handle
+  } catch (e) {
+    store.error = e.message || 'Failed to preview export data'
   }
 }
 
@@ -174,17 +175,16 @@ async function downloadJSON() {
   params.set('format', 'json')
 
   try {
-    const r = await fetch(`/api/export?${params}`)
-    if (!r.ok) throw new Error('Download failed')
-    const blob = await r.blob()
+    const payload = await requestJson(`/api/export?${params}`)
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = `export-${Date.now()}.json`
     a.click()
     URL.revokeObjectURL(url)
-  } catch {
-    // silently handle
+  } catch (e) {
+    store.error = e.message || 'Download failed'
   }
 }
 </script>

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { requestJson } from '@/composables/useApi'
 
 export const useAppStore = defineStore('app', () => {
   const reportDate = ref('')
@@ -35,9 +36,7 @@ export const useAppStore = defineStore('app', () => {
     loading.value = true
     error.value = null
     try {
-      const r = await fetch('/api/dashboard/overview')
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      const data = await r.json()
+      const data = await requestJson('/api/dashboard/overview')
       overviewData.value = data
       reportDate.value = data.report_date || ''
       if (data.wf_names) {
@@ -59,9 +58,7 @@ export const useAppStore = defineStore('app', () => {
 
   async function fetchSummary() {
     try {
-      const r = await fetch('/api/test-summary')
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      summaryData.value = await r.json()
+      summaryData.value = await requestJson('/api/test-summary')
       return summaryData.value
     } catch (e) {
       error.value = e.message
@@ -70,8 +67,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function fetchCategories() {
-    const r = await fetch('/api/categories')
-    const d = await r.json()
+    const d = await requestJson('/api/categories')
     categories.value = d.categories || []
     return categories.value
   }
@@ -82,29 +78,24 @@ export const useAppStore = defineStore('app', () => {
     if (wf) params.push('wf=' + encodeURIComponent(wf))
     if (cfg) params.push('config=' + encodeURIComponent(cfg))
     if (params.length) url += '?' + params.join('&')
-    const r = await fetch(url)
-    const d = await r.json()
+    const d = await requestJson(url)
     predictions.value = d.predictions || []
     return predictions.value
   }
 
   async function fetchCategoryDetail(name) {
-    const r = await fetch(`/api/completion/category/${name}`)
-    const d = await r.json()
+    const d = await requestJson(`/api/completion/category/${encodeURIComponent(name)}`)
     categoryDetail.value = d
     return d
   }
 
   async function fetchSnResult(sn) {
-    const r = await fetch(`/api/sn/${encodeURIComponent(sn)}`)
-    if (!r.ok) throw new Error('SN not found')
-    snResult.value = await r.json()
+    snResult.value = await requestJson(`/api/sn/${encodeURIComponent(sn)}`)
     return snResult.value
   }
 
   async function searchSn(q) {
-    const r = await fetch(`/api/sn/search?q=${encodeURIComponent(q)}`)
-    return await r.json()
+    return await requestJson(`/api/sn/search?q=${encodeURIComponent(q)}`)
   }
 
   async function fetchExportData(filters) {
@@ -112,8 +103,7 @@ export const useAppStore = defineStore('app', () => {
     if (filters.wf) p.set('wf', filters.wf)
     if (filters.config) p.set('config', filters.config)
     if (filters.sn) p.set('sn', filters.sn)
-    const r = await fetch(`/api/export?${p}`)
-    const d = await r.json()
+    const d = await requestJson(`/api/export?${p}`)
     exportData.value = d
     return d
   }

@@ -13,6 +13,7 @@ import sys
 import re
 import datetime
 import argparse
+import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
 from engine import analyze, extract_sn_progress, extract_sn_fact_rows, build_failure_detail, read_test_schedule, read_test_summary, extract_all_cp_structures, attach_test_idx_to_cps
@@ -29,6 +30,7 @@ from db import (
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 REPORT_PATTERN = re.compile(r'M60 EVT Rel Daily Report_(\d{8})\.xlsx$')
 FA_PATTERN = re.compile(r'M60 EVT REL FA Tracker (\d{8})\.xlsx$')
+logger = logging.getLogger(__name__)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -442,7 +444,8 @@ def compute_auto_predictions(days=14):
             continue
 
         current_max = daily_data[-1]['max_cp'] or 0
-        remaining = total_cps - current_max
+        completed_cps = current_max + 1
+        remaining = total_cps - completed_cps
         if remaining <= 0:
             continue
 
@@ -502,8 +505,8 @@ def _populate_test_names():
         conn.close()
         if updated:
             print(f"   [OK] Updated {updated} test names in predictions")
-    except Exception as e:
-        pass  # silently skip if TS sheet not available
+    except Exception:
+        logger.exception("Failed to populate prediction test names from Test Summary")
 
 
 # ═══════════════════════════════════════════════════════════════════════

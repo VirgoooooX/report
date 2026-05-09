@@ -125,6 +125,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { requestJson } from '@/composables/useApi'
 import StatusBadge from '@/components/StatusBadge.vue'
 import LoadingState from '@/components/LoadingState.vue'
 
@@ -202,7 +203,9 @@ async function loadData() {
       store.fetchOverview(),
       store.fetchPredictions(filterWf.value || null, filterConfig.value || null)
     ])
-  } catch { /* silently handle */ }
+  } catch (e) {
+    store.error = e.message || 'Failed to load predictions'
+  }
 }
 
 function openEdit(row) {
@@ -214,7 +217,7 @@ function openEdit(row) {
 async function saveEdit() {
   if (!editRow.value) return
   try {
-    const r = await fetch('/api/predictions/update', {
+    await requestJson('/api/predictions/update', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -224,10 +227,11 @@ async function saveEdit() {
         predicted_date: editDate.value
       })
     })
-    if (!r.ok) throw new Error('Update failed')
-    editRow.value.predicted_date = editDate.value
+    await loadData()
     editModal.value = false
-  } catch { /* silently handle */ }
+  } catch (e) {
+    store.error = e.message || 'Update failed'
+  }
 }
 
 onMounted(loadData)

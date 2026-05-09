@@ -1,5 +1,16 @@
 import { ref } from 'vue'
 
+export async function requestJson(url, options = {}) {
+  const resp = await fetch(url, options)
+  const contentType = resp.headers.get('content-type') || ''
+  const payload = contentType.includes('application/json') ? await resp.json() : await resp.text()
+  if (!resp.ok) {
+    const message = (payload && payload.error) || payload || `HTTP ${resp.status}`
+    throw new Error(message)
+  }
+  return payload
+}
+
 export function useApi(url) {
   const data = ref(null)
   const loading = ref(false)
@@ -11,13 +22,7 @@ export function useApi(url) {
     try {
       const query = new URLSearchParams(params).toString()
       const fullUrl = query ? `${url}?${query}` : url
-      const resp = await fetch(fullUrl)
-      if (!resp.ok) {
-        let msg = `HTTP ${resp.status}`
-        try { const j = await resp.json(); if (j.error) msg = j.error } catch {}
-        throw new Error(msg)
-      }
-      data.value = await resp.json()
+      data.value = await requestJson(fullUrl)
       return data.value
     } catch (e) {
       error.value = e.message
@@ -31,13 +36,11 @@ export function useApi(url) {
     loading.value = true
     error.value = null
     try {
-      const resp = await fetch(url, {
+      data.value = await requestJson(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
-      if (!resp.ok) throw new Error(await resp.text())
-      data.value = await resp.json()
       return data.value
     } catch (e) {
       error.value = e.message

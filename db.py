@@ -72,6 +72,33 @@ def get_latest_active_report(conn=None):
     return _execute_with_optional_conn(conn, _get)
 
 
+def get_latest_active_report_id(conn):
+    row = conn.execute(
+        """SELECT id FROM reports
+           WHERE is_active = 1
+           ORDER BY report_date DESC, version DESC
+           LIMIT 1"""
+    ).fetchone()
+    return row['id'] if row else None
+
+
+def get_previous_active_report_id(conn, report_id):
+    current = conn.execute(
+        "SELECT report_date FROM reports WHERE id = ?",
+        (report_id,),
+    ).fetchone()
+    if not current:
+        return None
+    row = conn.execute(
+        """SELECT id FROM reports
+           WHERE is_active = 1 AND report_date < ?
+           ORDER BY report_date DESC, version DESC
+           LIMIT 1""",
+        (current['report_date'],),
+    ).fetchone()
+    return row['id'] if row else None
+
+
 def wf_sort_key(wfn):
     """自然排序键：WF1, WF2, ..., WF10, WF11, WF14.1, WF14.2"""
     try:
@@ -335,34 +362,111 @@ def get_latest_wf_config_progress(conn, report_id):
                SELECT wf_num, config,
                       MAX(current_cp_idx) AS max_cp_idx,
                       COUNT(*) AS sn_count
-               FROM per_sn
+                FROM per_sn
                GROUP BY wf_num, config
+           ),
+           cp_totals AS (
+               SELECT wf_num, COUNT(*) AS total_cps
+               FROM report_cps
+               WHERE report_id = ?
+               GROUP BY wf_num
            )
            SELECT p.wf_num, p.config, p.max_cp_idx,
-                  c.cp_name, c.test_idx, p.sn_count
-           FROM per_cfg p
-           LEFT JOIN report_cps c
-             ON c.report_id = ?
-            AND c.wf_num = p.wf_num
-            AND c.cp_idx = p.max_cp_idx""",
-        (report_id, report_id),
+                  c.cp_name, c.test_idx, p.sn_count,
+                  COALESCE(ct.total_cps, 0) AS total_cps
+            FROM per_cfg p
+            LEFT JOIN report_cps c
+              ON c.report_id = ?
+             AND c.wf_num = p.wf_num
+             AND c.cp_idx = p.max_cp_idx
+            LEFT JOIN cp_totals ct
+              ON ct.wf_num = p.wf_num""",
+        (report_id, report_id, report_id),
     ).fetchall()
 
 
 def get_failure_rate_stats_from_facts(report_id):
     conn = get_conn()
     rows = conn.execute(
-        """SELECT wf_num, config, test_idx,
+        """SELECT f.wf_num, f.config, f.test_idx,
+                  MAX(tn.test_name) AS test_name,
                   COUNT(DISTINCT CASE WHEN status IN ('pass', 'spec_fail', 'strife_fail') THEN sn END) AS total,
                   COUNT(DISTINCT CASE WHEN failure_type = 'spec' THEN sn END) AS spec,
                   COUNT(DISTINCT CASE WHEN failure_type = 'strife' THEN sn END) AS strife
-           FROM sn_cp_results
-           WHERE report_id = ?
-           GROUP BY wf_num, config, test_idx""",
+           FROM sn_cp_results f
+           LEFT JOIN report_test_names tn
+             ON tn.report_id = f.report_id
+            AND tn.wf_num = f.wf_num
+            AND tn.test_idx = f.test_idx
+           WHERE f.report_id = ?
+           GROUP BY f.wf_num, f.config, f.test_idx""",
         (report_id,),
     ).fetchall()
     conn.close()
     return rows
+
+
+def build_failure_rate_stats_from_facts(report_id):
+    rows = get_failure_rate_stats_from_facts(report_id)
+    by_config = {}
+    by_wf = {}
+    by_test = {}
+    top = []
+
+    for r in rows:
+        cfg = r['config']
+        wfn = r['wf_num']
+        total = r['total'] or 0
+        spec = r['spec'] or 0
+        strife = r['strife'] or 0
+        total_fails = spec + strife
+        rate = round(total_fails / total * 100, 1) if total else 0
+        test_name = r.get('test_name') or f"Test{r['test_idx'] + 1}"
+        test_key = f"{wfn}_{cfg}_{test_name}"
+
+        if cfg not in by_config:
+            by_config[cfg] = {'spec_fails': 0, 'strife_fails': 0, 'total_tests': 0}
+        by_config[cfg]['spec_fails'] += spec
+        by_config[cfg]['strife_fails'] += strife
+        by_config[cfg]['total_tests'] += total
+
+        if wfn not in by_wf:
+            by_wf[wfn] = {'spec_fails': 0, 'strife_fails': 0, 'total_tests': 0}
+        by_wf[wfn]['spec_fails'] += spec
+        by_wf[wfn]['strife_fails'] += strife
+        by_wf[wfn]['total_tests'] += total
+
+        by_test[test_key] = {
+            'wf': wfn, 'config': cfg, 'test_idx': r['test_idx'], 'test_name': test_name,
+            'spec': spec, 'strife': strife, 'total': total,
+            'spec_rate': round(spec / total * 100, 1) if total else 0,
+            'strife_rate': round(strife / total * 100, 1) if total else 0,
+            'total_rate': rate,
+        }
+        top.append({
+            'wf': wfn, 'cfg': cfg, 'test': test_name,
+            'spec': spec, 'strife': strife, 'total': total, 'rate': rate,
+        })
+
+    for d in by_config.values():
+        total = d['total_tests'] or 0
+        d['spec_rate'] = round(d['spec_fails'] / total * 100, 1) if total else 0
+        d['strife_rate'] = round(d['strife_fails'] / total * 100, 1) if total else 0
+        d['total_rate'] = round((d['spec_fails'] + d['strife_fails']) / total * 100, 1) if total else 0
+
+    for d in by_wf.values():
+        total = d['total_tests'] or 0
+        d['spec_rate'] = round(d['spec_fails'] / total * 100, 1) if total else 0
+        d['strife_rate'] = round(d['strife_fails'] / total * 100, 1) if total else 0
+        d['total_rate'] = round((d['spec_fails'] + d['strife_fails']) / total * 100, 1) if total else 0
+
+    top.sort(key=lambda x: x['rate'], reverse=True)
+    return {
+        'by_config': by_config,
+        'by_test': by_test,
+        'by_wf': by_wf,
+        'top_failures': top[:50],
+    }
 
 
 def save_definition_changes(conn, changes):
@@ -801,13 +905,10 @@ def save_report(report_date, results, fa_stats, excel_path, ts_test_names=None, 
     
     conn.commit()
     
-    # Compute daily changes if there's a previous report
-    prev = conn.execute(
-        "SELECT id, report_date FROM reports WHERE id < ? ORDER BY id DESC LIMIT 1",
-        (report_id,)
-    ).fetchone()
-    if prev:
-        _compute_changes(conn, report_id, prev['id'])
+    # Compute daily changes against the previous active report date.
+    prev_id = get_previous_active_report_id(conn, report_id)
+    if prev_id:
+        _compute_changes(conn, report_id, prev_id)
     
     conn.close()
     return report_id
@@ -867,7 +968,8 @@ def _compute_changes(conn, report_id, prev_report_id):
 def get_latest_report():
     """Returns the most recent report dict, or None."""
     conn = get_conn()
-    row = conn.execute("SELECT * FROM reports ORDER BY id DESC LIMIT 1").fetchone()
+    rid = get_latest_active_report_id(conn)
+    row = conn.execute("SELECT * FROM reports WHERE id = ?", (rid,)).fetchone() if rid else None
     conn.close()
     return row
 
@@ -884,7 +986,7 @@ def get_changes(report_id=None):
     """Returns daily_changes for a report. Defaults to latest."""
     conn = get_conn()
     if report_id is None:
-        report_id = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+        report_id = get_latest_active_report_id(conn)
     if not report_id: conn.close(); return []
     
     rows = conn.execute(
@@ -916,7 +1018,7 @@ def get_report_stats(report_id=None):
     """Returns stats for a specific report (defaults to latest)."""
     conn = get_conn()
     if report_id is None:
-        report_id = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+        report_id = get_latest_active_report_id(conn)
     if not report_id: conn.close(); return {}
     row = conn.execute("SELECT * FROM report_stats WHERE report_id = ?", (report_id,)).fetchone()
     conn.close()
@@ -930,7 +1032,11 @@ def get_overview_stats():
     conn = get_conn()
     stats = {}
     stats['report_count'] = conn.execute("SELECT COUNT(*) as c FROM reports").fetchone()['c']
-    latest = conn.execute("SELECT * FROM report_stats ORDER BY report_id DESC LIMIT 1").fetchone()
+    latest_rid = get_latest_active_report_id(conn)
+    latest = conn.execute(
+        "SELECT * FROM report_stats WHERE report_id = ?",
+        (latest_rid,),
+    ).fetchone() if latest_rid else None
     if latest:
         stats['latest'] = latest
     conn.close()
@@ -997,15 +1103,10 @@ def get_daily_changes_by_cp(report_id):
     """
     conn = get_conn()
 
-    prev = conn.execute(
-        "SELECT id FROM reports WHERE id < ? ORDER BY id DESC LIMIT 1",
-        (report_id,)
-    ).fetchone()
-    if not prev:
+    prev_id = get_previous_active_report_id(conn, report_id)
+    if not prev_id:
         conn.close()
         return []
-
-    prev_id = prev['id']
 
     cur_rows = conn.execute(
         "SELECT * FROM sn_progress WHERE report_id = ?",
@@ -1160,7 +1261,7 @@ def get_failure_rate_stats(report_id=None):
     """
     conn = get_conn()
     if report_id is None:
-        report_id = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+        report_id = get_latest_active_report_id(conn)
     if not report_id:
         conn.close()
         return {}
@@ -1288,14 +1389,21 @@ def get_predictions(wf_num=None, config=None):
 
 
 def update_prediction(wf_num, config, test_idx, predicted_date, is_manual=0):
-    """更新单条预测。（使用 INSERT OR REPLACE）"""
+    """更新单条预测，优先 UPDATE，避免 REPLACE 覆盖其他列。"""
     conn = get_conn()
-    conn.execute(
-        """INSERT OR REPLACE INTO predictions
-           (wf_num, config, test_idx, predicted_date, is_manual, last_updated)
-           VALUES (?,?,?,?,?, CURRENT_TIMESTAMP)""",
-        (wf_num, config, test_idx, predicted_date, is_manual)
+    cur = conn.execute(
+        """UPDATE predictions
+           SET predicted_date = ?, is_manual = ?, last_updated = CURRENT_TIMESTAMP
+           WHERE wf_num = ? AND config = ? AND test_idx = ?""",
+        (predicted_date, is_manual, wf_num, config, test_idx),
     )
+    if cur.rowcount == 0:
+        conn.execute(
+            """INSERT INTO predictions
+               (wf_num, config, test_idx, predicted_date, is_manual, last_updated)
+               VALUES (?,?,?,?,?, CURRENT_TIMESTAMP)""",
+            (wf_num, config, test_idx, predicted_date, is_manual),
+        )
     conn.commit()
     conn.close()
     return True

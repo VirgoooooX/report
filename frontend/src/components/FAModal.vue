@@ -53,6 +53,7 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
+import { requestJson } from '@/composables/useApi'
 
 const props = defineProps({
   show: Boolean,
@@ -76,13 +77,7 @@ async function fetchFa() {
   faLoading.value = true
   faError.value = null
   try {
-    const r = await fetch(`/api/fa/list?wf=${encodeURIComponent(props.wf)}`)
-    if (!r.ok) {
-      let msg = `HTTP ${r.status}`
-      try { const j = await r.json(); if (j.error) msg = j.error } catch {}
-      throw new Error(msg)
-    }
-    const d = await r.json()
+    const d = await requestJson(`/api/fa/list?wf=${encodeURIComponent(props.wf)}`)
     faData.value = d.records || []
   } catch (e) {
     faError.value = e.message

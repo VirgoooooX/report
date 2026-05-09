@@ -158,13 +158,20 @@ import { ref, computed, onMounted, watch, reactive } from 'vue'
 import { Bar } from 'vue-chartjs'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
-import {
-  BugOutlined,
-  CalendarOutlined,
-  ExperimentOutlined,
-  SettingOutlined,
-  WarningOutlined,
-} from '@ant-design/icons-vue'
+import { requestJson } from '@/composables/useApi'
+import ACard from 'ant-design-vue/es/card'
+import ARow from 'ant-design-vue/es/row'
+import ACol from 'ant-design-vue/es/col'
+import ASpin from 'ant-design-vue/es/spin'
+import ASelect from 'ant-design-vue/es/select'
+import ARadio from 'ant-design-vue/es/radio'
+import AModal from 'ant-design-vue/es/modal'
+import ATable from 'ant-design-vue/es/table'
+import BugOutlined from '@ant-design/icons-vue/es/icons/BugOutlined'
+import CalendarOutlined from '@ant-design/icons-vue/es/icons/CalendarOutlined'
+import ExperimentOutlined from '@ant-design/icons-vue/es/icons/ExperimentOutlined'
+import SettingOutlined from '@ant-design/icons-vue/es/icons/SettingOutlined'
+import WarningOutlined from '@ant-design/icons-vue/es/icons/WarningOutlined'
 import {
   chartMetricValue,
   failureMetricDisplay,
@@ -176,6 +183,9 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 const datalabelsPlugin = ChartDataLabels
+const ASelectOption = ASelect.Option
+const ARadioGroup = ARadio.Group
+const ARadioButton = ARadio.Button
 const fixedValueLabelsPlugin = {
   id: 'fixedValueLabels',
   afterDatasetsDraw(chart) {
@@ -240,9 +250,7 @@ async function loadOverview() {
   loading.value = true
   error.value = null
   try {
-    const r = await fetch('/api/fa/overview')
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    overviewData.value = await r.json()
+    overviewData.value = await requestJson('/api/fa/overview')
   } catch (e) {
     error.value = e.message
   } finally {
@@ -335,8 +343,8 @@ const dimOptions = [
   { label: 'Config', value: 'config' },
 ]
 
-const dim1 = ref('symptom')
-const dim2 = ref('location')
+const dim1 = ref('location')
+const dim2 = ref('config')
 const displayMode = ref('spec')
 
 function dimLabel(d) {
@@ -389,9 +397,7 @@ async function loadCross() {
   crossLoading.value = true
   crossError.value = null
   try {
-    const r = await fetch(`/api/fa/cross?dim1=${dim1.value}&dim2=${dim2.value}`)
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    crossData.value = await r.json()
+    crossData.value = await requestJson(`/api/fa/cross?dim1=${dim1.value}&dim2=${dim2.value}`)
   } catch (e) {
     crossError.value = e.message
   } finally {
@@ -440,9 +446,7 @@ async function openDetail(filters) {
 
   const params = new URLSearchParams(filters).toString()
   try {
-    const r = await fetch(`/api/fa/detail?${params}`)
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    const d = await r.json()
+    const d = await requestJson(`/api/fa/detail?${params}`)
     detailRecords.value = d.records || []
   } catch (e) {
     detailError.value = e.message

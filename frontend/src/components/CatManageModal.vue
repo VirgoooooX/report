@@ -58,6 +58,7 @@
 <script setup>
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { requestJson } from '@/composables/useApi'
 
 const props = defineProps({ show: Boolean })
 const emit = defineEmits(['close', 'updated'])
@@ -68,6 +69,7 @@ const activeTab = ref('')
 const newWfInput = ref('')
 const newCatInput = ref('')
 const visible = ref(false)
+const error = ref('')
 
 const categoryTabs = computed(() => categories.value.map(c => c.name))
 
@@ -85,22 +87,24 @@ function wfName(wfNum) {
 
 async function loadCategories() {
   try {
-    const r = await fetch('/api/categories')
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
-    const d = await r.json()
+    const d = await requestJson('/api/categories')
     categories.value = d.categories || []
     if (activeTab.value && !categories.value.find(c => c.name === activeTab.value)) {
       activeTab.value = categories.value[0]?.name || ''
     } else if (!activeTab.value) {
       activeTab.value = categories.value[0]?.name || ''
     }
-  } catch (e) { categories.value = [] }
+    error.value = ''
+  } catch (e) {
+    categories.value = []
+    error.value = e.message || 'Failed to load categories'
+  }
 }
 
 async function addWf() {
   const wfNum = newWfInput.value.trim()
   if (!wfNum || !activeTab.value) return
-  await fetch(`/api/categories/${encodeURIComponent(activeTab.value)}/add-wf`, {
+  await requestJson(`/api/categories/${encodeURIComponent(activeTab.value)}/add-wf`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wf_num: wfNum })
   })
@@ -111,7 +115,7 @@ async function addWf() {
 
 async function removeWf(wfNum) {
   if (!activeTab.value) return
-  await fetch(`/api/categories/${encodeURIComponent(activeTab.value)}/remove-wf`, {
+  await requestJson(`/api/categories/${encodeURIComponent(activeTab.value)}/remove-wf`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wf_num: wfNum })
   })
@@ -122,7 +126,7 @@ async function removeWf(wfNum) {
 async function addCategory() {
   const name = newCatInput.value.trim()
   if (!name) return
-  await fetch('/api/categories', {
+  await requestJson('/api/categories', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, display_order: categories.value.length })
   })
@@ -135,7 +139,7 @@ async function addCategory() {
 async function deleteCategory() {
   if (!activeTab.value) return
   if (!confirm(`Delete category "${activeTab.value}"?`)) return
-  await fetch(`/api/categories/${encodeURIComponent(activeTab.value)}`, { method: 'DELETE' })
+  await requestJson(`/api/categories/${encodeURIComponent(activeTab.value)}`, { method: 'DELETE' })
   await loadCategories()
   emit('updated')
 }

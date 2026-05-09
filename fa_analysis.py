@@ -4,6 +4,7 @@ Handles Failure Rate computation (dedup SN / Sample Size) from FA Tracker.xlsx.
 
 import datetime
 import os
+import re
 from openpyxl import load_workbook
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
@@ -35,10 +36,17 @@ def _field_value(issue, field, default=''):
 
 def find_fa_tracker():
     """Find the FA Tracker Excel file in data/ directory."""
+    candidates = []
     for fname in os.listdir(DATA_DIR):
-        if 'FA Tracker' in fname and fname.endswith('.xlsx'):
-            return os.path.join(DATA_DIR, fname)
-    return None
+        if 'FA Tracker' not in fname or not fname.endswith('.xlsx') or fname.startswith('~$'):
+            continue
+        m = re.search(r'(\d{8})', fname)
+        date_key = m.group(1) if m else ''
+        candidates.append((date_key, fname))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda x: x[0])
+    return os.path.join(DATA_DIR, candidates[-1][1])
 
 
 def read_fa_tracker(fa_path):

@@ -5,7 +5,7 @@ Usage: python api.py
 Access: http://localhost:5050
 """
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
-import os, sys, json, io, csv, datetime, re
+import os, sys, json, io, csv, datetime, re, logging
 
 sys.path.insert(0, os.path.dirname(__file__))
 from engine import analyze, build_summary_table, build_failure_detail
@@ -20,6 +20,8 @@ from db import (
     wf_sort_key, get_wf_names, get_wf_cps, get_wf_config_progress_rows,
     get_sn_fact_history, get_sn_check_details,
     get_latest_wf_config_progress, get_failure_rate_stats_from_facts,
+    build_failure_rate_stats_from_facts,
+    get_latest_active_report_id, get_previous_active_report_id,
 )
 
 BASE_DIR = os.path.dirname(__file__)
@@ -28,6 +30,7 @@ VUE_INDEX = os.path.join(VUE_STATIC, 'index.html')
 
 app = Flask(__name__, static_folder=VUE_STATIC, static_url_path='')
 DATA_DIR = os.path.join(BASE_DIR, 'data')
+logger = logging.getLogger(__name__)
 
 # ── Init ────────────────────────────────────────────────────────────────
 init_db()
@@ -50,6 +53,20 @@ def _normalize_wf(val):
     return s.strip()
 
 
+def _normalize_wf_token(val):
+    s = _normalize_wf(val)
+    if not s:
+        return ''
+    # Keep decimals like 14.1; reject non-numeric WF tokens.
+    if not re.match(r'^\d+(\.\d+)?$', s):
+        return ''
+    return f"WF{s}"
+
+
+def _normalize_category_name(name):
+    return str(name or '').strip()
+
+
 def _normalize_failure_type(ft):
     """Normalize to 'spec' / 'strife' / other."""
     s = str(ft or '').strip().lower()
@@ -58,13 +75,6 @@ def _normalize_failure_type(ft):
     if 'strife' in s:
         return 'strife'
     return s if s else 'unknown'
-
-
-def latest_active_report_id(conn):
-    row = conn.execute(
-        "SELECT id FROM reports WHERE is_active = 1 ORDER BY report_date DESC, version DESC LIMIT 1"
-    ).fetchone()
-    return row['id'] if row else None
 
 
 def _parse_date_value(val):
@@ -150,7 +160,7 @@ def spa_catchall(path):
 def api_overview():
     """Dashboard overview: completion, daily updates, failure summary."""
     conn = get_conn()
-    rid = latest_active_report_id(conn)
+    rid = get_latest_active_report_id(conn)
     if not rid:
         conn.close()
         return jsonify({'error': 'No data'}), 404
@@ -159,9 +169,8 @@ def api_overview():
     completion = get_completion_stats(rid)
     
     # Daily CP changes — 比较前后两天的 max(current_cp_idx) per WF+Config
-    prev = conn.execute("SELECT id FROM reports WHERE id < ? ORDER BY id DESC LIMIT 1", (rid,)).fetchone()
-    if prev:
-        prev_rid = prev['id']
+    prev_rid = get_previous_active_report_id(conn, rid)
+    if prev_rid:
         # 今天每个 WF+Config 的最远 CP
         today_max = conn.execute(
             """SELECT wf_num, config, MAX(current_cp_idx) as max_cp_idx
@@ -217,8 +226,10 @@ def api_overview():
         if configs_list:
             wf_updates_list.append({'wf': wfn, 'configs': configs_list})
     
-    # Failure stats
-    fail_stats = get_failure_rate_stats(rid)
+    # Failure stats (fact tables first)
+    fail_stats = build_failure_rate_stats_from_facts(rid)
+    if not fail_stats:
+        fail_stats = get_failure_rate_stats(rid)
     
     # Latest report date
     rpt = conn.execute("SELECT report_date FROM reports WHERE id = ?", (rid,)).fetchone()
@@ -261,7 +272,7 @@ def api_overview():
 @app.route('/api/completion/by-config')
 def api_completion_config():
     conn = get_conn()
-    rid = latest_active_report_id(conn)
+    rid = get_latest_active_report_id(conn)
     stats = get_completion_stats(rid)
     conn.close()
     return jsonify(stats.get('by_config', {}))
@@ -270,7 +281,7 @@ def api_completion_config():
 @app.route('/api/completion/by-category')
 def api_completion_category():
     conn = get_conn()
-    rid = latest_active_report_id(conn)
+    rid = get_latest_active_report_id(conn)
     stats = get_completion_stats(rid)
     conn.close()
     return jsonify(stats.get('by_category', {}))
@@ -284,7 +295,7 @@ def api_category_wf_detail(name):
         return jsonify({'error': f'Category {name} not found'}), 404
     
     conn = get_conn()
-    rid = latest_active_report_id(conn)
+    rid = get_latest_active_report_id(conn)
     
     wf_details = []
     for wf in wfs:
@@ -325,7 +336,7 @@ def api_category_wf_detail(name):
 def api_wf_completion(wfn):
     """Per-WF completion detail across configs."""
     conn = get_conn()
-    rid = latest_active_report_id(conn)
+    rid = get_latest_active_report_id(conn)
     
     rows = conn.execute(
         """SELECT config, total_cps, cp_results_json
@@ -389,10 +400,19 @@ def api_categories_list():
 @app.route('/api/categories/<name>/wfs', methods=['PUT'])
 def api_category_update_wfs(name):
     """更新某个分类下的 WF 列表。Body: {wf_nums: ['WF10','WF11',...]}"""
+    name = _normalize_category_name(name)
+    if not name:
+        return jsonify({'error': 'Invalid category name'}), 400
     data = request.get_json()
     if not data or 'wf_nums' not in data:
         return jsonify({'error': 'Missing wf_nums'}), 400
-    wf_nums_str = ','.join(data['wf_nums'])
+    normalized = []
+    for wf in data['wf_nums']:
+        token = _normalize_wf_token(wf)
+        if not token:
+            return jsonify({'error': f'Invalid wf_num: {wf}'}), 400
+        normalized.append(token)
+    wf_nums_str = ','.join(normalized)
     conn = get_conn()
     conn.execute(
         "INSERT OR REPLACE INTO wf_categories (category_name, wf_nums, display_order) VALUES (?,?,COALESCE((SELECT display_order FROM wf_categories WHERE category_name=?),0))",
@@ -406,10 +426,15 @@ def api_category_update_wfs(name):
 @app.route('/api/categories/<name>/add-wf', methods=['POST'])
 def api_category_add_wf(name):
     """向分类添加一个 WF。Body: {wf_num: 'WF10'}"""
+    name = _normalize_category_name(name)
+    if not name:
+        return jsonify({'error': 'Invalid category name'}), 400
     data = request.get_json()
     if not data or 'wf_num' not in data:
         return jsonify({'error': 'Missing wf_num'}), 400
-    wf_num = data['wf_num'].strip()
+    wf_num = _normalize_wf_token(data['wf_num'])
+    if not wf_num:
+        return jsonify({'error': 'Invalid wf_num'}), 400
     conn = get_conn()
     row = conn.execute("SELECT wf_nums FROM wf_categories WHERE category_name=?", (name,)).fetchone()
     if not row:
@@ -427,10 +452,15 @@ def api_category_add_wf(name):
 @app.route('/api/categories/<name>/remove-wf', methods=['POST'])
 def api_category_remove_wf(name):
     """从分类移除一个 WF。Body: {wf_num: 'WF10'}"""
+    name = _normalize_category_name(name)
+    if not name:
+        return jsonify({'error': 'Invalid category name'}), 400
     data = request.get_json()
     if not data or 'wf_num' not in data:
         return jsonify({'error': 'Missing wf_num'}), 400
-    wf_num = data['wf_num'].strip()
+    wf_num = _normalize_wf_token(data['wf_num'])
+    if not wf_num:
+        return jsonify({'error': 'Invalid wf_num'}), 400
     conn = get_conn()
     row = conn.execute("SELECT wf_nums FROM wf_categories WHERE category_name=?", (name,)).fetchone()
     if row:
@@ -444,6 +474,9 @@ def api_category_remove_wf(name):
 @app.route('/api/categories/<name>', methods=['DELETE'])
 def api_category_delete(name):
     """删除一个分类。"""
+    name = _normalize_category_name(name)
+    if not name:
+        return jsonify({'error': 'Invalid category name'}), 400
     conn = get_conn()
     conn.execute("DELETE FROM wf_categories WHERE category_name = ?", (name,))
     conn.commit()
@@ -457,7 +490,9 @@ def api_category_create():
     data = request.get_json()
     if not data or 'name' not in data:
         return jsonify({'error': 'Missing name'}), 400
-    name = data['name'].strip()
+    name = _normalize_category_name(data['name'])
+    if not name:
+        return jsonify({'error': 'Invalid category name'}), 400
     display_order = data.get('display_order', 99)
     conn = get_conn()
     conn.execute(
@@ -482,7 +517,8 @@ def api_daily_updates():
     if date:
         rpt = conn.execute("SELECT id FROM reports WHERE report_date = ?", (date,)).fetchone()
     else:
-        rpt = conn.execute("SELECT MAX(id) as id FROM reports").fetchone()
+        rid = get_latest_active_report_id(conn)
+        rpt = {'id': rid} if rid else None
     
     if not rpt or not rpt['id']:
         conn.close()
@@ -516,75 +552,14 @@ def api_daily_updates():
 def api_failure_stats():
     """Multi-dimensional failure rate stats."""
     conn = get_conn()
-    rid = latest_active_report_id(conn)
+    rid = get_latest_active_report_id(conn)
     conn.close()
 
     if not rid:
         return jsonify({'by_config': {}, 'by_test': {}, 'by_wf': {}, 'top_failures': []})
 
-    # Try fact tables first, fall back to old wf_results table
-    fact_rows = get_failure_rate_stats_from_facts(rid)
-    if fact_rows:
-        by_config = {}
-        by_wf = {}
-        by_test = {}
-        top = []
-
-        for r in fact_rows:
-            cfg = r['config']
-            if cfg not in by_config:
-                by_config[cfg] = {'spec_fails': 0, 'strife_fails': 0, 'total_tests': 0}
-            by_config[cfg]['spec_fails'] += r['spec']
-            by_config[cfg]['strife_fails'] += r['strife']
-            by_config[cfg]['total_tests'] += r['total']
-
-            wfn = r['wf_num']
-            if wfn not in by_wf:
-                by_wf[wfn] = {'spec_fails': 0, 'strife_fails': 0, 'total_tests': 0}
-            by_wf[wfn]['spec_fails'] += r['spec']
-            by_wf[wfn]['strife_fails'] += r['strife']
-            by_wf[wfn]['total_tests'] += r['total']
-
-            t_total = r['total'] or 0
-            total_fails = r['spec'] + r['strife']
-            key = f"{wfn}_{cfg}_Test{r['test_idx']+1}"
-            by_test[key] = {
-                'wf': wfn, 'config': cfg, 'test_idx': r['test_idx'],
-                'spec': r['spec'], 'strife': r['strife'], 'total': t_total,
-                'spec_rate': round(r['spec'] / t_total * 100, 1) if t_total else 0,
-                'strife_rate': round(r['strife'] / t_total * 100, 1) if t_total else 0,
-                'total_rate': round(total_fails / t_total * 100, 1) if t_total else 0,
-            }
-            top.append({
-                'wf': wfn, 'cfg': cfg, 'test': f"Test{r['test_idx']+1}",
-                'spec': r['spec'], 'strife': r['strife'], 'total': t_total,
-                'rate': round(total_fails / t_total * 100, 1) if t_total else 0,
-            })
-
-        for d in by_config.values():
-            t = d['total_tests'] or 0
-            d['spec_rate'] = round(d['spec_fails'] / t * 100, 1) if t else 0
-            d['strife_rate'] = round(d['strife_fails'] / t * 100, 1) if t else 0
-            d['total_rate'] = round((d['spec_fails'] + d['strife_fails']) / t * 100, 1) if t else 0
-
-        for d in by_wf.values():
-            t = d['total_tests'] or 0
-            d['spec_rate'] = round(d['spec_fails'] / t * 100, 1) if t else 0
-            d['strife_rate'] = round(d['strife_fails'] / t * 100, 1) if t else 0
-            d['total_rate'] = round((d['spec_fails'] + d['strife_fails']) / t * 100, 1) if t else 0
-
-        top.sort(key=lambda x: x['rate'], reverse=True)
-
-        stats = {
-            'by_config': by_config,
-            'by_test': by_test,
-            'by_wf': by_wf,
-            'top_failures': top[:50],
-        }
-    else:
-        stats = get_failure_rate_stats(rid)
-
-    return jsonify(stats)
+    stats = build_failure_rate_stats_from_facts(rid)
+    return jsonify(stats if stats else get_failure_rate_stats(rid))
 
 
 @app.route('/api/failures/top')
@@ -594,8 +569,10 @@ def api_failure_top():
     by_dim = request.args.get('by', 'test')  # config, wf, test
     
     conn = get_conn()
-    rid = latest_active_report_id(conn)
-    stats = get_failure_rate_stats(rid)
+    rid = get_latest_active_report_id(conn)
+    stats = build_failure_rate_stats_from_facts(rid)
+    if not stats:
+        stats = get_failure_rate_stats(rid)
     conn.close()
     
     if by_dim == 'config':
@@ -607,7 +584,7 @@ def api_failure_top():
     else:
         items = stats.get('top_failures', [])[:limit]
     
-    items.sort(key=lambda x: x.get('total_rate', 0), reverse=True)
+    items.sort(key=lambda x: x.get('total_rate', x.get('rate', 0)), reverse=True)
     
     return jsonify({'dimension': by_dim, 'items': items[:limit]})
 
@@ -616,19 +593,25 @@ def api_failure_top():
 def api_wf_failures(wfn):
     """Per-WF failure detail with per-SN information."""
     conn = get_conn()
-    rid = latest_active_report_id(conn)
+    rid = get_latest_active_report_id(conn)
     
     rows = conn.execute(
-        """SELECT wf_num, config, test_idx, spec_fail_count, strife_fail_count,
-                  total_units, failure_sns
-           FROM wf_results WHERE report_id = ? AND wf_num = ?""",
-        (rid, wfn)
+        """SELECT f.wf_num, f.config, f.test_idx,
+                  COUNT(DISTINCT CASE WHEN f.status IN ('pass', 'spec_fail', 'strife_fail') THEN f.sn END) AS total_units,
+                  COUNT(DISTINCT CASE WHEN f.failure_type = 'spec' THEN f.sn END) AS spec_fail_count,
+                  COUNT(DISTINCT CASE WHEN f.failure_type = 'strife' THEN f.sn END) AS strife_fail_count
+           FROM sn_cp_results f
+           WHERE f.report_id = ? AND f.wf_num = ?
+           GROUP BY f.wf_num, f.config, f.test_idx
+           ORDER BY f.config, f.test_idx""",
+        (rid, wfn),
     ).fetchall()
     
     # Also get per-SN CP detail for failures
     sn_rows = conn.execute(
-        """SELECT sn, config, current_cp_idx, current_cp_name, cp_results_json
-           FROM sn_progress WHERE report_id = ? AND wf_num = ?""",
+        """SELECT sn, config, cp_idx AS current_cp_idx, status
+           FROM sn_cp_results
+           WHERE report_id = ? AND wf_num = ? AND is_current_cp = 1""",
         (rid, wfn)
     ).fetchall()
     conn.close()
@@ -775,7 +758,10 @@ def api_export():
     if sn_f: filters['sn'] = sn_f
     
     conn = get_conn()
-    rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
+    rid = get_latest_active_report_id(conn)
+    if not rid:
+        conn.close()
+        return jsonify({'records': [], 'count': 0, 'error': 'No active report'}), 404
     records = export_sn_records(rid, filters if filters else None)
     conn.close()
     
@@ -812,7 +798,10 @@ def api_export():
 def api_test_summary():
     """Generate a test summary table similar to Daily Report's Test Summary."""
     conn = get_conn()
-    rid = latest_active_report_id(conn)
+    rid = get_latest_active_report_id(conn)
+    if not rid:
+        conn.close()
+        return jsonify({'summary': []})
 
     # Load test names from report_test_names table
     report_test_names = {}
@@ -829,11 +818,16 @@ def api_test_summary():
         names[row['test_idx']] = row['test_name']
 
     rows = conn.execute(
-        """SELECT wf_num, config, test_idx, total_units, spec_fail_count,
-                  strife_fail_count, failure_sns
-           FROM wf_results WHERE report_id = ?
+        """SELECT wf_num, config, test_idx,
+                  COUNT(DISTINCT CASE WHEN status IN ('pass', 'spec_fail', 'strife_fail') THEN sn END) AS total_units,
+                  COUNT(DISTINCT CASE WHEN failure_type = 'spec' THEN sn END) AS spec_fail_count,
+                  COUNT(DISTINCT CASE WHEN failure_type = 'strife' THEN sn END) AS strife_fail_count,
+                  GROUP_CONCAT(DISTINCT CASE WHEN failure_type IN ('spec', 'strife') THEN sn END) AS failure_sns_csv
+           FROM sn_cp_results
+           WHERE report_id = ?
+           GROUP BY wf_num, config, test_idx
            ORDER BY CAST(wf_num AS REAL), config, test_idx""",
-        (rid,)
+        (rid,),
     ).fetchall()
     conn.close()
 
@@ -888,7 +882,7 @@ def api_test_summary():
             'strife': stf,
             'total': t,
             'has_failure': has_fail,
-            'failure_sns': json.loads(r['failure_sns']) if r['failure_sns'] else [],
+            'failure_sns': [x for x in (r.get('failure_sns_csv') or '').split(',') if x],
         }
 
     return jsonify({'summary': list(summary.values())})
@@ -974,11 +968,7 @@ def api_fa_list():
     wf = request.args.get('wf', '').strip()
     status = request.args.get('status', '').strip()
     
-    fa_path = None
-    for fname in os.listdir(DATA_DIR):
-        if 'FA Tracker' in fname:
-            fa_path = os.path.join(DATA_DIR, fname)
-            break
+    fa_path = _find_fa_tracker_by_date(None)
     
     if not fa_path:
         return jsonify({'records': [], 'error': 'FA Tracker not found'})
@@ -1004,7 +994,8 @@ def api_daily_issues():
     conn = get_conn()
 
     # 1. Get latest report
-    latest = conn.execute("SELECT MAX(id) as id FROM reports").fetchone()
+    rid = get_latest_active_report_id(conn)
+    latest = {'id': rid} if rid else None
     if not latest or not latest['id']:
         conn.close()
         return jsonify({'error': 'No data', 'issues': [], 'consistency': {'is_consistent': True}}), 404
@@ -1018,8 +1009,7 @@ def api_daily_issues():
         return (d['sn'], d['wf'], d['config'], d['type'], d['location'])
     
     # Get previous report for diff (Daily Report is cumulative)
-    prev = conn.execute("SELECT id FROM reports WHERE id < ? ORDER BY id DESC LIMIT 1", (rid,)).fetchone()
-    prev_rid = prev['id'] if prev else None
+    prev_rid = get_previous_active_report_id(conn, rid)
     
     # 2. Get today's failure_details from DB
     rows = conn.execute(
@@ -1070,7 +1060,7 @@ def api_daily_issues():
             pti = row['test_idx']
             try:
                 pdetails = json.loads(row['failure_details'] or '[]')
-            except:
+            except (json.JSONDecodeError, TypeError):
                 pdetails = []
             pwf_info = wf_names_map.get(pwf, {})
             ptest_names = pwf_info.get('test_names', [])
@@ -1127,7 +1117,7 @@ def api_daily_issues():
                     'fa_num': issue.get('_fa_num', ''),
                 })
         except Exception:
-            pass  # FA Tracker read failed; db_issues will still be returned
+            logger.exception("Failed to read FA tracker for daily issues")
 
     conn.close()
 
@@ -1193,4 +1183,7 @@ def api_daily_issues():
 if __name__ == '__main__':
     print("M60 EVT REL Dashboard API Server")
     print("Access: http://localhost:5050")
-    app.run(debug=True, host='0.0.0.0', port=5050)
+    debug = os.environ.get('FLASK_DEBUG', '0') == '1'
+    host = os.environ.get('FLASK_HOST', '127.0.0.1')
+    port = int(os.environ.get('FLASK_PORT', '5050'))
+    app.run(debug=debug, host=host, port=port)

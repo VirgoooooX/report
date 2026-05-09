@@ -5,9 +5,11 @@ Reads Daily Report, parses all WF sheets, returns structured analysis results.
 from openpyxl import load_workbook
 from collections import defaultdict
 import re, datetime, os
+import logging
 
 SKIP_SHEETS = {'Sample Delivery Tracker', 'Test Schedule', 'Test Summary', 'T0 Summary'}
 CHECK_NAMES = {'Cosmetic','ISB','FACT','BT-OTA','Touch-CAL-Post','Charging','Button User','User Test','Pull-out force'}
+logger = logging.getLogger(__name__)
 
 def wf_sort_key(wfn):
     """自然排序键：WF1, WF2, ..., WF10, WF11, WF14.1, WF14.2"""
@@ -503,8 +505,8 @@ def analyze(daily_path):
             wf_data = _parse_wf_sheet(wb[name], wfn, ts_names)
             if wf_data:
                 all_results[wfn] = wf_data
-        except Exception as e:
-            pass  # Skip sheets that can't be parsed (WF34, WF33, etc.)
+        except Exception:
+            logger.exception("Failed to parse WF sheet %s", name)
     
     wb.close()
     return all_results
@@ -592,7 +594,7 @@ def extract_all_cp_structures(daily_path):
             if cps:
                 all_cps[wfn] = cps
         except Exception:
-            pass
+            logger.exception("Failed to extract CP structure for sheet %s", name)
     wb.close()
     return all_cps
 
@@ -635,7 +637,7 @@ def extract_sn_progress(daily_path):
             if progress:
                 all_progress[wfn] = progress
         except Exception:
-            pass  # 跳过无法解析的 sheet（WF34、WF33 等）
+            logger.exception("Failed to extract SN progress for sheet %s", name)
 
     wb.close()
     return all_progress

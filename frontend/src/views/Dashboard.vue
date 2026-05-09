@@ -68,6 +68,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAppStore } from '@/stores/app'
+import { requestJson } from '@/composables/useApi'
 import OverviewCards from '@/components/OverviewCards.vue'
 import CategoryCards from '@/components/CategoryCards.vue'
 import TrendChart from '@/components/TrendChart.vue'
@@ -86,13 +87,11 @@ const dailyIssuesConsistency = ref({})
 
 async function fetchDailyIssues() {
   try {
-    const r = await fetch('/api/daily/issues')
-    if (!r.ok) return
-    const data = await r.json()
+    const data = await requestJson('/api/daily/issues')
     dailyIssues.value = data.issues || []
     dailyIssuesConsistency.value = data.consistency || {}
-  } catch {
-    // silently handle
+  } catch (e) {
+    store.error = e.message || 'Failed to load daily issues'
   }
 }
 
@@ -139,8 +138,8 @@ async function loadAll() {
 onMounted(async () => {
   try {
     await loadAll()
-  } catch {
-    // silently handle
+  } catch (e) {
+    store.error = e.message || 'Failed to load dashboard'
   }
 })
 </script>

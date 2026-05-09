@@ -68,6 +68,21 @@ class ReportVersioningTests(unittest.TestCase):
             conn.close()
             os.remove(path)
 
+    def test_previous_active_report_skips_inactive_same_date_version(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            older = db.create_report_version(conn, '2026-05-08', 'a.xlsx')
+            first = db.create_report_version(conn, '2026-05-09', 'b.xlsx')
+            second = db.create_report_version(conn, '2026-05-09', 'b2.xlsx')
+
+            self.assertEqual(db.get_latest_active_report_id(conn), second)
+            self.assertEqual(db.get_previous_active_report_id(conn, second), older)
+            self.assertNotEqual(db.get_previous_active_report_id(conn, second), first)
+        finally:
+            conn.close()
+            os.remove(path)
+
 
 class DefinitionSnapshotTests(unittest.TestCase):
     def test_save_and_load_report_definitions(self):

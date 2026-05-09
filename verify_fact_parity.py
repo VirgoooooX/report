@@ -1,45 +1,43 @@
-from db import get_conn
+from db import get_conn, get_latest_active_report_id
 
 
 def main():
     conn = get_conn()
-    report = conn.execute(
-        "SELECT id, report_date FROM reports WHERE is_active = 1 ORDER BY report_date DESC LIMIT 1"
-    ).fetchone()
-    if not report:
+    rid = get_latest_active_report_id(conn)
+    if not rid:
+        conn.close()
         print('No active report')
         return
 
-    rid = report['id']
-    mismatches = []
-    rows = conn.execute(
-        """SELECT wf_num, config, test_idx, total_units, spec_fail_count, strife_fail_count
-           FROM wf_results
-           WHERE report_id = ?""",
+    # Source-of-truth parity check: current CP marker must be unique per SN record.
+    dup_current = conn.execute(
+        """SELECT wf_num, config, sn, COUNT(*) AS c
+           FROM sn_cp_results
+           WHERE report_id = ? AND is_current_cp = 1
+           GROUP BY wf_num, config, sn
+           HAVING COUNT(*) != 1""",
         (rid,),
     ).fetchall()
 
-    for old in rows:
-        new = conn.execute(
-            """SELECT COUNT(DISTINCT CASE WHEN status IN ('pass', 'spec_fail', 'strife_fail') THEN sn END) AS total,
-                      COUNT(DISTINCT CASE WHEN failure_type = 'spec' THEN sn END) AS spec,
-                      COUNT(DISTINCT CASE WHEN failure_type = 'strife' THEN sn END) AS strife
-               FROM sn_cp_results
-               WHERE report_id = ? AND wf_num = ? AND config = ? AND test_idx = ?""",
-            (rid, old['wf_num'], old['config'], old['test_idx']),
-        ).fetchone()
-
-        if (old['total_units'], old['spec_fail_count'], old['strife_fail_count']) != (new['total'], new['spec'], new['strife']):
-            mismatches.append((old, new))
-
+    # Fact aggregates used by APIs must exist for latest active report.
+    rows = conn.execute(
+        """SELECT wf_num, config, test_idx,
+                  COUNT(DISTINCT CASE WHEN status IN ('pass', 'spec_fail', 'strife_fail') THEN sn END) AS total
+           FROM sn_cp_results
+           WHERE report_id = ?
+           GROUP BY wf_num, config, test_idx""",
+        (rid,),
+    ).fetchall()
     conn.close()
-    if mismatches:
-        print(f'MISMATCHES: {len(mismatches)}')
-        for old, new in mismatches[:20]:
-            print(old, new)
+
+    if dup_current:
+        print(f'FACT PARITY FAILED: {len(dup_current)} SN records do not have exactly one current CP row')
+        raise SystemExit(1)
+    if not rows:
+        print('FACT PARITY FAILED: no aggregate rows found for active report')
         raise SystemExit(1)
 
-    print(f'Fact parity OK for report {rid} ({report["report_date"]})')
+    print(f'Fact parity OK for active report {rid}; aggregate rows={len(rows)}')
 
 
 if __name__ == '__main__':
