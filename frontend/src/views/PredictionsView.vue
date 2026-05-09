@@ -50,14 +50,14 @@
       <table>
         <thead>
           <tr>
-            <th class="sortable" @click="sortBy('wf')">
+            <th class="sortable" @click="sortBy('wf_num')">
               WF <span class="sort-indicator">{{ sortIndicator('wf') }}</span>
             </th>
             <th class="sortable" @click="sortBy('config')">
               Config <span class="sort-indicator">{{ sortIndicator('config') }}</span>
             </th>
-            <th class="sortable" @click="sortBy('test')">
-              Test <span class="sort-indicator">{{ sortIndicator('test') }}</span>
+            <th class="sortable" @click="sortBy('test_idx')">
+              Test <span class="sort-indicator">{{ sortIndicator('test_idx') }}</span>
             </th>
             <th>Progress</th>
             <th class="sortable" @click="sortBy('daily_rate')">
@@ -140,7 +140,7 @@ import LoadingState from '@/components/LoadingState.vue'
 const store = useAppStore()
 const filterWf = ref('')
 const filterConfig = ref('')
-const sortField = ref('wf')
+const sortField = ref('wf_num')
 const sortDir = ref('asc')
 const editModal = ref(false)
 const editRow = ref(null)
@@ -182,8 +182,8 @@ const sortedRows = computed(() => {
     let vb = b[sortField.value]
     if (va == null) va = ''
     if (vb == null) vb = ''
-    if (typeof va === 'string') {
-      const cmp = va.localeCompare(String(vb))
+    if (typeof va === 'string' || typeof vb === 'string') {
+      const cmp = String(va).localeCompare(String(vb), undefined, { numeric: true, sensitivity: 'base' })
       return sortDir.value === 'asc' ? cmp : -cmp
     }
     return sortDir.value === 'asc' ? va - vb : vb - va
