@@ -81,20 +81,23 @@ def wf_sort_key(wfn):
         return (float('inf'),)
 
 
-def save_wf_names(names_dict, test_names_dict=None):
+def save_wf_names(names_dict, test_names_dict=None, conn=None):
     """保存 WF 名称映射表和测试名。
     names_dict: {wf_num: wf_name}
     test_names_dict: {wf_num: [test_name, ...]}
     """
-    conn = get_conn()
+    owns_conn = conn is None
+    if conn is None:
+        conn = get_conn()
     for wfn, name in names_dict.items():
         tn = json.dumps(test_names_dict.get(wfn, [])) if test_names_dict else '[]'
         conn.execute(
             "INSERT OR REPLACE INTO wf_names (wf_num, wf_name, test_names) VALUES (?,?,?)",
             (wfn, name, tn)
         )
-    conn.commit()
-    conn.close()
+    if owns_conn:
+        conn.commit()
+        conn.close()
 
 
 def get_wf_names():
@@ -122,19 +125,22 @@ def get_wf_name(wfn):
     return row['wf_name'] if row else ''
 
 
-def save_wf_cps(wf_num, cp_list):
+def save_wf_cps(wf_num, cp_list, conn=None):
     """保存一个 WF 的 CP 信息。
     cp_list: [{'cp_idx': int, 'cp_name': str, 'check_items': [str]}, ...]
     """
-    conn = get_conn()
+    owns_conn = conn is None
+    if conn is None:
+        conn = get_conn()
     for cp in cp_list:
         conn.execute(
             """INSERT OR REPLACE INTO wf_cps (wf_num, cp_idx, cp_name, check_items)
                VALUES (?,?,?,?)""",
             (wf_num, cp['cp_idx'], cp['cp_name'], json.dumps(cp.get('check_items', [])))
         )
-    conn.commit()
-    conn.close()
+    if owns_conn:
+        conn.commit()
+        conn.close()
 
 
 def save_report_wf_meta(conn, report_id, wf_names):

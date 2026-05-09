@@ -85,9 +85,9 @@ def save_report_definitions(conn, report_id, daily_path):
 
     # Keep latest/global caches for existing category and compatibility views.
     if wf_names:
-        save_wf_names(wf_names, ts_test_names)
+        save_wf_names(wf_names, ts_test_names, conn=conn)
     for wfn, cp_list in cp_structures.items():
-        save_wf_cps(wfn, cp_list)
+        save_wf_cps(wfn, cp_list, conn=conn)
 
     return wf_names, ts_test_names, mapped_cps
 

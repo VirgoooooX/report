@@ -581,7 +581,7 @@ def extract_all_cp_structures(daily_path):
         # Find the header row (col 3 = 'Config', col 4 = 'Unit #')
         ws = wb[name]
         header_row = 1
-        for r in range(1, min(ws.max_row + 1, 5)):
+        for r in range(1, ws.max_row + 1):
             c3 = ws.cell(r, 3).value
             c4 = ws.cell(r, 4).value
             if c3 == 'Config' and c4 == 'Unit #':
