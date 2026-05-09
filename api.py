@@ -652,17 +652,32 @@ def api_test_summary():
     """Generate a test summary table similar to Daily Report's Test Summary."""
     conn = get_conn()
     rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
-    
+
     # Get all wf_results for latest report
     rows = conn.execute(
-        """SELECT wf_num, config, test_idx, total_units, spec_fail_count, 
+        """SELECT wf_num, config, test_idx, total_units, spec_fail_count,
                   strife_fail_count, failure_sns
            FROM wf_results WHERE report_id = ?
            ORDER BY CAST(wf_num AS REAL), config, test_idx""",
         (rid,)
     ).fetchall()
+    # Get report_date before closing
+    latest = conn.execute("SELECT report_date FROM reports WHERE id = ?", (rid,)).fetchone()
+    report_date = latest['report_date'] if latest else ''
     conn.close()
-    
+
+    # Load real test names from latest Excel TS sheet
+    real_test_names = {}
+    fname = f'M60 EVT Rel Daily Report_{report_date.replace("-", "")}.xlsx'
+    fpath = os.path.join(DATA_DIR, fname)
+    if os.path.exists(fpath):
+        try:
+            from engine import read_test_summary
+            _, _, ts_test_names, _ = read_test_summary(fpath)
+            real_test_names = ts_test_names
+        except Exception:
+            pass
+
     # Build summary table
     summary = {}
     for r in rows:
@@ -671,20 +686,25 @@ def api_test_summary():
             summary[wf] = {
                 'wf': wf,
                 'configs': {},
-                'test_names': [],
+                'test_names': list(real_test_names.get(wf, [])),
             }
-        
+
         cfg = r['config']
         ti = r['test_idx']
         sf = r['spec_fail_count']
         stf = r['strife_fail_count']
         t = r['total_units']
-        
-        # Determine test name
-        if ti >= len(summary[wf]['test_names']):
-            summary[wf]['test_names'].extend([''] * (ti - len(summary[wf]['test_names']) + 1))
-        if not summary[wf]['test_names'][ti]:
-            summary[wf]['test_names'][ti] = f'Test{ti+1}'
+
+        # Use real test name if available, fallback to TestN
+        real_names = real_test_names.get(wf, [])
+        tname = real_names[ti] if ti < len(real_names) else f'Test{ti+1}'
+
+        # Ensure test_names array covers this index
+        tn_list = summary[wf]['test_names']
+        if ti >= len(tn_list):
+            tn_list.extend([''] * (ti - len(tn_list) + 1))
+        if not tn_list[ti]:
+            tn_list[ti] = tname
         
         # Build result string: xF/nT or xSF/nT or 0F/nT
         if sf > 0:
@@ -699,7 +719,7 @@ def api_test_summary():
         if cfg not in summary[wf]['configs']:
             summary[wf]['configs'][cfg] = {}
         
-        summary[wf]['configs'][cfg][f'Test{ti+1}'] = {
+        summary[wf]['configs'][cfg][tname] = {
             'result': res,
             'spec': sf,
             'strife': stf,
