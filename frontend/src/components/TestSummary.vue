@@ -5,6 +5,7 @@
         <thead>
           <tr>
             <th class="ts-wf-hd" rowspan="2">WF</th>
+            <th v-for="n in 3" :key="'tn'+n" class="ts-tn-hd" rowspan="2">Test{{ n }}</th>
             <template v-for="(t, ti) in tests" :key="ti">
               <th class="ts-test-hd" :colspan="4">{{ t }}</th>
               <th v-if="ti < tests.length - 1" class="ts-gap"></th>
@@ -21,6 +22,9 @@
         <tbody>
           <tr v-for="wf in sortedWfs" :key="wf.wf">
             <td class="ts-wf-col">WF{{ wf.wf }}</td>
+            <td v-for="n in 3" :key="'tn'+n" class="ts-tn-col">
+              {{ wfTestName(wf, n-1) }}
+            </td>
             <template v-for="(t, ti) in tests" :key="ti">
               <td v-for="cfg in configList" :key="cfg"
                   :class="cellClass(wf, cfg, ti)"
@@ -57,7 +61,6 @@ const configList = computed(() => {
   return [...ordered, ...set]
 })
 
-// Collect all unique test names across all WFs, preserving order
 const tests = computed(() => {
   const seen = new Set()
   const names = []
@@ -70,7 +73,6 @@ const tests = computed(() => {
       })
     }
   })
-  // Also check test_names arrays
   summaryList.value.forEach(wf => {
     (wf.test_names || []).forEach(t => {
       if (t && !seen.has(t)) { seen.add(t); names.push(t) }
@@ -84,6 +86,21 @@ const sortedWfs = computed(() => {
     String(a.wf).localeCompare(String(b.wf), undefined, { numeric: true })
   )
 })
+
+function wfTestName(wf, slot) {
+  const tn = wf.test_names
+  if (tn && tn[slot]) return tn[slot]
+  // Fallback: get from config data
+  const cfg = wf.configs
+  if (cfg) {
+    const firstCfg = Object.values(cfg)[0]
+    if (firstCfg) {
+      const keys = Object.keys(firstCfg)
+      if (keys[slot]) return keys[slot]
+    }
+  }
+  return '—'
+}
 
 function cfgColor(c) { return CFG_COLORS[c] || '#4f6f8f' }
 
@@ -128,6 +145,12 @@ function onCellClick(wf, cfg, ti) {
   background: var(--bg-row-stripe); border-bottom: 1px solid var(--border-light);
   position: sticky; left: 0; z-index: 3;
 }
+.ts-tn-hd {
+  padding: 6px 4px; font-size: 10px; font-weight: 600; text-align: left;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+  background: var(--bg-row-stripe); border-bottom: 1px solid var(--border-light);
+  min-width: 120px; max-width: 200px;
+}
 .ts-test-hd {
   padding: 5px 2px; font-size: 11px; font-weight: 600;
   color: var(--text-primary); background: var(--bg-row-stripe);
@@ -137,8 +160,7 @@ function onCellClick(wf, cfg, ti) {
 }
 .ts-cfg-sub {
   padding: 4px 6px; font-size: 10px; font-weight: 600;
-  background: var(--bg-row-stripe);
-  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-row-stripe); border-bottom: 1px solid var(--border-light);
 }
 .ts-gap { width: 3px; min-width: 3px; background: var(--border-light); padding: 0 !important; border-bottom: 1px solid var(--border-light); }
 
@@ -149,6 +171,14 @@ function onCellClick(wf, cfg, ti) {
   background: var(--bg-card);
   position: sticky; left: 0; z-index: 1;
   white-space: nowrap;
+}
+.ts-tn-col {
+  padding: 5px 8px; text-align: left;
+  font-size: 11px; color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-light);
+  background: var(--bg-card);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 200px;
 }
 
 td {
