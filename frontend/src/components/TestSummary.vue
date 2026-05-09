@@ -5,28 +5,29 @@
         <thead>
           <tr>
             <th class="ts-wf-hd" rowspan="2">WF</th>
-            <th v-for="cfg in configList" :key="cfg"
-                :colspan="maxTests" class="ts-cfg-hd"
-                :style="{ color: cfgColor(cfg) }">{{ cfg }}</th>
+            <template v-for="(t, ti) in tests" :key="ti">
+              <th class="ts-test-hd" :colspan="4">{{ t }}</th>
+              <th v-if="ti < tests.length - 1" class="ts-gap"></th>
+            </template>
           </tr>
           <tr>
-            <template v-for="cfg in configList" :key="'h2-'+cfg">
-              <th v-for="ti in maxTests" :key="ti"
-                  class="ts-test-hd">{{ testNames[ti-1] }}</th>
+            <template v-for="(t, ti) in tests" :key="'sub-'+ti">
+              <th v-for="cfg in configList" :key="cfg" class="ts-cfg-sub"
+                  :style="{ color: cfgColor(cfg) }">{{ cfg }}</th>
+              <th v-if="ti < tests.length - 1" class="ts-gap"></th>
             </template>
           </tr>
         </thead>
         <tbody>
           <tr v-for="wf in sortedWfs" :key="wf.wf">
-            <td class="ts-wf-col">
-              <span class="ts-wf-num">WF{{ wf.wf }}</span>
-            </td>
-            <template v-for="cfg in configList" :key="cfg">
-              <td v-for="ti in maxTests" :key="ti"
-                  :class="cellClass(wf, cfg, ti-1)"
-                  @click="onCellClick(wf, cfg, ti-1)">
-                {{ cellText(wf, cfg, ti-1) }}
+            <td class="ts-wf-col">WF{{ wf.wf }}</td>
+            <template v-for="(t, ti) in tests" :key="ti">
+              <td v-for="cfg in configList" :key="cfg"
+                  :class="cellClass(wf, cfg, ti)"
+                  @click="onCellClick(wf, cfg, ti)">
+                {{ cellText(wf, cfg, ti) }}
               </td>
+              <td v-if="ti < tests.length - 1" class="ts-gap"></td>
             </template>
           </tr>
         </tbody>
@@ -46,7 +47,6 @@ const CFG_COLORS = { R1FNF: '#4f6f8f', R2CNM: '#0891b2', R3: '#d97706', R4: '#05
 
 const summaryList = computed(() => props.summaryData?.summary ?? [])
 
-// Collect configs from all WFs
 const configList = computed(() => {
   const set = new Set()
   summaryList.value.forEach(wf => {
@@ -57,30 +57,25 @@ const configList = computed(() => {
   return [...ordered, ...set]
 })
 
-// Max test count across all WFs and configs
-const maxTests = computed(() => {
-  let max = 0
+// Collect all unique test names across all WFs, preserving order
+const tests = computed(() => {
+  const seen = new Set()
+  const names = []
   summaryList.value.forEach(wf => {
     if (wf.configs) {
-      Object.values(wf.configs).forEach(tests => {
-        const n = Object.keys(tests).length
-        if (n > max) max = n
+      Object.values(wf.configs).forEach(cfgTests => {
+        Object.keys(cfgTests).forEach(t => {
+          if (!seen.has(t)) { seen.add(t); names.push(t) }
+        })
       })
     }
   })
-  return max || 1
-})
-
-// Build test names from first WF that has test_names
-const testNames = computed(() => {
-  const names = []
-  for (const wf of summaryList.value) {
-    const tn = wf.test_names || []
-    tn.forEach((n, i) => { if (n && !names[i]) names[i] = n })
-  }
-  for (let i = 0; i < maxTests.value; i++) {
-    if (!names[i]) names[i] = `Test${i + 1}`
-  }
+  // Also check test_names arrays
+  summaryList.value.forEach(wf => {
+    (wf.test_names || []).forEach(t => {
+      if (t && !seen.has(t)) { seen.add(t); names.push(t) }
+    })
+  })
   return names
 })
 
@@ -92,33 +87,32 @@ const sortedWfs = computed(() => {
 
 function cfgColor(c) { return CFG_COLORS[c] || '#4f6f8f' }
 
-function getTest(wf, cfg, ti) {
-  const testName = testNames.value[ti]
-  return wf.configs?.[cfg]?.[testName] || null
+function getResult(wf, cfg, ti) {
+  const tname = tests.value[ti]
+  if (!tname) return null
+  return wf.configs?.[cfg]?.[tname] || null
 }
 
 function cellClass(wf, cfg, ti) {
-  const t = getTest(wf, cfg, ti)
-  if (!t) return 'ts-empty'
-  if (t.spec > 0) return 'ts-fail'
-  if (t.strife > 0) return 'ts-strife'
+  const r = getResult(wf, cfg, ti)
+  if (!r) return 'ts-empty'
+  if (r.spec > 0) return 'ts-fail'
+  if (r.strife > 0) return 'ts-strife'
   return 'ts-pass'
 }
 
 function cellText(wf, cfg, ti) {
-  const t = getTest(wf, cfg, ti)
-  return t?.result || '—'
+  const r = getResult(wf, cfg, ti)
+  return r?.result || '—'
 }
 
 function onCellClick(wf, cfg, ti) {
-  const t = getTest(wf, cfg, ti)
-  if (!t || !t.has_failure) return
-  const testName = testNames.value[ti]
+  const r = getResult(wf, cfg, ti)
+  if (!r || !r.has_failure) return
   emit('cell-click', {
-    wf: 'WF' + wf.wf,
-    cfg,
-    test: testName,
-    failureSns: t.failure_sns || []
+    wf: 'WF' + wf.wf, cfg,
+    test: tests.value[ti],
+    failureSns: r.failure_sns || []
   })
 }
 </script>
@@ -129,48 +123,45 @@ function onCellClick(wf, cfg, ti) {
 .ts-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 700px; }
 
 .ts-wf-hd {
-  padding: 8px 10px; font-size: 11px; font-weight: 600; text-align: left;
-  color: var(--text-muted); background: var(--bg-row-stripe);
-  text-transform: uppercase; letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border-light);
-  position: sticky; left: 0; z-index: 2;
+  padding: 6px 8px; font-size: 10px; font-weight: 600; text-align: left;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+  background: var(--bg-row-stripe); border-bottom: 1px solid var(--border-light);
+  position: sticky; left: 0; z-index: 3;
 }
-.ts-cfg-hd {
-  padding: 6px 4px; font-size: 11px; font-weight: 700;
+.ts-test-hd {
+  padding: 5px 2px; font-size: 11px; font-weight: 600;
+  color: var(--text-primary); background: var(--bg-row-stripe);
+  border-bottom: 1px solid var(--border-light);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 120px;
+}
+.ts-cfg-sub {
+  padding: 4px 6px; font-size: 10px; font-weight: 600;
   background: var(--bg-row-stripe);
   border-bottom: 1px solid var(--border-light);
 }
-.ts-test-hd {
-  padding: 5px 4px; font-size: 10px; font-weight: 400;
-  color: var(--text-muted); background: var(--bg-row-stripe);
-  border-bottom: 1px solid var(--border-light);
-  max-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
+.ts-gap { width: 3px; min-width: 3px; background: var(--border-light); padding: 0 !important; border-bottom: 1px solid var(--border-light); }
 
 .ts-wf-col {
-  padding: 8px 10px; text-align: left; font-family: var(--font-mono);
+  padding: 6px 8px; text-align: left; font-family: var(--font-mono);
   font-size: 11px; font-weight: 600; color: var(--text-secondary);
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-card);
   position: sticky; left: 0; z-index: 1;
+  white-space: nowrap;
 }
-.ts-wf-num { white-space: nowrap; }
 
 td {
-  padding: 6px 6px; text-align: center; font-family: var(--font-mono);
+  padding: 5px 4px; text-align: center; font-family: var(--font-mono);
   font-size: 11px; font-variant-numeric: tabular-nums;
   border-bottom: 1px solid var(--border-light);
   transition: filter var(--duration-fast);
+  white-space: nowrap;
 }
 
 .ts-pass { background: var(--color-success-bg); color: var(--color-success); }
 .ts-strife { background: var(--color-warning-bg); color: var(--color-warning); cursor: pointer; }
 .ts-fail { background: var(--color-danger-bg); color: var(--color-danger); font-weight: 700; cursor: pointer; }
-.ts-empty { color: var(--text-muted); opacity: 0.4; }
+.ts-empty { color: var(--text-muted); opacity: 0.35; }
 .ts-strife:hover, .ts-fail:hover { filter: brightness(0.94); }
-
-tr:nth-child(even) td { background-color: rgba(0,0,0,0.01); }
-tr:nth-child(even) td.ts-pass { background: var(--color-success-bg); }
-tr:nth-child(even) td.ts-strife { background: var(--color-warning-bg); }
-tr:nth-child(even) td.ts-fail { background: var(--color-danger-bg); }
 </style>
