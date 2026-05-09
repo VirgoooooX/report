@@ -625,6 +625,34 @@ def extract_sn_progress(daily_path):
     return all_progress
 
 
+def extract_sn_fact_rows(daily_path, report_id, report_date):
+    """Extract all CP/check-item fact rows from a Daily Report workbook."""
+    _, _, ts_test_names, _ = read_test_summary(daily_path)
+    wb = load_workbook(daily_path)
+    all_cp_rows = []
+    all_check_rows = []
+
+    for name in wb.sheetnames:
+        if name in SKIP_SHEETS or name.startswith('MLB'):
+            continue
+        wfn = wf_num(name)
+        if not wfn:
+            continue
+        ts_names = ts_test_names.get(wfn, ['(unnamed)'])
+        cp_rows, check_rows = extract_wf_fact_rows(
+            wb[name],
+            wf_num=wfn,
+            report_id=report_id,
+            report_date=report_date,
+            ts_names=ts_names,
+        )
+        all_cp_rows.extend(cp_rows)
+        all_check_rows.extend(check_rows)
+
+    wb.close()
+    return all_cp_rows, all_check_rows
+
+
 def _extract_wf_progress(ws, ts_names):
     """
     解析一个 WF sheet，提取每个 SN 的 CP 进度。
