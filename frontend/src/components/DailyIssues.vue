@@ -52,13 +52,13 @@
               <td>WF{{ row.wf }}</td>
               <td>{{ row.config }}</td>
               <td>{{ row.failed_test }}</td>
-              <td class="text-ellipsis" :title="row.failed_cycle">{{ row.failed_cycle }}</td>
+              <td :title="row.failed_cycle">{{ row.failed_cycle }}</td>
               <td>
                 <span :class="row.type === 'spec' ? 'type-spec' : row.type === 'strife' ? 'type-strife' : ''">
                   {{ row.type === 'spec' ? 'Spec' : row.type === 'strife' ? 'Strife' : row.type }}
                 </span>
               </td>
-              <td class="text-ellipsis" :title="row.symptom">{{ row.symptom }}</td>
+              <td :title="row.symptom">{{ row.symptom }}</td>
               <td>{{ row.location }}</td>
               <td>
                 <span class="source-badge" :class="'source-' + row.source">
@@ -135,8 +135,8 @@ function sourceLabel(s) {
 /* Table */
 .table-wrap { overflow-x: auto; padding: 0 16px 16px; }
 table {
-  width: 100%; border-collapse: collapse; font-size: 13px;
-  font-variant-numeric: tabular-nums;
+  width: auto; min-width: 100%; border-collapse: collapse; font-size: 13px;
+  font-variant-numeric: tabular-nums; table-layout: auto;
 }
 th {
   background: var(--bg-row-stripe); padding: 8px 10px;
@@ -146,10 +146,9 @@ th {
 }
 td {
   padding: 8px 10px; border-bottom: 1px solid var(--border-light);
-  font-size: 12px; vertical-align: middle;
+  font-size: 12px; vertical-align: middle; white-space: nowrap;
 }
 .mono { font-family: var(--font-mono); font-size: 11px; }
-.text-ellipsis { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .row-warn td { background: #fff9e6; }
 
