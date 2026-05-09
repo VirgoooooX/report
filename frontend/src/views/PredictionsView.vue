@@ -51,21 +51,21 @@
         <thead>
           <tr>
             <th class="sortable col-wf" @click="sortBy('wf_num')">WF</th>
-            <th class="sortable col-center" @click="sortBy('config')">Config</th>
-            <th class="sortable col-center" @click="sortBy('test_idx')">Test</th>
-            <th class="col-center">Progress</th>
-            <th class="sortable col-center" @click="sortBy('daily_rate')">Daily Rate</th>
-            <th class="sortable col-center" @click="sortBy('remaining_days')">Rem. Days</th>
-            <th class="sortable col-center" @click="sortBy('predicted_date')">Predicted Date</th>
-            <th class="col-center">Type</th>
+            <th class="sortable col-config" @click="sortBy('config')">Config</th>
+            <th class="sortable col-test" @click="sortBy('test_idx')">Test</th>
+            <th class="col-progress">Progress</th>
+            <th class="sortable col-num" @click="sortBy('daily_rate')">Daily Rate</th>
+            <th class="sortable col-num" @click="sortBy('remaining_days')">Rem. Days</th>
+            <th class="sortable col-date" @click="sortBy('predicted_date')">Pred. Date</th>
+            <th class="col-type">Type</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(row, idx) in sortedRows" :key="idx">
             <td class="cell-wf"><span class="wf-num">WF{{ row.wf_num }}</span><span class="wf-name" :title="wfName(row.wf_num)">{{ wfName(row.wf_num) }}</span></td>
-            <td class="cell-mono col-center">{{ row.config }}</td>
-            <td class="cell-mono col-center">{{ row.test_name || 'Test' + ((row.test_idx || 0) + 1) }}</td>
-            <td class="col-center">
+            <td class="cell-mono col-config">{{ row.config }}</td>
+            <td class="col-test"><span class="cell-test" :title="row.test_name">{{ row.test_name || 'Test' + ((row.test_idx || 0) + 1) }}</span></td>
+            <td class="col-progress">
               <div class="progress-inline">
                 <div class="progress-track-sm">
                   <div class="progress-fill-sm" :style="{ width: predProgress(row) + '%' }"></div>
@@ -73,12 +73,10 @@
                 <span class="progress-label">{{ predProgress(row).toFixed(1) }}%</span>
               </div>
             </td>
-            <td class="cell-num col-center">{{ row.daily_rate != null ? Number(row.daily_rate).toFixed(1) : '—' }}</td>
-            <td class="cell-num col-center">{{ row.remaining_days != null ? Number(row.remaining_days).toFixed(1) : '—' }}</td>
-            <td class="col-center">
-              <span class="editable-date" @click="openEdit(row)">{{ row.predicted_date || '—' }}</span>
-            </td>
-            <td class="col-center"><StatusBadge :type="row.is_manual == 1 ? 'manual' : 'auto'" /></td>
+            <td class="cell-num col-num">{{ row.daily_rate != null ? Number(row.daily_rate).toFixed(1) : '—' }}</td>
+            <td class="cell-num col-num">{{ row.remaining_days != null ? Number(row.remaining_days).toFixed(1) : '—' }}</td>
+            <td class="col-date"><span class="editable-date" @click="openEdit(row)">{{ row.predicted_date || '—' }}</span></td>
+            <td class="col-type"><StatusBadge :type="row.is_manual == 1 ? 'manual' : 'auto'" /></td>
           </tr>
           <tr v-if="!store.predictions.length">
             <td colspan="8" class="empty-row">No predictions found</td>
@@ -385,11 +383,18 @@ tr:hover td {
   background: var(--bg-row-hover);
 }
 
-.col-wf { text-align: left !important; width: 120px; }
-.col-center { text-align: center !important; }
-.cell-wf { text-align: left; max-width: 120px; }
+.col-wf { text-align: left !important; min-width: 150px; }
+.col-test { text-align: center !important; min-width: 140px; }
+.col-progress { text-align: center !important; min-width: 130px; }
+.col-num { text-align: center !important; min-width: 80px; }
+.col-date { text-align: center !important; min-width: 100px; }
+.col-type { text-align: center !important; min-width: 60px; }
+.col-config { text-align: center !important; min-width: 60px; }
+
+.cell-wf { text-align: left; }
 .wf-num { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); white-space: nowrap; }
-.wf-name { font-size: 12px; color: var(--text-muted); margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50px; display: inline-block; vertical-align: bottom; }
+.wf-name { font-size: 12px; color: var(--text-muted); margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80px; display: inline-block; vertical-align: bottom; }
+.cell-test { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; vertical-align: bottom; }
 
 .cell-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .cell-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
