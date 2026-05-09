@@ -286,6 +286,19 @@ def _parse_wf_sheet(ws, wfn, ts_names):
             cp_names = [(ps, pn) for ps, pe, pn in cp_list]
             cp_test_map = map_cps_to_tests(cp_names, ts_names)
             
+            # Build check item mapping per CP (row r+1 has check item names)
+            cp_check_items = {}
+            for ps, pe, pn in cp_list:
+                items = {}
+                for c in range(ps, pe + 1):
+                    v = ws.cell(r + 1, c).value
+                    if v and str(v).strip():
+                        item_name = str(v).strip()
+                        if item_name in CHECK_NAMES or len(item_name) <= 6:
+                            items[c] = item_name
+                if items:
+                    cp_check_items[(ps, pe)] = items
+            
             # Find first data config
             dr = r + 2
             config = None
@@ -345,16 +358,27 @@ def _parse_wf_sheet(ws, wfn, ts_names):
                 for ti in range(num_tests):
                     results[row_cfg][ti]['total'] += 1
                 
-                # Check fills
+                # Check fills + track which check item column failed
                 has_spec = False; has_strife = False
+                failed_col = None
+                check_items = cp_check_items.get((cs, ce), {})
                 for cc in range(cs, ce + 1):
                     ft = get_failure_type(ws.cell(dr, cc))
-                    if ft == 'spec': has_spec = True; break
-                    if ft == 'strife': has_strife = True
+                    if ft == 'spec':
+                        has_spec = True
+                        failed_col = cc
+                        break
+                    if ft == 'strife':
+                        has_strife = True
+                        if failed_col is None:
+                            failed_col = cc
                 
                 sn_str = str(sn).strip()
                 type_str = 'spec' if has_spec else ('strife' if has_strife else None)
-                location = (
+                
+                # Location = check item name (FACT/ISB/...), fallback to test name
+                failed_check_item = check_items.get(failed_col, '') if failed_col else ''
+                location = failed_check_item or (
                     ts_names[test_idx] if test_idx < len(ts_names) and ts_names[test_idx]
                     else f'Test{test_idx + 1}'
                 )
