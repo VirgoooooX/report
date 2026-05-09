@@ -1,7 +1,7 @@
 <template>
   <div class="conic-ring" :style="`--size:${size}px;--p:${displayPct}`">
     <div class="conic-ring-inner">
-      <span class="conic-ring-value">{{ displayPct }}%</span>
+      <span class="conic-ring-value">{{ displayPct.toFixed(1) }}%</span>
     </div>
   </div>
 </template>

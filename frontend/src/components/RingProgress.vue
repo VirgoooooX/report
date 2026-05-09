@@ -9,7 +9,7 @@
              :transform="`rotate(-90 ${vb/2} ${vb/2})`"
              class="ring-circle" />
      <text :x="vb/2" :y="yPct" text-anchor="middle" fill="var(--text-primary)"
-           :font-size="fsPct" font-weight="700" font-family="var(--font-display)">{{ pct }}%</text>
+           :font-size="fsPct" font-weight="700" font-family="var(--font-display)">{{ Number(pct).toFixed(1) }}%</text>
      <text :x="vb/2" :y="yLabel" text-anchor="middle" fill="var(--text-secondary)"
            :font-size="fsLabel" font-family="var(--font-display)">{{ label }}</text>
      <text v-if="sublabel" :x="vb/2" :y="ySub" text-anchor="middle" fill="var(--text-muted)"
