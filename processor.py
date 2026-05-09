@@ -22,7 +22,8 @@ from db import (
     get_failure_rate_stats, get_daily_changes_by_cp,
     save_predictions, init_categories, get_conn,
     create_report_version, save_report_wf_meta, save_report_test_names,
-    save_report_cps, save_sn_cp_results, save_sn_check_results
+    save_report_cps, save_sn_cp_results, save_sn_check_results,
+    detect_definition_changes, save_definition_changes
 )
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
@@ -192,6 +193,17 @@ def process_all(rebuild=False):
             conn = get_conn()
             report_id = create_report_version(conn, date_str, filepath, source_file_name=fname, ts_test_names=ts_test_names)
             save_report_definitions(conn, report_id, filepath)
+            previous = conn.execute(
+                """SELECT id FROM reports
+                   WHERE is_active = 1 AND report_date < ?
+                   ORDER BY report_date DESC, version DESC
+                   LIMIT 1""",
+                (date_str,),
+            ).fetchone()
+            previous_report_id = previous['id'] if previous else None
+            changes = detect_definition_changes(conn, report_id, previous_report_id)
+            if changes:
+                save_definition_changes(conn, changes)
             conn.commit()
             conn.close()
 
@@ -307,6 +319,17 @@ def process_newest():
         conn = get_conn()
         report_id = create_report_version(conn, latest_date, latest_path, source_file_name=fname, ts_test_names=ts_test_names)
         save_report_definitions(conn, report_id, latest_path)
+        previous = conn.execute(
+            """SELECT id FROM reports
+               WHERE is_active = 1 AND report_date < ?
+               ORDER BY report_date DESC, version DESC
+               LIMIT 1""",
+            (latest_date,),
+        ).fetchone()
+        previous_report_id = previous['id'] if previous else None
+        changes = detect_definition_changes(conn, report_id, previous_report_id)
+        if changes:
+            save_definition_changes(conn, changes)
         conn.commit()
         conn.close()
 

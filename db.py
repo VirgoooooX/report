@@ -365,6 +365,68 @@ def get_failure_rate_stats_from_facts(report_id):
     return rows
 
 
+def save_definition_changes(conn, changes):
+    rows = [
+        (
+            c['report_id'],
+            c.get('previous_report_id'),
+            c['wf_num'],
+            c['change_type'],
+            json.dumps(c.get('detail', {})),
+        )
+        for c in changes
+    ]
+    conn.executemany(
+        """INSERT INTO definition_changes
+           (report_id, previous_report_id, wf_num, change_type, detail_json)
+           VALUES (?, ?, ?, ?, ?)""",
+        rows,
+    )
+    return len(rows)
+
+
+def detect_definition_changes(conn, report_id, previous_report_id):
+    if not previous_report_id:
+        return []
+    changes = []
+
+    current_tests = get_report_test_names(conn, report_id)
+    previous_tests = get_report_test_names(conn, previous_report_id)
+    for wf, names in current_tests.items():
+        old = previous_tests.get(wf, [])
+        if len(old) != len(names):
+            changes.append({
+                'report_id': report_id,
+                'previous_report_id': previous_report_id,
+                'wf_num': wf,
+                'change_type': 'test_count_changed',
+                'detail': {'previous': old, 'current': names},
+            })
+        elif old != names:
+            changes.append({
+                'report_id': report_id,
+                'previous_report_id': previous_report_id,
+                'wf_num': wf,
+                'change_type': 'test_names_changed',
+                'detail': {'previous': old, 'current': names},
+            })
+
+    current_wfs = get_report_wf_meta(conn, report_id)
+    previous_wfs = get_report_wf_meta(conn, previous_report_id)
+    for wf, name in current_wfs.items():
+        old_name = previous_wfs.get(wf, '')
+        if old_name and old_name != name:
+            changes.append({
+                'report_id': report_id,
+                'previous_report_id': previous_report_id,
+                'wf_num': wf,
+                'change_type': 'wf_name_changed',
+                'detail': {'previous': old_name, 'current': name},
+            })
+
+    return changes
+
+
 def get_wf_cps(wf_num=None):
     """获取 CP 信息。如果指定 wf_num 返回单个 WF 的列表，否则返回 {wf_num: [...]}
     """
@@ -593,6 +655,16 @@ def init_db(drop_all=False, conn=None):
             source_row INTEGER,
             source_col INTEGER,
             PRIMARY KEY (report_id, wf_num, config, sn, cp_idx, check_item_idx)
+        );
+
+        CREATE TABLE IF NOT EXISTS definition_changes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id INTEGER NOT NULL REFERENCES reports(id),
+            previous_report_id INTEGER REFERENCES reports(id),
+            wf_num TEXT NOT NULL,
+            change_type TEXT NOT NULL,
+            detail_json TEXT DEFAULT '{}',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
         CREATE INDEX IF NOT EXISTS idx_wf_results_report ON wf_results(report_id);
