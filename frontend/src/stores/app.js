@@ -3,6 +3,31 @@ import { ref, computed } from 'vue'
 import { requestJson } from '@/composables/useApi'
 
 export const useAppStore = defineStore('app', () => {
+  // Preferences
+  const language = ref(localStorage.getItem('dashboard-language') || 'zh-CN')
+  const theme = ref(localStorage.getItem('dashboard-theme') || 'light')
+
+  function setLanguage(lang) {
+    language.value = lang
+    localStorage.setItem('dashboard-language', lang)
+    document.documentElement.lang = lang === 'zh-CN' ? 'zh-CN' : 'en-US'
+  }
+
+  function setTheme(nextTheme) {
+    theme.value = nextTheme
+    localStorage.setItem('dashboard-theme', nextTheme)
+    document.documentElement.dataset.theme = nextTheme
+  }
+
+  function toggleTheme() {
+    setTheme(theme.value === 'dark' ? 'light' : 'dark')
+  }
+
+  function applyPreferences() {
+    document.documentElement.lang = language.value === 'zh-CN' ? 'zh-CN' : 'en-US'
+    document.documentElement.dataset.theme = theme.value
+  }
+
   const reportDate = ref('')
   const wfNames = ref({})
   const overviewData = ref(null)
@@ -127,6 +152,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
+    language, theme, setLanguage, setTheme, toggleTheme, applyPreferences,
     reportDate, wfNames, overviewData, summaryData, loading, error,
     categories, categoryDetail, predictions, snResult, exportData,
     configColors, catColors, CONFIG_ORDER, CAT_ORDER,

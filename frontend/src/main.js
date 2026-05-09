@@ -7,6 +7,11 @@ import './assets/styles/variables.css'
 import './assets/styles/global.css'
 
 const app = createApp(App)
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
 app.use(router)
+
+import { useAppStore } from '@/stores/app'
+useAppStore().applyPreferences()
+
 app.mount('#app')
