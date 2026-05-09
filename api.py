@@ -916,9 +916,9 @@ def api_daily_issues():
     rpt = conn.execute("SELECT report_date FROM reports WHERE id = ?", (rid,)).fetchone()
     report_date = rpt['report_date'] if rpt else ''
     
-    # Key function for 6-dimension comparison
+    # Key function for 5-dimension comparison (cycle is display-only)
     def _key(d):
-        return (d['sn'], d['wf'], d['config'], d['type'], d['location'], d.get('failed_cycle', ''))
+        return (d['sn'], d['wf'], d['config'], d['type'], d['location'])
     
     # Get previous report for diff (Daily Report is cumulative)
     prev = conn.execute("SELECT id FROM reports WHERE id < ? ORDER BY id DESC LIMIT 1", (rid,)).fetchone()
