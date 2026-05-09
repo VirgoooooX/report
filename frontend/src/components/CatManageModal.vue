@@ -76,7 +76,7 @@ function close() {
 
 const currentCategoryWfs = computed(() => {
   const cat = categories.value.find(c => c.name === activeTab.value)
-  return cat ? (cat.wfs || []) : []
+  return cat ? (cat.wf_nums || []) : []
 })
 
 async function loadCategories() {
