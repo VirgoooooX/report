@@ -6,7 +6,7 @@
           <tr>
             <th class="ts-wf-hd" rowspan="2">WF</th>
             <template v-for="(t, ti) in tests" :key="ti">
-              <th class="ts-test-hd" :colspan="5">{{ t }}</th>
+              <th class="ts-test-hd" :colspan="5">Test{{ ti + 1 }}</th>
               <th v-if="ti < tests.length - 1" class="ts-gap"></th>
             </template>
           </tr>
