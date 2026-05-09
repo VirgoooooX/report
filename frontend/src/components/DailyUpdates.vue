@@ -17,7 +17,7 @@
           <div class="flow-configs">
             <div v-for="cfg in wf.configs" :key="cfg.config" class="flow-cfg">
               <span class="cfg-badge" :style="badgeStyle(cfg.config)">{{ cfg.config }}</span>
-              <span class="cfg-delta">+{{ cfg.cp_delta }}</span>
+              <span class="cfg-delta">+{{ cfg.cp_delta }} CP</span>
               <div class="cfg-progress-bar">
                 <div class="cfg-bar-track">
                   <div class="cfg-bar-fill" :style="{ width: cfgProgress(cfg) + '%', background: barColor(cfg.config) }"></div>
@@ -117,8 +117,10 @@ function cfgProgress(cfg) {
   flex-shrink: 0; min-width: 54px; text-align: center;
 }
 .cfg-delta {
-  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-  color: var(--color-success); flex-shrink: 0; min-width: 28px;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+  color: #fff; background: var(--color-success);
+  padding: 2px 8px; border-radius: var(--radius-sm);
+  flex-shrink: 0; white-space: nowrap;
 }
 
 .cfg-progress-bar { flex: 1; min-width: 50px; }
@@ -126,8 +128,8 @@ function cfgProgress(cfg) {
 .cfg-bar-fill { height: 100%; border-radius: 2px; opacity: 0.45; transition: width 0.8s var(--ease-out); }
 
 .cfg-end {
-  font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary);
-  flex-shrink: 0; min-width: 44px; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 13px; font-weight: 700;
+  color: var(--text-primary); flex-shrink: 0; min-width: 44px; white-space: nowrap;
 }
 .cfg-idx {
   font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);
