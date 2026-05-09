@@ -5,31 +5,31 @@
         <thead>
           <tr>
             <th class="ts-wf-hd" rowspan="2">WF</th>
-            <template v-for="(t, ti) in tests" :key="ti">
-              <th class="ts-test-hd" :colspan="5">Test{{ ti + 1 }}</th>
-              <th v-if="ti < tests.length - 1" class="ts-gap"></th>
+            <template v-for="ti in maxTestSlots" :key="ti">
+              <th class="ts-test-hd" :colspan="5">Test{{ ti }}</th>
+              <th v-if="ti < maxTestSlots" class="ts-gap"></th>
             </template>
           </tr>
           <tr>
-            <template v-for="(t, ti) in tests" :key="'sub-'+ti">
+            <template v-for="ti in maxTestSlots" :key="'sub-'+ti">
               <th class="ts-tn-sub">Name</th>
               <th v-for="cfg in configList" :key="cfg" class="ts-cfg-sub"
                   :style="{ color: cfgColor(cfg) }">{{ cfg }}</th>
-              <th v-if="ti < tests.length - 1" class="ts-gap"></th>
+              <th v-if="ti < maxTestSlots" class="ts-gap"></th>
             </template>
           </tr>
         </thead>
         <tbody>
           <tr v-for="wf in sortedWfs" :key="wf.wf">
             <td class="ts-wf-col">WF{{ wf.wf }}</td>
-            <template v-for="(t, ti) in tests" :key="ti">
-              <td class="ts-tn-col">{{ wfTestName(wf, ti) }}</td>
+            <template v-for="ti in maxTestSlots" :key="ti">
+              <td class="ts-tn-col">{{ wfTestName(wf, ti - 1) }}</td>
               <td v-for="cfg in configList" :key="cfg"
-                  :class="cellClass(wf, cfg, ti)"
-                  @click="onCellClick(wf, cfg, ti)">
-                {{ cellText(wf, cfg, ti) }}
+                  :class="cellClass(wf, cfg, ti - 1)"
+                  @click="onCellClick(wf, cfg, ti - 1)">
+                {{ cellText(wf, cfg, ti - 1) }}
               </td>
-              <td v-if="ti < tests.length - 1" class="ts-gap"></td>
+              <td v-if="ti < maxTestSlots" class="ts-gap"></td>
             </template>
           </tr>
         </tbody>
@@ -59,24 +59,21 @@ const configList = computed(() => {
   return [...ordered, ...set]
 })
 
-const tests = computed(() => {
-  const seen = new Set()
-  const names = []
+// Max number of test slots across all WFs
+const maxTestSlots = computed(() => {
+  let max = 0
   summaryList.value.forEach(wf => {
+    const tn = wf.test_names
+    if (tn && tn.length > max) max = tn.length
+    // Also check config data for test keys like Test1, Test2, etc.
     if (wf.configs) {
-      Object.values(wf.configs).forEach(cfgTests => {
-        Object.keys(cfgTests).forEach(t => {
-          if (!seen.has(t)) { seen.add(t); names.push(t) }
-        })
+      Object.values(wf.configs).forEach(tests => {
+        const n = Object.keys(tests).length
+        if (n > max) max = n
       })
     }
   })
-  summaryList.value.forEach(wf => {
-    (wf.test_names || []).forEach(t => {
-      if (t && !seen.has(t)) { seen.add(t); names.push(t) }
-    })
-  })
-  return names
+  return max || 1
 })
 
 const sortedWfs = computed(() => {
@@ -85,41 +82,46 @@ const sortedWfs = computed(() => {
   )
 })
 
-function wfTestName(wf, ti) {
-  // Use wf.test_names per slot
+// Get this WF's test name for a given slot index
+function wfTestName(wf, slotIdx) {
   const tn = wf.test_names
-  if (tn && tn[ti]) return tn[ti]
-  // Fallback: use the global test name for this index
-  return tests.value[ti] || '—'
+  if (tn && tn[slotIdx]) return tn[slotIdx]
+  return '—'
+}
+
+// Get the test name key for this WF's slot - used to look up config results
+function wfTestKey(wf, slotIdx) {
+  const tn = wf.test_names
+  if (tn && tn[slotIdx]) return tn[slotIdx]
+  return `Test${slotIdx + 1}`
 }
 
 function cfgColor(c) { return CFG_COLORS[c] || '#4f6f8f' }
 
-function getResult(wf, cfg, ti) {
-  const tname = tests.value[ti]
-  if (!tname) return null
-  return wf.configs?.[cfg]?.[tname] || null
+function getResult(wf, cfg, slotIdx) {
+  const key = wfTestKey(wf, slotIdx)
+  return wf.configs?.[cfg]?.[key] || null
 }
 
-function cellClass(wf, cfg, ti) {
-  const r = getResult(wf, cfg, ti)
+function cellClass(wf, cfg, slotIdx) {
+  const r = getResult(wf, cfg, slotIdx)
   if (!r) return 'ts-empty'
   if (r.spec > 0) return 'ts-fail'
   if (r.strife > 0) return 'ts-strife'
   return 'ts-pass'
 }
 
-function cellText(wf, cfg, ti) {
-  const r = getResult(wf, cfg, ti)
+function cellText(wf, cfg, slotIdx) {
+  const r = getResult(wf, cfg, slotIdx)
   return r?.result || '—'
 }
 
-function onCellClick(wf, cfg, ti) {
-  const r = getResult(wf, cfg, ti)
+function onCellClick(wf, cfg, slotIdx) {
+  const r = getResult(wf, cfg, slotIdx)
   if (!r || !r.has_failure) return
   emit('cell-click', {
     wf: 'WF' + wf.wf, cfg,
-    test: tests.value[ti],
+    test: wfTestName(wf, slotIdx),
     failureSns: r.failure_sns || []
   })
 }
