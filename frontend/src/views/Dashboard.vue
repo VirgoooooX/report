@@ -96,20 +96,7 @@
     </div>
 
     <!-- CatManage Modal -->
-    <div v-if="showCatModal" class="modal-overlay" @click.self="showCatModal = false">
-      <div class="modal-card">
-        <div class="modal-header">
-          <h3>Manage Categories</h3>
-          <button class="modal-close" @click="showCatModal = false">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p class="modal-empty">Category management coming soon.</p>
-        </div>
-        <div class="modal-footer">
-          <button class="btn-secondary" @click="showCatModal = false">Close</button>
-        </div>
-      </div>
-    </div>
+    <CatManageModal :show="showCatModal" @close="showCatModal = false" @updated="loadAll" />
   </div>
 </template>
 
@@ -124,6 +111,7 @@ import TopFailChart from '@/components/TopFailChart.vue'
 import DailyUpdates from '@/components/DailyUpdates.vue'
 import FailureAnalysis from '@/components/FailureAnalysis.vue'
 import TestSummary from '@/components/TestSummary.vue'
+import CatManageModal from '@/components/CatManageModal.vue'
 
 const store = useAppStore()
 const router = useRouter()
