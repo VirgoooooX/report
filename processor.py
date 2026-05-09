@@ -388,10 +388,39 @@ def compute_auto_predictions(days=14):
     if predictions:
         save_predictions(predictions)
         print(f"OK generated {len(predictions)} predictions")
+        # Try to populate real test names from latest report's TS sheet
+        _populate_test_names()
     else:
         print("WARN: not enough data to predict")
 
     return predictions
+
+
+def _populate_test_names():
+    """从最新 Daily Report 的 TS sheet 读取测试名并更新 predictions 表。"""
+    from engine import read_test_summary
+    reports = _find_daily_reports()
+    if not reports: return
+    latest_path = reports[-1][1]
+    try:
+        _, _, ts_test_names, _ = read_test_summary(latest_path)
+        if not ts_test_names: return
+        conn = get_conn()
+        updated = 0
+        for wf, names in ts_test_names.items():
+            for ti, name in enumerate(names):
+                if name:
+                    conn.execute(
+                        "UPDATE predictions SET test_name = ? WHERE wf_num = ? AND test_idx = ?",
+                        (name, wf, ti)
+                    )
+                    updated += conn.total_changes
+        conn.commit()
+        conn.close()
+        if updated:
+            print(f"   [OK] Updated {updated} test names in predictions")
+    except Exception as e:
+        pass  # silently skip if TS sheet not available
 
 
 # ═══════════════════════════════════════════════════════════════════════

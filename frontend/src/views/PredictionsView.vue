@@ -62,7 +62,7 @@
         </thead>
         <tbody>
           <tr v-for="(row, idx) in sortedRows" :key="idx">
-            <td class="cell-wf"><span class="wf-num">WF{{ row.wf_num }}</span><span class="wf-name">{{ wfName(row.wf_num) }}</span></td>
+            <td class="cell-wf"><span class="wf-num">WF{{ row.wf_num }}</span><span class="wf-name" :title="wfName(row.wf_num)">{{ wfName(row.wf_num) }}</span></td>
             <td class="cell-mono col-center">{{ row.config }}</td>
             <td class="cell-mono col-center">{{ row.test_name || 'Test' + ((row.test_idx || 0) + 1) }}</td>
             <td class="col-center">
@@ -385,11 +385,11 @@ tr:hover td {
   background: var(--bg-row-hover);
 }
 
-.col-wf { text-align: left !important; }
+.col-wf { text-align: left !important; width: 120px; }
 .col-center { text-align: center !important; }
-.cell-wf { text-align: left; }
-.wf-num { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); }
-.wf-name { font-size: 12px; color: var(--text-muted); margin-left: 6px; }
+.cell-wf { text-align: left; max-width: 120px; }
+.wf-num { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.wf-name { font-size: 12px; color: var(--text-muted); margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 50px; display: inline-block; vertical-align: bottom; }
 
 .cell-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .cell-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
