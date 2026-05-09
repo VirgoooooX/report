@@ -17,7 +17,7 @@
           <div class="flow-configs">
             <div v-for="cfg in wf.configs" :key="cfg.config" class="flow-cfg">
               <span class="cfg-badge" :style="badgeStyle(cfg.config)">{{ cfg.config }}</span>
-              <span class="cfg-delta">+{{ cfg.cp_delta }} CP</span>
+              <span class="cfg-delta">+{{ cfg.cp_delta }}</span>
               <div class="cfg-progress-bar">
                 <div class="cfg-bar-track">
                   <div class="cfg-bar-fill" :style="{ width: cfgProgress(cfg) + '%', background: barColor(cfg.config) }"></div>
