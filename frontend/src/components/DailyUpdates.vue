@@ -110,7 +110,7 @@ function cfgColor(name) {
 }
 
 .daily-body {
-  max-height: 1000px;
+  max-height: 6000px;
   overflow: hidden;
   transition: max-height var(--duration-normal) var(--ease-in-out);
   padding: 0 20px 14px;
