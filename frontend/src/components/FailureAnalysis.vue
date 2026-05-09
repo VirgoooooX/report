@@ -61,27 +61,40 @@ const props = defineProps({
 const emit = defineEmits(['drill-down'])
 
 const tabs = [
-  { key: 'test_item', label: 'By Test Item' },
-  { key: 'config', label: 'By Config' },
-  { key: 'wf', label: 'By WF' },
+  { key: 'top_failures', label: 'By Test Item' },
+  { key: 'by_config', label: 'By Config' },
+  { key: 'by_wf', label: 'By WF' },
   { key: 'top_n', label: 'Top N' }
 ]
 
-const activeTab = ref('test_item')
+const activeTab = ref('top_failures')
 
 const tableData = computed(() => {
   const key = activeTab.value
-  const data = props.failuresData?.[key]
-  if (!data || !Array.isArray(data)) return []
+  const raw = props.failuresData?.[key]
+  if (!raw) return []
+
+  // Handle both array and object formats
+  let data
+  if (Array.isArray(raw)) {
+    data = raw
+  } else {
+    data = Object.entries(raw).map(([name, val]) => ({ name, ...val }))
+  }
+
+  if (key === 'top_n') {
+    data = data.slice(0, 20)
+  }
+
   return data.map(d => ({
-    wf: d.wf ?? '',
-    cfg: d.config ?? '',
-    test: d.test_item ?? '',
-    dimension: d.dimension ?? d.name ?? '-',
-    spec_fail: d.spec_fail ?? 0,
-    strife_fail: d.strife_fail ?? 0,
-    total_fail: (d.spec_fail ?? 0) + (d.strife_fail ?? 0),
-    failure_rate: d.failure_rate ?? 0
+    wf: d.wf ?? d.wf_num ?? '',
+    cfg: d.config ?? d.cfg ?? d.name ?? '',
+    test: d.test ?? d.test_item ?? '',
+    dimension: d.dimension ?? d.name ?? d.test ?? (d.wf ? `WF${d.wf} ${d.config || ''}` : d.name ?? '-'),
+    spec_fail: d.spec_fails ?? d.spec ?? d.spec_fail ?? 0,
+    strife_fail: d.strife_fails ?? d.strife ?? d.strife_fail ?? 0,
+    total_fail: (d.total_tests ?? d.total ?? (d.spec_fails || d.spec || 0) + (d.strife_fails || d.strife || 0)),
+    failure_rate: d.total_rate ?? d.rate ?? d.failure_rate ?? 0
   }))
 })
 

@@ -4,7 +4,7 @@
 
     <!-- 1. Overview Cards -->
     <section class="section">
-      <OverviewCards :overview-data="store.overviewData" />
+      <OverviewCards :overview-data="overviewCompletion" />
     </section>
 
     <!-- 2. Category Cards + Edit button -->
@@ -15,7 +15,7 @@
         <button class="edit-btn" @click="showCatModal = true">Edit</button>
       </div>
       <CategoryCards
-        :completion-data="store.overviewData"
+        :completion-data="overviewCompletion"
         @category-click="goCategory"
       />
     </section>
@@ -40,7 +40,7 @@
         <h2>Daily Updates</h2>
         <div class="divider"></div>
       </div>
-      <DailyUpdates :daily-data="store.overviewData" />
+      <DailyUpdates :daily-data="store.overviewData?.daily_updates" />
     </section>
 
     <!-- 5. Failure Analysis -->
@@ -50,8 +50,8 @@
         <div class="divider"></div>
       </div>
       <FailureAnalysis
-        :failures-data="store.summaryData"
-        @drill-down="showFAModal = true; faWf = $event.wf; faTitle = $event.test || $event.dim; faSns = [];"
+        :failures-data="store.overviewData?.failures"
+        @drill-down="onFailDrillDown"
       />
     </section>
 
@@ -136,11 +136,15 @@ const faSns = ref([])
 const showCatModal = ref(false)
 
 const trendData = computed(() => {
-  return store.overviewData?.failure_trend ?? []
+  return store.overviewData?.trend ?? []
 })
 
 const topFailData = computed(() => {
-  return store.overviewData?.top_failures ?? []
+  return store.overviewData?.failures?.top_failures ?? []
+})
+
+const overviewCompletion = computed(() => {
+  return store.overviewData?.completion ?? {}
 })
 
 const configCount = computed(() => {
@@ -159,6 +163,14 @@ const failureCount = computed(() => {
 
 function goCategory(name) {
   router.push({ name: 'category', params: { name } })
+}
+
+function onFailDrillDown(payload) {
+  if (!payload) return
+  showFAModal.value = true
+  faWf.value = payload.wf || ''
+  faTitle.value = payload.test || payload.dim || 'Failure Detail'
+  faSns.value = []
 }
 
 function onCellClick(payload) {

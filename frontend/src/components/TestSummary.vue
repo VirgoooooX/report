@@ -34,34 +34,74 @@ const props = defineProps({
 
 const emit = defineEmits(['cell-click'])
 
+const CFG_ORDER = ['R1FNF', 'R2CNM', 'R3', 'R4']
+
+const summaryList = computed(() => props.summaryData?.summary ?? [])
+
+// Collect all configs from data
 const configs = computed(() => {
-  return props.summaryData?.configs ?? ['R1FNF', 'R2CNM', 'R3', 'R4']
+  const cfgSet = new Set()
+  summaryList.value.forEach(wf => {
+    if (wf.configs) Object.keys(wf.configs).forEach(c => cfgSet.add(c))
+  })
+  const ordered = CFG_ORDER.filter(c => cfgSet.has(c))
+  CFG_ORDER.forEach(c => cfgSet.delete(c))
+  return [...ordered, ...cfgSet]
 })
 
 const wfs = computed(() => {
-  return props.summaryData?.wfs ?? []
+  return summaryList.value.map(w => w.wf).sort((a, b) =>
+    String(a).localeCompare(String(b), undefined, { numeric: true })
+  )
 })
 
+// Build normalized matrix from API data
+const matrix = computed(() => {
+  const m = {}
+  summaryList.value.forEach(wf => {
+    const wfKey = wf.wf
+    if (!m[wfKey]) m[wfKey] = {}
+    if (wf.configs) {
+      Object.entries(wf.configs).forEach(([cfg, tests]) => {
+        let passCount = 0, specCount = 0, strifeCount = 0, totalCount = 0
+        let hasFail = false
+        let failureSns = []
+
+        Object.values(tests).forEach(test => {
+          totalCount++
+          if (test.spec > 0) { specCount++; hasFail = true; if (test.failure_sns) failureSns = failureSns.concat(test.failure_sns) }
+          else if (test.strife > 0) { strifeCount++ }
+          else { passCount++ }
+        })
+
+        m[wfKey][cfg] = { passCount, specCount, strifeCount, totalCount, hasFail, failureSns }
+      })
+    }
+  })
+  return m
+})
+
+function getCell(wf, cfg) {
+  return matrix.value[wf]?.[cfg] || null
+}
+
 function cellStatus(wf, cfg) {
-  const matrix = props.summaryData?.matrix ?? {}
-  const cell = matrix[wf]?.[cfg]
+  const cell = getCell(wf, cfg)
   if (!cell) return 'empty'
-  if (cell.fail_count > 0) return 'fail'
-  if (cell.strife_count > 0) return 'strife'
-  if (cell.pass_count > 0) return 'pass'
+  if (cell.specCount > 0) return 'fail'
+  if (cell.strifeCount > 0) return 'strife'
+  if (cell.passCount > 0) return 'pass'
   return 'empty'
 }
 
 function cellText(wf, cfg) {
-  const matrix = props.summaryData?.matrix ?? {}
-  const cell = matrix[wf]?.[cfg]
+  const cell = getCell(wf, cfg)
   if (!cell) return '—'
-
   const parts = []
-  if (cell.fail_count > 0) parts.push(cell.fail_count)
-  if (cell.strife_count > 0) parts.push(`S${cell.strife_count}`)
-  if (cell.pass_count > 0 && cell.fail_count === 0 && cell.strife_count === 0) {
-    return cell.pass_count
+  if (cell.specCount > 0) parts.push(cell.specCount + 'F')
+  if (cell.strifeCount > 0) parts.push('S' + cell.strifeCount)
+  if (cell.passCount > 0 && cell.specCount === 0 && cell.strifeCount === 0) {
+    return cell.passCount + 'P'
   }
   return parts.join('/') || '—'
 }
@@ -72,17 +112,16 @@ function cellClass(wf, cfg) {
 
 function onCellClick(wf, cfg) {
   const status = cellStatus(wf, cfg)
-  if (status !== 'fail') return
+  if (status !== 'fail' && status !== 'strife') return
 
-  const matrix = props.summaryData?.matrix ?? {}
-  const cell = matrix[wf]?.[cfg]
+  const cell = getCell(wf, cfg)
   if (!cell) return
 
   emit('cell-click', {
     wf,
     cfg,
-    test: cell.test ?? '',
-    failureSns: cell.failure_sns ?? []
+    test: '',
+    failureSns: cell.failureSns || []
   })
 }
 </script>

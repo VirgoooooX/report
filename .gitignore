@@ -5,3 +5,8 @@
 /output
 node_modules/
 .superpowers/
+/static
+*.pyc
+__pycache__/
+.DS_Store
+*.log

@@ -13,9 +13,9 @@
           <span class="wf-pill">{{ wf.wf }}</span>
           <span class="wf-name">{{ wfName(wf.wf) }}</span>
         </div>
-        <div v-for="cfg in wf.configs" :key="cfg.name" class="cfg-row">
-          <span class="cfg-name" :style="{ color: `var(${cfgColor(cfg.name)})` }">{{ cfg.name }}</span>
-          <span class="cfg-count">+{{ cfg.count }} CPs</span>
+        <div v-for="cfg in wf.configs" :key="cfg.config" class="cfg-row">
+          <span class="cfg-name" :style="{ color: `var(${cfgColor(cfg.config)})` }">{{ cfg.config }}</span>
+          <span class="cfg-count">+{{ cfg.cp_delta }} CPs</span>
           <span class="cfg-latest">{{ cfg.latest_cp }}</span>
         </div>
       </div>

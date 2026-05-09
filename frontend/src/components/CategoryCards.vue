@@ -42,8 +42,8 @@ const categories = computed(() => {
   const byCat = props.completionData?.by_category ?? {}
   return CATEGORY_META.map(meta => {
     const data = byCat[meta.name] ?? {}
-    const total = data.total ?? 0
-    const completed = data.completed ?? 0
+    const total = data.total_cps ?? data.total ?? 0
+    const completed = data.completed_cps ?? data.completed ?? 0
     const pct = total > 0 ? Math.round((completed / total) * 1000) / 10 : 0
     return { ...meta, total, completed, pct }
   })

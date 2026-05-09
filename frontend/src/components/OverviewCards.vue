@@ -36,9 +36,18 @@ const props = defineProps({
   overviewData: { type: Object, default: () => ({}) }
 })
 
-const overallPct = computed(() => props.overviewData?.overall_pct ?? 0)
-const completed = computed(() => props.overviewData?.completed_cps ?? 0)
-const total = computed(() => props.overviewData?.total_cps ?? 0)
+const overallPct = computed(() => {
+  if (total.value === 0) return 0
+  return (completed.value / total.value) * 100
+})
+const completed = computed(() => {
+  const byCfg = props.overviewData?.by_config ?? {}
+  return Object.values(byCfg).reduce((s, c) => s + (c.completed_cps || 0), 0)
+})
+const total = computed(() => {
+  const byCfg = props.overviewData?.by_config ?? {}
+  return Object.values(byCfg).reduce((s, c) => s + (c.total_cps || 0), 0)
+})
 
 const configs = computed(() => {
   const raw = props.overviewData?.by_config ?? {}
