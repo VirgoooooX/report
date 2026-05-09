@@ -179,7 +179,10 @@ const sortedRows = computed(() => {
 
 async function loadData() {
   try {
-    await store.fetchPredictions(filterWf.value || null, filterConfig.value || null)
+    await Promise.all([
+      store.fetchOverview(),
+      store.fetchPredictions(filterWf.value || null, filterConfig.value || null)
+    ])
   } catch {
     // silently handle
   }
