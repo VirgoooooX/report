@@ -135,7 +135,9 @@ def api_overview():
         configs_list = []
         for cfg in ['R1FNF', 'R2CNM', 'R3', 'R4']:
             if cfg in u['configs']:
-                configs_list.append(u['configs'][cfg])
+                item = dict(u['configs'][cfg])
+                item['config'] = cfg
+                configs_list.append(item)
         if configs_list:
             wf_updates_list.append({'wf': wfn, 'configs': configs_list})
     
