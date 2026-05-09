@@ -54,18 +54,6 @@
       />
     </section>
 
-    <!-- 6. Test Summary matrix -->
-    <section class="section">
-      <div class="section-header">
-        <h2>Test Summary</h2>
-        <div class="divider"></div>
-      </div>
-      <TestSummary
-        :summary-data="store.summaryData"
-        @cell-click="onCellClick"
-      />
-    </section>
-
     <!-- Footer -->
     <footer class="page-footer">
       <span>Report Date: {{ store.reportDate || '—' }}</span>
@@ -110,7 +98,6 @@ import TrendChart from '@/components/TrendChart.vue'
 import TopFailChart from '@/components/TopFailChart.vue'
 import DailyUpdates from '@/components/DailyUpdates.vue'
 import FailureAnalysis from '@/components/FailureAnalysis.vue'
-import TestSummary from '@/components/TestSummary.vue'
 import CatManageModal from '@/components/CatManageModal.vue'
 
 const store = useAppStore()
@@ -163,22 +150,9 @@ function onFailDrillDown(payload) {
   faSns.value = []
 }
 
-function onCellClick(payload) {
-  if (!payload) return
-  showFAModal.value = true
-  faWf.value = payload.wf || ''
-  faTitle.value = `${payload.wf || ''} / ${payload.cfg || ''} / ${payload.test || ''}`
-  faSns.value = payload.failureSns || []
-}
-
 onMounted(async () => {
   try {
     await store.fetchOverview()
-  } catch {
-    // silently handle - error state shown by components
-  }
-  try {
-    await store.fetchSummary()
   } catch {
     // silently handle
   }
