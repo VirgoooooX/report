@@ -24,39 +24,21 @@
     />
 
     <template v-if="store.categoryDetail">
-      <!-- Summary Cards Grid -->
+      <!-- Compact Stat Banner -->
       <section class="section">
-        <div class="summary-grid">
-          <!-- Overall card -->
-          <div class="card summary-card overall-summary">
-            <div class="summary-progress">
-              <ConicRing :pct="overallPct" :size="72" />
-            </div>
-            <div class="summary-info">
-              <div class="summary-label">Overall</div>
-              <div class="summary-pct">{{ overallPct.toFixed(1) }}%</div>
-              <div class="summary-cps">{{ overallCompleted }} / {{ overallTotal }} CPs</div>
-            </div>
+        <div class="stat-banner">
+          <div class="stat-overall">
+            <span class="stat-overall-pct">{{ overallPct.toFixed(1) }}%</span>
+            <span class="stat-overall-label">{{ overallCompleted }} / {{ overallTotal }} CPs completed</span>
           </div>
-          <!-- Per Config cards -->
-          <div
-            v-for="(cfg, idx) in configs"
-            :key="cfg.name"
-            class="card summary-card"
-          >
-            <div class="summary-config-header">
-              <span class="config-dot" :style="{ background: cfgColor(idx) }"></span>
-              <span class="summary-config-name">{{ cfg.name }}</span>
-            </div>
-            <div class="progress-track">
-              <div
-                class="progress-fill"
-                :style="{ width: cfg.pct + '%', background: cfgColor(idx) }"
-              ></div>
-            </div>
-            <div class="summary-cfg-stats">
-              <span class="summary-pct-sm">{{ cfg.pct }}%</span>
-              <span class="summary-cps-sm">{{ cfg.completed }}/{{ cfg.total }} CPs</span>
+          <div class="stat-configs">
+            <div v-for="(cfg, idx) in configs" :key="cfg.name" class="stat-cfg">
+              <span class="stat-cfg-dot" :style="{ background: cfgColor(idx) }"></span>
+              <span class="stat-cfg-name">{{ cfg.name }}</span>
+              <div class="stat-cfg-bar">
+                <div class="stat-cfg-fill" :style="{ width: cfg.pct + '%', background: cfgColor(idx) }"></div>
+              </div>
+              <span class="stat-cfg-pct">{{ cfg.pct }}%</span>
             </div>
           </div>
         </div>
@@ -106,7 +88,6 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'
-import ConicRing from '@/components/ConicRing.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 
@@ -282,103 +263,49 @@ watch(categoryName, load)
   white-space: nowrap;
 }
 
-/* Summary cards grid */
-.summary-grid {
-  display: grid;
-  grid-template-columns: 1.3fr repeat(auto-fill, minmax(200px, 1fr));
-  gap: 16px;
-}
 
-.summary-card {
-  padding: 18px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+/* Compact stat banner */
+.stat-banner {
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  padding: 16px 20px;
 }
-
-.overall-summary {
-  flex-direction: row;
-  align-items: center;
-  gap: 18px;
+.stat-overall {
+  display: flex; align-items: baseline; gap: 12px;
+  padding-bottom: 12px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-light);
 }
-
-.summary-info {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.stat-overall-pct {
+  font-family: var(--font-display); font-size: 28px; font-weight: 700;
+  color: var(--text-primary); line-height: 1;
 }
-
-.summary-label {
-  font-family: var(--font-display);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
+.stat-overall-label {
+  font-size: 13px; color: var(--text-muted); font-family: var(--font-mono);
 }
-
-.summary-pct {
-  font-family: var(--font-display);
-  font-size: 26px;
-  font-weight: 700;
-  color: var(--text-primary);
+.stat-configs { display: flex; flex-direction: column; gap: 8px; }
+.stat-cfg {
+  display: flex; align-items: center; gap: 10px;
 }
-
-.summary-cps {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
+.stat-cfg-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
 }
-
-.summary-config-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+.stat-cfg-name {
+  font-family: var(--font-mono); font-size: 12px; font-weight: 600;
+  color: var(--text-secondary); min-width: 54px;
 }
-
-.config-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
+.stat-cfg-bar {
+  flex: 1; height: 6px; background: var(--bg-progress-track);
+  border-radius: 3px; overflow: hidden;
 }
-
-.summary-config-name {
-  font-family: var(--font-display);
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.progress-track {
-  height: 8px;
-  background: var(--bg-progress-track);
-  border-radius: var(--radius-full);
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  border-radius: var(--radius-full);
+.stat-cfg-fill {
+  height: 100%; border-radius: 3px;
   transition: width var(--duration-slow) var(--ease-out);
 }
-
-.summary-cfg-stats {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-}
-
-.summary-pct-sm {
-  font-family: var(--font-display);
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.summary-cps-sm {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--text-muted);
+.stat-cfg-pct {
+  font-family: var(--font-display); font-size: 13px; font-weight: 600;
+  color: var(--text-primary); min-width: 38px; text-align: right;
 }
 
 /* WF Accordion */
