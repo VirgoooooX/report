@@ -15,9 +15,9 @@ import datetime
 import argparse
 
 sys.path.insert(0, os.path.dirname(__file__))
-from engine import analyze, extract_sn_progress, build_failure_detail, read_test_schedule
+from engine import analyze, extract_sn_progress, build_failure_detail, read_test_schedule, read_test_summary, extract_all_cp_structures
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
-from db import (init_db, save_report, save_sn_progress, save_wf_names, get_completion_stats,
+from db import (init_db, save_report, save_sn_progress, save_wf_names, save_wf_cps, get_completion_stats,
                 get_failure_rate_stats, get_daily_changes_by_cp,
                 save_predictions, init_categories, get_conn)
 
@@ -97,14 +97,21 @@ def process_all(rebuild=False):
     init_db(drop_all=rebuild)
     init_categories()
 
-    # 从第一个 Daily Report 读取 WF 名称
+    # 从第一个 Daily Report 读取 WF 名称、TS 测试名和 CP 结构
     if reports:
         first_path = reports[0][1]
         try:
             wf_names = read_test_schedule(first_path)
             if wf_names:
-                save_wf_names(wf_names)
-                print(f"[OK] Loaded {len(wf_names)} WF names from Test Schedule")
+                _, _, ts_test_names, _ = read_test_summary(first_path)
+                save_wf_names(wf_names, ts_test_names)
+                # Extract and save CP structures
+                all_cps = extract_all_cp_structures(first_path)
+                cps_saved = 0
+                for wfn, cp_list in all_cps.items():
+                    save_wf_cps(wfn, cp_list)
+                    cps_saved += len(cp_list)
+                print(f"[OK] Loaded {len(wf_names)} WF names + {cps_saved} CP records from Test Schedule/TS")
         except Exception as e:
             print(f"[WARN] Could not read WF names: {e}")
 
@@ -158,7 +165,8 @@ def process_all(rebuild=False):
                 print("   [+] FA Tracker: not found")
 
             # d. 保存到 DB
-            report_id = save_report(date_str, results, fa_stats, filepath)
+            _, _, ts_test_names, _ = read_test_summary(filepath)
+            report_id = save_report(date_str, results, fa_stats, filepath, ts_test_names)
             save_sn_progress(report_id, progress_data)
             print(f"OK saved (report_id={report_id})")
 
@@ -245,6 +253,7 @@ def process_newest():
     try:
         results = analyze(latest_path)
         progress_data = extract_sn_progress(latest_path)
+        _, _, ts_test_names, _ = read_test_summary(latest_path)
 
         # FA Tracker
         fa_stats = {'total': 0, 'matched': 0}
@@ -258,7 +267,7 @@ def process_newest():
             except Exception as e:
                 print(f"   FA Tracker process failed: {e}")
 
-        report_id = save_report(latest_date, results, fa_stats, latest_path)
+        report_id = save_report(latest_date, results, fa_stats, latest_path, ts_test_names)
         save_sn_progress(report_id, progress_data)
 
         print(f"OK done (report_id={report_id})")

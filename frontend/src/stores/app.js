@@ -41,7 +41,14 @@ export const useAppStore = defineStore('app', () => {
       const data = await r.json()
       overviewData.value = data
       reportDate.value = data.report_date || ''
-      if (data.wf_names) wfNames.value = data.wf_names
+      if (data.wf_names) {
+        // Normalize: API returns {wf: {name, test_names}} -> flatten to {wf: name} for compat
+        const names = {}
+        for (const [k, v] of Object.entries(data.wf_names)) {
+          names[k] = typeof v === 'object' ? v.name : v
+        }
+        wfNames.value = names
+      }
       return data
     } catch (e) {
       error.value = e.message

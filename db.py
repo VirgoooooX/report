@@ -28,24 +28,37 @@ def wf_sort_key(wfn):
         return (float('inf'),)
 
 
-def save_wf_names(names_dict):
-    """保存 WF 名称映射表。names_dict: {wf_num: wf_name}"""
+def save_wf_names(names_dict, test_names_dict=None):
+    """保存 WF 名称映射表和测试名。
+    names_dict: {wf_num: wf_name}
+    test_names_dict: {wf_num: [test_name, ...]}
+    """
     conn = get_conn()
     for wfn, name in names_dict.items():
+        tn = json.dumps(test_names_dict.get(wfn, [])) if test_names_dict else '[]'
         conn.execute(
-            "INSERT OR REPLACE INTO wf_names (wf_num, wf_name) VALUES (?,?)",
-            (wfn, name)
+            "INSERT OR REPLACE INTO wf_names (wf_num, wf_name, test_names) VALUES (?,?,?)",
+            (wfn, name, tn)
         )
     conn.commit()
     conn.close()
 
 
 def get_wf_names():
-    """获取全部 WF 名称映射。"""
+    """获取全部 WF 名称映射及测试名。
+    Returns: {wf_num: {'name': wf_name, 'test_names': [test_name, ...]}}
+    """
     conn = get_conn()
     rows = conn.execute("SELECT * FROM wf_names").fetchall()
     conn.close()
-    return {r['wf_num']: r['wf_name'] for r in rows}
+    result = {}
+    for r in rows:
+        try:
+            tn = json.loads(r.get('test_names', '[]'))
+        except (json.JSONDecodeError, TypeError):
+            tn = []
+        result[r['wf_num']] = {'name': r['wf_name'], 'test_names': tn}
+    return result
 
 
 def get_wf_name(wfn):
@@ -54,6 +67,55 @@ def get_wf_name(wfn):
     row = conn.execute("SELECT wf_name FROM wf_names WHERE wf_num=?", (wfn,)).fetchone()
     conn.close()
     return row['wf_name'] if row else ''
+
+
+def save_wf_cps(wf_num, cp_list):
+    """保存一个 WF 的 CP 信息。
+    cp_list: [{'cp_idx': int, 'cp_name': str, 'check_items': [str]}, ...]
+    """
+    conn = get_conn()
+    for cp in cp_list:
+        conn.execute(
+            """INSERT OR REPLACE INTO wf_cps (wf_num, cp_idx, cp_name, check_items)
+               VALUES (?,?,?,?)""",
+            (wf_num, cp['cp_idx'], cp['cp_name'], json.dumps(cp.get('check_items', [])))
+        )
+    conn.commit()
+    conn.close()
+
+
+def get_wf_cps(wf_num=None):
+    """获取 CP 信息。如果指定 wf_num 返回单个 WF 的列表，否则返回 {wf_num: [...]}
+    """
+    conn = get_conn()
+    if wf_num:
+        rows = conn.execute(
+            "SELECT * FROM wf_cps WHERE wf_num = ? ORDER BY cp_idx", (wf_num,)
+        ).fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            try:
+                ci = json.loads(r['check_items'])
+            except (json.JSONDecodeError, TypeError):
+                ci = []
+            result.append({'cp_idx': r['cp_idx'], 'cp_name': r['cp_name'], 'check_items': ci})
+        return result
+    else:
+        rows = conn.execute(
+            "SELECT * FROM wf_cps ORDER BY CAST(wf_num AS REAL), cp_idx"
+        ).fetchall()
+        conn.close()
+        result = {}
+        for r in rows:
+            try:
+                ci = json.loads(r['check_items'])
+            except (json.JSONDecodeError, TypeError):
+                ci = []
+            result.setdefault(r['wf_num'], []).append(
+                {'cp_idx': r['cp_idx'], 'cp_name': r['cp_name'], 'check_items': ci}
+            )
+        return result
 
 
 def init_db(drop_all=False):
@@ -79,7 +141,8 @@ def init_db(drop_all=False):
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             report_date TEXT NOT NULL,
             uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            excel_path TEXT NOT NULL
+            excel_path TEXT NOT NULL,
+            ts_test_names TEXT DEFAULT '{}'
         );
 
         CREATE TABLE IF NOT EXISTS wf_results (
@@ -159,7 +222,18 @@ def init_db(drop_all=False):
         
         CREATE TABLE IF NOT EXISTS wf_names (
             wf_num TEXT PRIMARY KEY,
-            wf_name TEXT NOT NULL
+            wf_name TEXT NOT NULL,
+            test_names TEXT DEFAULT '[]'
+        );
+
+        CREATE TABLE IF NOT EXISTS wf_cps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wf_num TEXT NOT NULL,
+            cp_idx INTEGER NOT NULL,
+            cp_name TEXT NOT NULL,
+            check_items TEXT DEFAULT '[]',
+            UNIQUE(wf_num, cp_idx),
+            FOREIGN KEY(wf_num) REFERENCES wf_names(wf_num)
         );
 
         CREATE INDEX IF NOT EXISTS idx_wf_results_report ON wf_results(report_id);
@@ -170,25 +244,50 @@ def init_db(drop_all=False):
         CREATE INDEX IF NOT EXISTS idx_sn_progress_wf ON sn_progress(wf_num, config);
         CREATE UNIQUE INDEX IF NOT EXISTS idx_sn_progress_unique ON sn_progress(report_id, wf_num, config, sn);
     """)
+    # Migrations for existing databases
+    try:
+        conn.execute("ALTER TABLE reports ADD COLUMN ts_test_names TEXT DEFAULT '{}'")
+    except:
+        pass
+    try:
+        conn.execute("ALTER TABLE wf_names ADD COLUMN test_names TEXT DEFAULT '[]'")
+    except:
+        pass
+    try:
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS wf_cps (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wf_num TEXT NOT NULL,
+                cp_idx INTEGER NOT NULL,
+                cp_name TEXT NOT NULL,
+                check_items TEXT DEFAULT '[]',
+                UNIQUE(wf_num, cp_idx),
+                FOREIGN KEY(wf_num) REFERENCES wf_names(wf_num)
+            );
+        """)
+    except:
+        pass
     conn.commit()
     conn.close()
 
 
 # ── Save ───────────────────────────────────────────────────────────────
 
-def save_report(report_date, results, fa_stats, excel_path):
+def save_report(report_date, results, fa_stats, excel_path, ts_test_names=None):
     """
     Saves an analysis snapshot to the database.
     results: engine.analyze() output
     fa_stats: fa_matcher.summary() output
+    ts_test_names: optional {wf: [test_name, ...]} from TS sheet
     Returns: report_id
     """
     conn = get_conn()
     
     # Insert report record
+    ts_names_json = json.dumps(ts_test_names) if ts_test_names else '{}'
     cur = conn.execute(
-        "INSERT INTO reports (report_date, excel_path) VALUES (?, ?)",
-        (report_date, excel_path)
+        "INSERT INTO reports (report_date, excel_path, ts_test_names) VALUES (?, ?, ?)",
+        (report_date, excel_path, ts_names_json)
     )
     report_id = cur.lastrowid
     

@@ -188,6 +188,51 @@ def read_test_summary(daily_path):
     return ts_data, ts_qty, ts_test_names, ts_num_tests
 
 
+def extract_cp_structure(ws, header_row=1, cp_range_start=7):
+    """Extracts CP names and check items from a WF sheet header.
+
+    CP names are in header_row (e.g. row with Config|Unit#).
+    Check items are in the next row below (header_row + 1).
+
+    Returns: [{'cp_idx': int, 'cp_name': str, 'check_items': [str]}, ...]
+    """
+    cp_list = []
+    ls = None
+    ln = ''
+    # Pass 1: find CP boundaries from header_row
+    for c in range(cp_range_start, ws.max_column + 1):
+        v = ws.cell(header_row, c).value
+        if v and isinstance(v, str) and v.strip():
+            cv = v.strip()
+            if cv not in CHECK_NAMES and cv not in ('Comments', 'Overall Result', 'Return to Summary') and len(cv) > 1:
+                if ls is not None:
+                    cp_list.append((ls, c - 1, ln))
+                ls = c
+                ln = cv
+    if ls is not None:
+        ec = ws.max_column
+        for c in range(ls, ws.max_column + 1):
+            v = ws.cell(header_row, c).value
+            if v and isinstance(v, str) and v.strip() in ('Comments', 'Overall Result'):
+                ec = c - 1
+                break
+        cp_list.append((ls, ec, ln))
+
+    # Pass 2: extract check items from the row BELOW header_row
+    check_row = header_row + 1
+    result = []
+    for pi, (ps, pe, cp_name) in enumerate(cp_list):
+        check_items = []
+        for c in range(ps, pe + 1):
+            v = ws.cell(check_row, c).value
+            if v and isinstance(v, str) and v.strip():
+                cv = v.strip()
+                if cv in CHECK_NAMES:
+                    check_items.append(cv)
+        result.append({'cp_idx': pi, 'cp_name': cp_name, 'check_items': check_items})
+    return result
+
+
 def read_test_schedule(daily_path):
     """Reads Test Schedule sheet B/C columns and returns {wf_num: wf_name} mapping."""
     wb = load_workbook(daily_path, data_only=True)
@@ -395,6 +440,40 @@ def build_failure_detail(results):
                 for sn in d['strife_fails']:
                     failures.append({'wf': wfn, 'cfg': cfg, 'test_idx': ti, 'sn': sn, 'type': 'strife'})
     return failures
+
+# ── CP Structure Extraction ────────────────────────────────────────────────
+
+def extract_all_cp_structures(daily_path):
+    """Extracts CP names and check items from all WF sheets in a Daily Report.
+
+    Returns: {wf_num: [{'cp_idx': int, 'cp_name': str, 'check_items': [str]}, ...]}
+    """
+    wb = load_workbook(daily_path, data_only=True)
+    all_cps = {}
+    for name in wb.sheetnames:
+        if name in SKIP_SHEETS or name.startswith('MLB'):
+            continue
+        wfn = wf_num(name)
+        if not wfn:
+            continue
+        # Find the header row (col 3 = 'Config', col 4 = 'Unit #')
+        ws = wb[name]
+        header_row = 1
+        for r in range(1, min(ws.max_row + 1, 5)):
+            c3 = ws.cell(r, 3).value
+            c4 = ws.cell(r, 4).value
+            if c3 == 'Config' and c4 == 'Unit #':
+                header_row = r
+                break
+        try:
+            cps = extract_cp_structure(ws, header_row)
+            if cps:
+                all_cps[wfn] = cps
+        except Exception:
+            pass
+    wb.close()
+    return all_cps
+
 
 # ── Per-SN CP Progress Extraction ─────────────────────────────────────────
 

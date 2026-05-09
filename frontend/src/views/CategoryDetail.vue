@@ -154,7 +154,8 @@ function wfPct(wf) {
 }
 
 function wfName(key) {
-  return wfNames.value[key] || ''
+  const v = wfNames.value[key]
+  return typeof v === 'object' ? v?.name || '' : v || ''
 }
 
 async function load() {

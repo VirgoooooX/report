@@ -16,7 +16,7 @@ from db import (
     get_sn_history, get_daily_changes_by_cp, get_completion_stats,
     get_failure_rate_stats, get_predictions, update_prediction,
     init_categories, get_category_wfs, export_sn_records,
-    wf_sort_key, get_wf_names
+    wf_sort_key, get_wf_names, get_wf_cps
 )
 
 BASE_DIR = os.path.dirname(__file__)
@@ -239,7 +239,7 @@ def api_category_wf_detail(name):
     # Add WF names
     wf_names = get_wf_names()
     for d in wf_details:
-        d['wf_name'] = wf_names.get(d['wf'], '')
+        d['wf_name'] = wf_names.get(d['wf'], {}).get('name', '')
     
     conn.close()
     return jsonify({'category': name, 'wfs': wf_details, 'wf_names': wf_names})
@@ -653,7 +653,6 @@ def api_test_summary():
     conn = get_conn()
     rid = conn.execute("SELECT MAX(id) FROM reports").fetchone()['MAX(id)']
 
-    # Get all wf_results for latest report
     rows = conn.execute(
         """SELECT wf_num, config, test_idx, total_units, spec_fail_count,
                   strife_fail_count, failure_sns
@@ -661,32 +660,20 @@ def api_test_summary():
            ORDER BY CAST(wf_num AS REAL), config, test_idx""",
         (rid,)
     ).fetchall()
-    # Get report_date before closing
-    latest = conn.execute("SELECT report_date FROM reports WHERE id = ?", (rid,)).fetchone()
-    report_date = latest['report_date'] if latest else ''
     conn.close()
 
-    # Load real test names from latest Excel TS sheet
-    real_test_names = {}
-    fname = f'M60 EVT Rel Daily Report_{report_date.replace("-", "")}.xlsx'
-    fpath = os.path.join(DATA_DIR, fname)
-    if os.path.exists(fpath):
-        try:
-            from engine import read_test_summary
-            _, _, ts_test_names, _ = read_test_summary(fpath)
-            real_test_names = ts_test_names
-        except Exception:
-            pass
+    # Load real test names from wf_names table
+    wf_names = get_wf_names()
 
-    # Build summary table
     summary = {}
     for r in rows:
         wf = r['wf_num']
         if wf not in summary:
             summary[wf] = {
                 'wf': wf,
+                'wf_name': wf_names.get(wf, {}).get('name', ''),
                 'configs': {},
-                'test_names': list(real_test_names.get(wf, [])),
+                'test_names': list(wf_names.get(wf, {}).get('test_names', [])),
             }
 
         cfg = r['config']
@@ -696,7 +683,7 @@ def api_test_summary():
         t = r['total_units']
 
         # Use real test name if available, fallback to TestN
-        real_names = real_test_names.get(wf, [])
+        real_names = wf_names.get(wf, {}).get('test_names', [])
         tname = real_names[ti] if ti < len(real_names) else f'Test{ti+1}'
 
         # Ensure test_names array covers this index
@@ -705,7 +692,7 @@ def api_test_summary():
             tn_list.extend([''] * (ti - len(tn_list) + 1))
         if not tn_list[ti]:
             tn_list[ti] = tname
-        
+
         # Build result string: xF/nT or xSF/nT or 0F/nT
         if sf > 0:
             res = f'{sf}F/{t}T'
@@ -713,12 +700,12 @@ def api_test_summary():
             res = f'{stf}SF/{t}T'
         else:
             res = f'0F/{t}T'
-        
+
         has_fail = sf > 0 or stf > 0
-        
+
         if cfg not in summary[wf]['configs']:
             summary[wf]['configs'][cfg] = {}
-        
+
         summary[wf]['configs'][cfg][tname] = {
             'result': res,
             'spec': sf,
@@ -727,8 +714,20 @@ def api_test_summary():
             'has_failure': has_fail,
             'failure_sns': json.loads(r['failure_sns']) if r['failure_sns'] else [],
         }
-    
+
     return jsonify({'summary': list(summary.values())})
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  API: WF CP Structure
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/api/wf-cps')
+def api_wf_cps():
+    """获取 WF 的 CP 结构信息（CP 名称 + check items）。"""
+    wf = request.args.get('wf', '').strip()
+    cps = get_wf_cps(wf if wf else None)
+    return jsonify(cps)
 
 
 # ═══════════════════════════════════════════════════════════════════════

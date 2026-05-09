@@ -153,7 +153,7 @@ function onCellClick(wf, cfg, slotIdx) {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .ts-cfg-sub {
-  padding: 4px 6px; font-size: 10px; font-weight: 600;
+  padding: 4px 6px; font-size: 10px; font-weight: 600; text-align: center;
   background: var(--bg-row-stripe); border-bottom: 1px solid var(--border-light);
 }
 .ts-gap { width: 3px; min-width: 3px; background: var(--border-light); padding: 0 !important; border-bottom: 1px solid var(--border-light); }
