@@ -94,6 +94,16 @@ def _find_fa_tracker_by_date(date_str):
     return fas[-1][1]  # fallback to latest
 
 
+def _fa_field(issue, hint):
+    """Fuzzy-match a field in FA Tracker issue dict by looking for a key that contains hint (case-insensitive).
+    Returns the value, or empty string if not found."""
+    wanted = hint.strip().lower()
+    for key, value in issue.items():
+        if wanted in str(key).strip().lower():
+            return value
+    return ''
+
+
 # ── Serve Vue SPA assets ────────────────────────────────────────────────
 @app.route('/assets/<path:filename>')
 def serve_assets(filename):
@@ -1001,7 +1011,7 @@ def api_daily_issues():
                 wf_num = _normalize_wf(issue.get('WF', ''))
                 cfg = str(issue.get('Config', '')).strip()
                 ft = _normalize_failure_type(
-                    issue.get('Failure Type \n(Spec. or Strife)', '')
+                    _fa_field(issue, 'Failure Type')
                 )
                 loc = str(issue.get('Failed Location', '')).strip()
                 failed_cycle = str(issue.get('Failed Cycle Count', '')).strip()
