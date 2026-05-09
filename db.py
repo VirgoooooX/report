@@ -139,6 +139,7 @@ def init_db(drop_all=False):
             wf_num TEXT NOT NULL,
             config TEXT NOT NULL,
             test_idx INTEGER NOT NULL,
+            test_name TEXT,
             predicted_date TEXT,
             remaining_days REAL,
             daily_rate REAL,
@@ -633,10 +634,11 @@ def save_predictions(predictions_data):
     for p in predictions_data:
         conn.execute(
             """INSERT OR REPLACE INTO predictions
-               (wf_num, config, test_idx, predicted_date, remaining_days,
+               (wf_num, config, test_idx, test_name, predicted_date, remaining_days,
                 daily_rate, total_cps, current_max_cp, is_manual, last_updated)
-               VALUES (?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?, CURRENT_TIMESTAMP)""",
             (p['wf_num'], p['config'], p['test_idx'],
+             p.get('test_name', f'Test{p.get("test_idx", 0) + 1}'),
              p.get('predicted_date'), p.get('remaining_days'),
              p.get('daily_rate'), p.get('total_cps'), p.get('current_max_cp'),
              p.get('is_manual', 0))

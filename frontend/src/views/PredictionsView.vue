@@ -50,34 +50,22 @@
       <table>
         <thead>
           <tr>
-            <th class="sortable" @click="sortBy('wf_num')">
-              WF <span class="sort-indicator">{{ sortIndicator('wf') }}</span>
-            </th>
-            <th class="sortable" @click="sortBy('config')">
-              Config <span class="sort-indicator">{{ sortIndicator('config') }}</span>
-            </th>
-            <th class="sortable" @click="sortBy('test_idx')">
-              Test <span class="sort-indicator">{{ sortIndicator('test_idx') }}</span>
-            </th>
-            <th>Progress</th>
-            <th class="sortable" @click="sortBy('daily_rate')">
-              Daily Rate <span class="sort-indicator">{{ sortIndicator('daily_rate') }}</span>
-            </th>
-            <th class="sortable" @click="sortBy('remaining_days')">
-              Remaining Days <span class="sort-indicator">{{ sortIndicator('remaining_days') }}</span>
-            </th>
-            <th class="sortable" @click="sortBy('predicted_date')">
-              Predicted Date <span class="sort-indicator">{{ sortIndicator('predicted_date') }}</span>
-            </th>
-            <th>Type</th>
+            <th class="sortable col-wf" @click="sortBy('wf_num')">WF</th>
+            <th class="sortable col-center" @click="sortBy('config')">Config</th>
+            <th class="sortable col-center" @click="sortBy('test_idx')">Test</th>
+            <th class="col-center">Progress</th>
+            <th class="sortable col-center" @click="sortBy('daily_rate')">Daily Rate</th>
+            <th class="sortable col-center" @click="sortBy('remaining_days')">Rem. Days</th>
+            <th class="sortable col-center" @click="sortBy('predicted_date')">Predicted Date</th>
+            <th class="col-center">Type</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="(row, idx) in sortedRows" :key="idx">
-            <td class="cell-mono">WF{{ row.wf_num }}</td>
-            <td class="cell-mono">{{ row.config }}</td>
-            <td class="cell-mono cell-test">Test{{ (row.test_idx || 0) + 1 }}</td>
-            <td>
+            <td class="cell-wf"><span class="wf-num">WF{{ row.wf_num }}</span><span class="wf-name">{{ wfName(row.wf_num) }}</span></td>
+            <td class="cell-mono col-center">{{ row.config }}</td>
+            <td class="cell-mono col-center">{{ row.test_name || 'Test' + ((row.test_idx || 0) + 1) }}</td>
+            <td class="col-center">
               <div class="progress-inline">
                 <div class="progress-track-sm">
                   <div class="progress-fill-sm" :style="{ width: predProgress(row) + '%' }"></div>
@@ -85,19 +73,12 @@
                 <span class="progress-label">{{ predProgress(row).toFixed(1) }}%</span>
               </div>
             </td>
-            <td class="cell-num">{{ row.daily_rate != null ? Number(row.daily_rate).toFixed(1) : '—' }}</td>
-            <td class="cell-num">{{ row.remaining_days != null ? Number(row.remaining_days).toFixed(1) : '—' }}</td>
-            <td>
-              <span
-                class="editable-date"
-                @click="openEdit(row)"
-              >
-                {{ row.predicted_date || '—' }}
-              </span>
+            <td class="cell-num col-center">{{ row.daily_rate != null ? Number(row.daily_rate).toFixed(1) : '—' }}</td>
+            <td class="cell-num col-center">{{ row.remaining_days != null ? Number(row.remaining_days).toFixed(1) : '—' }}</td>
+            <td class="col-center">
+              <span class="editable-date" @click="openEdit(row)">{{ row.predicted_date || '—' }}</span>
             </td>
-            <td>
-              <StatusBadge :type="row.is_manual == 1 ? 'manual' : 'auto'" />
-            </td>
+            <td class="col-center"><StatusBadge :type="row.is_manual == 1 ? 'manual' : 'auto'" /></td>
           </tr>
           <tr v-if="!store.predictions.length">
             <td colspan="8" class="empty-row">No predictions found</td>
@@ -155,6 +136,11 @@ const overdueCount = computed(() => {
   return store.predictions.filter(p => p.predicted_date && p.predicted_date < today && p.remaining_days > 0).length
 })
 const completedCount = computed(() => store.predictions.filter(p => (p.remaining_days ?? 1) <= 0).length)
+
+function wfName(wfNum) {
+  const key = String(wfNum).replace(/^WF/i, '')
+  return store.wfNames[key] || ''
+}
 
 function predProgress(row) {
   if (row.total_cps > 0) return (row.current_max_cp || 0) / row.total_cps * 100
@@ -396,23 +382,14 @@ tr:hover td {
   background: var(--bg-row-hover);
 }
 
-.cell-mono {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
+.col-wf { text-align: left !important; }
+.col-center { text-align: center !important; }
+.cell-wf { text-align: left; }
+.wf-num { font-family: var(--font-mono); font-weight: 600; color: var(--text-primary); }
+.wf-name { font-size: 12px; color: var(--text-muted); margin-left: 6px; }
 
-.cell-test {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.cell-num {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-}
+.cell-mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.cell-num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
 /* Progress bar inline */
 .progress-inline {
