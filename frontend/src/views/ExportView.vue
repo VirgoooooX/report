@@ -65,16 +65,16 @@
         <tbody>
           <tr v-for="(row, idx) in previewRows" :key="idx">
             <td class="cell-mono">{{ row.sn || '—' }}</td>
-            <td>{{ row.unit || '—' }}</td>
-            <td class="cell-mono">{{ row.wf || '—' }}</td>
-            <td class="cell-mono">{{ row.config || row.cfg || '—' }}</td>
-            <td class="cell-mono">{{ row.current_cp || row.cp || '—' }}</td>
+            <td>{{ row.unit_num || '—' }}</td>
+            <td class="cell-mono">WF{{ row.wf_num || '—' }}</td>
+            <td class="cell-mono">{{ row.config || '—' }}</td>
+            <td class="cell-mono">{{ row.current_cp_name || '—' }}</td>
             <td>
               <div class="progress-inline">
                 <div class="progress-track-xs">
-                  <div class="progress-fill-xs" :style="{ width: (row.progress ?? row.pct ?? 0) + '%' }"></div>
+                  <div class="progress-fill-xs" :style="{ width: rowProgress(row) + '%' }"></div>
                 </div>
-                <span class="progress-label-xs">{{ row.progress ?? row.pct ?? 0 }}%</span>
+                <span class="progress-label-xs">{{ rowProgress(row).toFixed(1) }}%</span>
               </div>
             </td>
             <td>
@@ -123,6 +123,11 @@ const previewRows = computed(() => {
   if (!Array.isArray(rows)) return []
   return rows.slice(0, 50)
 })
+
+function rowProgress(row) {
+  if (row.total_cps > 0) return (row.current_cp_idx || 0) / row.total_cps * 100
+  return 0
+}
 
 function cpResults(row) {
   const results = row.cp_results ?? row.results ?? []

@@ -103,8 +103,8 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import ConicRing from '@/components/ConicRing.vue'
 import LoadingState from '@/components/LoadingState.vue'
@@ -112,82 +112,76 @@ import ErrorState from '@/components/ErrorState.vue'
 
 const store = useAppStore()
 const route = useRoute()
-const router = useRouter()
 
 const categoryName = computed(() => route.params.name || 'Unknown')
 const expandedWfs = ref({})
+const CONFIG_ORDER = ['R1FNF', 'R2CNM', 'R3', 'R4']
+const CONFIG_COLORS = ['#4f6f8f', '#0891b2', '#d97706', '#059669']
 
-function toggleWf(name) {
-  expandedWfs.value[name] = !expandedWfs.value[name]
+function toggleWf(name) { expandedWfs.value[name] = !expandedWfs.value[name] }
+function cfgColor(idx) { return CONFIG_COLORS[idx] || '#4f6f8f' }
+function configColor(name) {
+  const idx = CONFIG_ORDER.indexOf(name)
+  return idx >= 0 ? CONFIG_COLORS[idx] : '#4f6f8f'
 }
 
-const overallPct = computed(() => store.categoryDetail?.overall_pct ?? 0)
-const overallCompleted = computed(() => store.categoryDetail?.completed_cps ?? 0)
-const overallTotal = computed(() => store.categoryDetail?.total_cps ?? 0)
+// API returns flat array: [{wf, config, total_cps, completed_cps, pct, sn_count, wf_name}, ...]
+const wfs = computed(() => store.categoryDetail?.wfs ?? [])
+const wfNames = computed(() => store.categoryDetail?.wf_names ?? {})
 
+// Overall sums
+const overallCompleted = computed(() => wfs.value.reduce((s, w) => s + (w.completed_cps || 0), 0))
+const overallTotal = computed(() => wfs.value.reduce((s, w) => s + (w.total_cps || 0), 0))
+const overallPct = computed(() => overallTotal.value > 0 ? (overallCompleted.value / overallTotal.value * 100) : 0)
+
+// Per-config aggregation
 const configs = computed(() => {
-  const byConfig = store.categoryDetail?.by_config ?? {}
-  return Object.entries(byConfig).map(([name, data]) => ({
-    name,
-    pct: data.pct ?? 0,
-    completed: data.completed ?? 0,
-    total: data.total ?? 0
+  const map = {}
+  wfs.value.forEach(w => {
+    if (!map[w.config]) map[w.config] = { completed: 0, total: 0 }
+    map[w.config].completed += w.completed_cps || 0
+    map[w.config].total += w.total_cps || 0
+  })
+  return CONFIG_ORDER.filter(c => map[c]).map(c => ({
+    name: c,
+    completed: map[c].completed,
+    total: map[c].total,
+    pct: map[c].total > 0 ? Math.round(map[c].completed / map[c].total * 1000) / 10 : 0
   }))
 })
 
+// Group by WF
 const sortedWfs = computed(() => {
-  const wfs = store.categoryDetail?.wf_data ?? []
-  return store.sortedWfKeys(wfs.map(w => w.name || w.wf || '')).map(key => {
-    const w = wfs.find(w => (w.name || w.wf) === key)
-    return {
-      name: key,
-      display: key.replace(/^WF/i, ''),
-      configs: w?.configs
-        ? Object.entries(w.configs).map(([cfgName, cfgData]) => ({
-            name: cfgName,
-            pct: cfgData.pct ?? 0,
-            cp_count: cfgData.cp_count ?? cfgData.completed_cps ?? 0,
-            sn_count: cfgData.sn_count ?? cfgData.sns ?? 0
-          }))
-        : (w?.by_config
-          ? Object.entries(w.by_config).map(([cfgName, cfgData]) => ({
-              name: cfgName,
-              pct: cfgData.pct ?? 0,
-              cp_count: cfgData.cp_count ?? 0,
-              sn_count: cfgData.sn_count ?? 0
-            }))
-          : [])
-    }
+  const groups = {}
+  wfs.value.forEach(w => {
+    const key = w.wf
+    if (!groups[key]) groups[key] = { name: key, display: key.replace(/^WF/i, ''), configs: [], totalCompleted: 0, totalCps: 0 }
+    groups[key].configs.push({
+      name: w.config,
+      pct: w.pct ?? 0,
+      cp_count: w.completed_cps || 0,
+      sn_count: w.sn_count || 0
+    })
+    groups[key].totalCompleted += w.completed_cps || 0
+    groups[key].totalCps += w.total_cps || 0
   })
+  return store.sortedWfKeys(Object.keys(groups)).map(key => groups[key])
 })
 
 function wfPct(wf) {
-  if (!wf.configs.length) return 0
-  const total = wf.configs.reduce((s, c) => s + c.pct, 0)
-  return Math.round((total / wf.configs.length) * 10) / 10
+  return wf.totalCps > 0 ? Math.round(wf.totalCompleted / wf.totalCps * 1000) / 10 : 0
 }
 
 function wfName(key) {
-  return store.wfNames[key] || key
+  return wfNames.value[key] || ''
 }
 
-function cfgColor(idx) {
-  const colors = ['var(--chart-r1fnf)', 'var(--chart-r2cnm)', 'var(--chart-r3)', 'var(--chart-r4)']
-  return colors[idx] || 'var(--accent-steel)'
+async function load() {
+  await store.fetchCategoryDetail(categoryName.value)
 }
 
-function configColor(name) {
-  const map = { R1FNF: 'var(--chart-r1fnf)', R2CNM: 'var(--chart-r2cnm)', R3: 'var(--chart-r3)', R4: 'var(--chart-r4)' }
-  return map[name] || 'var(--accent-steel)'
-}
-
-onMounted(async () => {
-  try {
-    await store.fetchCategoryDetail(categoryName.value)
-  } catch {
-    // silently handle
-  }
-})
+onMounted(load)
+watch(categoryName, load)
 </script>
 
 <style scoped>

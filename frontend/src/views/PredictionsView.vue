@@ -74,19 +74,19 @@
         </thead>
         <tbody>
           <tr v-for="(row, idx) in sortedRows" :key="idx">
-            <td class="cell-mono">{{ row.wf }}</td>
+            <td class="cell-mono">WF{{ row.wf_num }}</td>
             <td class="cell-mono">{{ row.config }}</td>
-            <td class="cell-mono cell-test">{{ row.test }}</td>
+            <td class="cell-mono cell-test">Test{{ (row.test_idx || 0) + 1 }}</td>
             <td>
               <div class="progress-inline">
                 <div class="progress-track-sm">
-                  <div class="progress-fill-sm" :style="{ width: (row.progress ?? 0) + '%' }"></div>
+                  <div class="progress-fill-sm" :style="{ width: predProgress(row) + '%' }"></div>
                 </div>
-                <span class="progress-label">{{ row.progress ?? 0 }}%</span>
+                <span class="progress-label">{{ predProgress(row).toFixed(1) }}%</span>
               </div>
             </td>
-            <td class="cell-num">{{ row.daily_rate ?? '—' }}</td>
-            <td class="cell-num">{{ row.remaining_days ?? '—' }}</td>
+            <td class="cell-num">{{ row.daily_rate != null ? Number(row.daily_rate).toFixed(1) : '—' }}</td>
+            <td class="cell-num">{{ row.remaining_days != null ? Number(row.remaining_days).toFixed(1) : '—' }}</td>
             <td>
               <span
                 class="editable-date"
@@ -96,7 +96,7 @@
               </span>
             </td>
             <td>
-              <StatusBadge :type="row.type === 'manual' ? 'manual' : 'auto'" />
+              <StatusBadge :type="row.is_manual == 1 ? 'manual' : 'auto'" />
             </td>
           </tr>
           <tr v-if="!store.predictions.length">
@@ -115,7 +115,7 @@
         </div>
         <div class="modal-body">
           <div class="modal-field">
-            <strong>Test:</strong> {{ editRow?.wf }} / {{ editRow?.config }} / {{ editRow?.test }}
+            <strong>Test:</strong> WF{{ editRow?.wf_num }} / {{ editRow?.config }} / Test{{ (editRow?.test_idx || 0) + 1 }}
           </div>
           <div class="modal-field">
             <label class="field-label">Date</label>
@@ -149,9 +149,17 @@ const editDate = ref('')
 const configOptions = ['R1FNF', 'R2CNM', 'R3', 'R4']
 
 const totalCount = computed(() => store.predictions.length)
-const manualCount = computed(() => store.predictions.filter(p => p.type === 'manual').length)
-const overdueCount = computed(() => store.predictions.filter(p => p.overdue || p.status === 'overdue').length)
-const completedCount = computed(() => store.predictions.filter(p => p.status === 'completed' || (p.progress ?? 0) >= 100).length)
+const manualCount = computed(() => store.predictions.filter(p => p.is_manual == 1).length)
+const overdueCount = computed(() => {
+  const today = new Date().toISOString().slice(0, 10)
+  return store.predictions.filter(p => p.predicted_date && p.predicted_date < today && p.remaining_days > 0).length
+})
+const completedCount = computed(() => store.predictions.filter(p => (p.remaining_days ?? 1) <= 0).length)
+
+function predProgress(row) {
+  if (row.total_cps > 0) return (row.current_max_cp || 0) / row.total_cps * 100
+  return 0
+}
 
 function sortBy(field) {
   if (sortField.value === field) {
@@ -204,9 +212,9 @@ async function saveEdit() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        wf: editRow.value.wf,
+        wf_num: editRow.value.wf_num,
         config: editRow.value.config,
-        test: editRow.value.test,
+        test_idx: editRow.value.test_idx,
         predicted_date: editDate.value
       })
     })

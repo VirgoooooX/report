@@ -120,25 +120,33 @@ const expanded = ref({})
 let debounceTimer = null
 
 const hasFailures = computed(() => {
-  return (store.snResult?.fail_count ?? store.snResult?.spec_fail ?? 0) > 0
+  return (store.snResult?.failures?.length ?? 0) > 0
 })
 
 const failureCount = computed(() => {
-  return store.snResult?.fail_count ?? store.snResult?.spec_fail ?? 0
+  return store.snResult?.failures?.length ?? 0
 })
 
 const wfGroups = computed(() => {
-  const wfData = store.snResult?.wf_data ?? store.snResult?.workflows ?? []
-  if (!Array.isArray(wfData)) return []
-  return wfData.map(w => ({
-    wf: w.wf || w.name || '',
-    display: (w.wf || w.name || '').replace(/^WF/i, ''),
-    config: w.config || w.cfg || '',
-    latest_date: w.latest_date || w.date || '',
-    pct: w.pct ?? w.progress ?? 0,
-    cp_status: w.cp_status || w.status || '',
-    history: w.history ?? w.details ?? w.entries ?? []
-  }))
+  const byWf = store.snResult?.by_wf ?? []
+  if (!Array.isArray(byWf)) return []
+  return byWf.map(w => {
+    const latest = w.latest || {}
+    return {
+      wf: w.wf || '',
+      display: (w.wf || '').replace(/^WF/i, ''),
+      config: latest.config || '',
+      latest_date: latest.date || '',
+      pct: latest.total_cps > 0 ? ((latest.cp_idx || 0) + 1) / latest.total_cps * 100 : 0,
+      cp_status: '',
+      history: (w.history || []).map(h => ({
+        date: h.date || '',
+        cp: h.current_cp || '',
+        pct: h.total_cps > 0 ? ((h.cp_idx || 0) + 1) / h.total_cps * 100 : 0,
+        status: 'pending'
+      }))
+    }
+  })
 })
 
 function groupName(key) {

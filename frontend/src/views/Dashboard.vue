@@ -148,17 +148,20 @@ const overviewCompletion = computed(() => {
 })
 
 const configCount = computed(() => {
-  if (!store.overviewData?.by_config) return 0
-  return Object.keys(store.overviewData.by_config).length
+  const byCfg = store.overviewData?.completion?.by_config
+  return byCfg ? Object.keys(byCfg).length : 0
 })
 
 const wfCount = computed(() => {
-  if (!store.overviewData?.wf_names && !store.wfNames) return 0
-  return Object.keys(store.wfNames || store.overviewData.wf_names || {}).length
+  const byWf = store.overviewData?.failures?.by_wf
+  return byWf ? Object.keys(byWf).length : 0
 })
 
 const failureCount = computed(() => {
-  return store.summaryData?.total_failures ?? store.summaryData?.total_fail ?? 0
+  const trend = store.overviewData?.trend ?? []
+  if (!trend.length) return 0
+  const last = trend[trend.length - 1]
+  return (last.spec || 0) + (last.strife || 0)
 })
 
 function goCategory(name) {
