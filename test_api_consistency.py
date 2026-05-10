@@ -216,5 +216,87 @@ class ApiConsistencyTests(unittest.TestCase):
         self.assertEqual(test_entry['result'], '0F/1T')
 
 
+    def test_sn_lookup_returns_wf_group_with_progress(self):
+        """/api/sn/SN123 返回一个 WF 组，包含 latest.total_cps、latest.pct、latest.status。"""
+        rid = self._seed_report()
+
+        # 插入 report_cps 作为 total_cps 的源
+        self.conn.execute(
+            "INSERT INTO report_cps (report_id, wf_num, cp_idx, cp_name, test_idx) VALUES (?, '16.1', 0, 'CP1', 0)",
+            (rid,),
+        )
+        self.conn.execute(
+            "INSERT INTO report_cps (report_id, wf_num, cp_idx, cp_name, test_idx) VALUES (?, '16.1', 1, 'CP2', 0)",
+            (rid,),
+        )
+
+        self.conn.execute(
+            """INSERT INTO sn_cp_results
+               (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, status, failure_type, has_data, is_current_cp)
+               VALUES (?, '2025-01-01', '16.1', 'R3', 'SN123', 'U1', 0, 0, 'pass', NULL, 1, 1)""",
+            (rid,),
+        )
+        self.conn.commit()
+
+        client = api.app.test_client()
+        resp = client.get('/api/sn/SN123')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data['sn'], 'SN123')
+
+        by_wf = data.get('by_wf', [])
+        self.assertGreater(len(by_wf), 0)
+        wf_group = by_wf[0]
+        latest = wf_group.get('latest')
+        self.assertIsNotNone(latest)
+        self.assertIn('total_cps', latest)
+        self.assertIn('pct', latest)
+        self.assertEqual(wf_group['wf'], '16.1')
+
+        # 检查 history
+        history = wf_group.get('history', [])
+        self.assertGreater(len(history), 0)
+        self.assertIn('total_cps', history[0])
+        self.assertIn('pct', history[0])
+
+    def test_sn_search_returns_sns_from_facts(self):
+        """/api/sn/search?q=SN1 从 sn_cp_results 返回 SN。"""
+        rid = self._seed_report()
+
+        self.conn.execute(
+            """INSERT INTO sn_cp_results
+               (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, status, failure_type, has_data, is_current_cp)
+               VALUES (?, '2025-01-01', '16.1', 'R3', 'SN100', '', 0, 0, 'pass', NULL, 1, 1)""",
+            (rid,),
+        )
+        self.conn.execute(
+            """INSERT INTO sn_cp_results
+               (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, status, failure_type, has_data, is_current_cp)
+               VALUES (?, '2025-01-01', '16.1', 'R3', 'SN101', '', 0, 0, 'pass', NULL, 1, 1)""",
+            (rid,),
+        )
+        self.conn.commit()
+
+        client = api.app.test_client()
+        resp = client.get('/api/sn/search?q=SN1')
+        self.assertEqual(resp.status_code, 200)
+        results = resp.get_json()
+        self.assertIsInstance(results, list)
+        self.assertGreater(len(results), 0)
+        self.assertIn('SN100', results)
+
+    def test_unknown_sn_returns_404(self):
+        """/api/sn/UNKNOWN 返回 HTTP 404 和 records: []。"""
+        rid = self._seed_report()
+        self.conn.commit()
+
+        client = api.app.test_client()
+        resp = client.get('/api/sn/UNKNOWN_SN_XYZ')
+        self.assertEqual(resp.status_code, 404)
+        data = resp.get_json()
+        self.assertIn('records', data)
+        self.assertEqual(data['records'], [])
+
+
 if __name__ == '__main__':
     unittest.main()

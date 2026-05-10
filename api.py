@@ -691,19 +691,28 @@ def api_sn_lookup(sn):
                 'history': [],
                 'latest': None,
             }
+        total_cps = h.get('total_cps') or 0
+        cp_idx = h['cp_idx'] or 0
         entry = {
             'date': h['date'],
             'config': h['config'],
             'unit': h.get('unit_num', ''),
             'current_cp': h['current_cp'],
-            'cp_idx': h['cp_idx'],
+            'cp_idx': cp_idx,
             'test_idx': h['test_idx'],
             'test_name': h['test_name'],
             'status': h['status'],
             'failure_type': h['failure_type'],
+            'total_cps': total_cps,
+            'pct': round((cp_idx + 1) / total_cps * 100, 1) if total_cps else 0,
+            'cp_status': h['status'],
         }
         by_wf[wf]['history'].append(entry)
         by_wf[wf]['latest'] = entry
+    
+    # 排序：每个 WF 组内的 history 按日期降序
+    for wf_data in by_wf.values():
+        wf_data['history'].sort(key=lambda x: x.get('date', ''), reverse=True)
     
     # Get failure records
     conn = get_conn()
@@ -731,10 +740,17 @@ def api_sn_search():
         return jsonify([])
     
     conn = get_conn()
+    # 优先从事实表查询
     rows = conn.execute(
-        "SELECT DISTINCT sn FROM sn_progress WHERE sn LIKE ? LIMIT 30",
+        "SELECT DISTINCT sn FROM sn_cp_results WHERE sn LIKE ? ORDER BY sn LIMIT 30",
         (f'%{q}%',)
     ).fetchall()
+    if not rows:
+        # 回退到 sn_progress
+        rows = conn.execute(
+            "SELECT DISTINCT sn FROM sn_progress WHERE sn LIKE ? LIMIT 30",
+            (f'%{q}%',)
+        ).fetchall()
     conn.close()
     
     return jsonify([r['sn'] for r in rows])

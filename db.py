@@ -5,7 +5,7 @@ SQLite storage for daily report snapshots, trends, and comparisons.
 import sqlite3, json, os, datetime
 from collections import defaultdict
 
-DB_PATH = os.path.join(os.path.dirname(__file__), 'report.db')
+DB_PATH = os.environ.get('REPORT_DB_PATH') or os.path.join(os.path.dirname(__file__), 'report.db')
 
 
 def _dict_factory(cursor, row):
@@ -320,13 +320,20 @@ def get_sn_fact_history(sn):
     rows = conn.execute(
         """SELECT r.report_date, f.report_id, f.wf_num, f.config, f.sn, f.unit_num,
                   f.test_idx, tn.test_name, f.cp_idx, c.cp_name,
-                  f.status, f.failure_type, f.is_current_cp
+                  f.status, f.failure_type, f.is_current_cp,
+                  COALESCE(totals.total_cps, 0) AS total_cps
            FROM sn_cp_results f
            JOIN reports r ON r.id = f.report_id AND r.is_active = 1
            LEFT JOIN report_cps c
              ON c.report_id = f.report_id AND c.wf_num = f.wf_num AND c.cp_idx = f.cp_idx
            LEFT JOIN report_test_names tn
              ON tn.report_id = f.report_id AND tn.wf_num = f.wf_num AND tn.test_idx = f.test_idx
+           LEFT JOIN (
+             SELECT report_id, wf_num, COUNT(*) AS total_cps
+             FROM report_cps
+             GROUP BY report_id, wf_num
+           ) totals
+             ON totals.report_id = f.report_id AND totals.wf_num = f.wf_num
            WHERE f.sn = ?
            ORDER BY r.report_date, f.wf_num, f.config, f.cp_idx""",
         (sn,),
