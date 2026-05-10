@@ -54,7 +54,9 @@
         <a-card :title="t('failureAnalysis.top10Symptom')" :bordered="false" class="section-card">
           <div v-if="loading" class="loading-wrap"><a-spin /></div>
           <div v-else-if="error" class="error-wrap">{{ error }}</div>
-          <div v-else-if="!overviewData?.topSymptom?.length" class="empty-wrap">{{ t('common.noData') }}</div>
+          <div v-else-if="!overviewData?.topSymptom?.length" class="empty-wrap">
+            <a-empty :description="t('common.noData')" />
+          </div>
           <div v-else class="chart-frame chart-frame-md">
             <Bar :data="symptomChartData" :options="barOptions" :plugins="[datalabelsPlugin, fixedValueLabelsPlugin]" />
           </div>
@@ -63,7 +65,9 @@
       <a-col :span="8">
         <a-card :title="t('failureAnalysis.top10Wf')" :bordered="false" class="section-card">
           <div v-if="loading" class="loading-wrap"><a-spin /></div>
-          <div v-else-if="!overviewData?.topWf?.length" class="empty-wrap">{{ t('common.noData') }}</div>
+          <div v-else-if="!overviewData?.topWf?.length" class="empty-wrap">
+            <a-empty :description="t('common.noData')" />
+          </div>
           <div v-else class="chart-frame chart-frame-md">
             <Bar :data="wfChartData" :options="barOptions" :plugins="[datalabelsPlugin, fixedValueLabelsPlugin]" />
           </div>
@@ -72,7 +76,9 @@
       <a-col :span="8">
         <a-card :title="t('failureAnalysis.top10Test')" :bordered="false" class="section-card">
           <div v-if="loading" class="loading-wrap"><a-spin /></div>
-          <div v-else-if="!overviewData?.topFailedTest?.length" class="empty-wrap">{{ t('common.noData') }}</div>
+          <div v-else-if="!overviewData?.topFailedTest?.length" class="empty-wrap">
+            <a-empty :description="t('common.noData')" />
+          </div>
           <div v-else class="chart-frame chart-frame-md">
             <Bar :data="testChartData" :options="barOptions" :plugins="[datalabelsPlugin, fixedValueLabelsPlugin]" />
           </div>
@@ -102,7 +108,9 @@
       </template>
       <div v-if="crossLoading" class="loading-wrap loading-wrap-lg"><a-spin size="large" /></div>
       <div v-else-if="crossError" class="error-wrap">{{ crossError }}</div>
-          <div v-else-if="!crossData?.matrix?.length" class="empty-wrap">{{ t('common.noData') }}</div>
+          <div v-else-if="!crossData?.matrix?.length" class="empty-wrap">
+            <a-empty :description="t('common.noData')" />
+          </div>
       <div v-else class="heatmap-wrap">
         <table class="heatmap-table">
           <thead>
@@ -161,6 +169,7 @@ import { useAppStore } from '@/stores/app'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
 import { requestJson } from '@/composables/useApi'
+import AEmpty from 'ant-design-vue/es/empty'
 import ACard from 'ant-design-vue/es/card'
 import ARow from 'ant-design-vue/es/row'
 import ACol from 'ant-design-vue/es/col'

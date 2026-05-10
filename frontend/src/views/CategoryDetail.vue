@@ -17,7 +17,7 @@
     </div>
 
     <!-- Loading / Error -->
-    <LoadingState v-if="store.loading && !store.categoryDetail" :text="t('categories.loadingCategory')" />
+    <LoadingState v-if="store.loading && !store.categoryDetail" :label="t('categories.loadingCategory')" />
     <ErrorState
       v-else-if="store.error && !store.categoryDetail"
       :message="store.error"

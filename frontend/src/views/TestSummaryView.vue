@@ -4,7 +4,7 @@
     <p class="page-subtitle">{{ summaryList.length }} {{ t('testSummary.labelWaterfalls') }}, {{ configList.length }} {{ t('testSummary.labelConfigs') }}, {{ tests.length }} {{ t('testSummary.labelTests') }}</p>
 
     <LoadingState v-if="loading" />
-    <ErrorState v-else-if="error" :message="error" :retry="load" />
+    <ErrorState v-else-if="error" :message="error" @retry="load" />
     <TestSummary v-else :summary-data="store.summaryData" @cell-click="onCellClick" />
 
     <FAModal :show="showFAModal" :wf="faWf" :cfg="faCfg" :test="faTest"

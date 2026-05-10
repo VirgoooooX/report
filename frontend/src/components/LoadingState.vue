@@ -1,7 +1,14 @@
 <template>
-  <div class="loading">
-    <div class="spinner"></div>
-    <span class="loading-text">{{ text || t('common.loading') }}</span>
+  <div class="loading-state" :class="`loading-state-${variant}`">
+    <template v-if="variant === 'skeleton'">
+      <div class="skeleton-line skeleton-line-wide"></div>
+      <div class="skeleton-block"></div>
+      <div class="skeleton-line"></div>
+    </template>
+    <template v-else>
+      <div class="spinner"></div>
+      <span>{{ label }}</span>
+    </template>
   </div>
 </template>
 
@@ -11,36 +18,66 @@ import { useI18n } from '@/i18n/useI18n'
 const { t } = useI18n()
 
 defineProps({
-  text: { type: String, default: '' }
+  label: {
+    type: String,
+    default: 'Loading...'
+  },
+  variant: {
+    type: String,
+    default: 'spinner'
+  }
 })
 </script>
 
 <style scoped>
-.loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 60px 20px;
+.loading-state {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
   gap: 12px;
-}
-
-.spinner {
-  width: 28px;
-  height: 28px;
-  border: 3px solid var(--border-light);
-  border-top-color: var(--accent-steel);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.loading-text {
-  font-family: var(--font-display);
-  font-size: 14px;
+  padding: var(--space-xl);
   color: var(--text-muted);
+}
+
+.loading-state-skeleton {
+  place-items: stretch;
+}
+
+.skeleton-line,
+.skeleton-block {
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-row-stripe),
+    var(--bg-row-hover),
+    var(--bg-row-stripe)
+  );
+  background-size: 180% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+.skeleton-line {
+  width: 46%;
+  height: 14px;
+}
+
+.skeleton-line-wide {
+  width: 68%;
+}
+
+.skeleton-block {
+  height: 140px;
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -80% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line,
+  .skeleton-block {
+    animation: none;
+  }
 }
 </style>

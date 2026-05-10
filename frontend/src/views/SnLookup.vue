@@ -38,7 +38,7 @@
     <ErrorState
       v-if="errorMsg"
       :message="errorMsg"
-      :retry="doSearch"
+      @retry="doSearch"
     />
 
     <!-- Result -->

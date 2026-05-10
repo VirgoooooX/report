@@ -1,7 +1,14 @@
 <template>
   <div class="error-placeholder">
     <span class="error-message">{{ message || t('common.error') }}</span>
-    <button v-if="retry" class="retry-btn" @click="retry">{{ t('actions.retry') }}</button>
+    <button
+      v-if="showRetry"
+      class="retry-btn"
+      type="button"
+      @click="emit('retry')"
+    >
+      {{ retryLabel }}
+    </button>
   </div>
 </template>
 
@@ -11,9 +18,21 @@ import { useI18n } from '@/i18n/useI18n'
 const { t } = useI18n()
 
 defineProps({
-  message: { type: String, default: '' },
-  retry: { type: Function, default: null }
+  message: {
+    type: String,
+    default: ''
+  },
+  retryLabel: {
+    type: String,
+    default: 'Retry'
+  },
+  showRetry: {
+    type: Boolean,
+    default: true
+  }
 })
+
+const emit = defineEmits(['retry'])
 </script>
 
 <style scoped>
