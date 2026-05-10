@@ -137,13 +137,13 @@ const wfGroups = computed(() => {
       display: (w.wf || '').replace(/^WF/i, ''),
       config: latest.config || '',
       latest_date: latest.date || '',
-      pct: latest.total_cps > 0 ? ((latest.cp_idx || 0) + 1) / latest.total_cps * 100 : 0,
-      cp_status: '',
+      pct: Number(latest.pct ?? 0),
+      cp_status: latest.cp_status || latest.status || 'pending',
       history: (w.history || []).map(h => ({
         date: h.date || '',
         cp: h.current_cp || '',
-        pct: h.total_cps > 0 ? ((h.cp_idx || 0) + 1) / h.total_cps * 100 : 0,
-        status: 'pending'
+        pct: Number(h.pct ?? 0),
+        status: h.cp_status || h.status || 'pending'
       }))
     }
   })
