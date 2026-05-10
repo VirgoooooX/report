@@ -212,6 +212,53 @@ def save_report_cps(conn, report_id, cps_by_wf):
     )
 
 
+def save_report_schedule_segments(conn, report_id, segments):
+    rows = []
+    for segment in segments:
+        rows.append((
+            report_id,
+            str(segment['wf_num']),
+            str(segment['config']),
+            int(segment['test_idx']),
+            str(segment.get('test_name') or f"Test{segment['test_idx'] + 1}"),
+            str(segment.get('schedule_test_item') or ''),
+            str(segment['planned_start_date']),
+            str(segment['planned_end_date']),
+            int(segment.get('source_row') or 0),
+            str(segment.get('confidence') or 'medium'),
+            str(segment.get('inference_reason') or ''),
+            json.dumps(segment.get('marker_labels', [])),
+        ))
+    conn.executemany(
+        """INSERT OR REPLACE INTO report_schedule_segments
+           (report_id, wf_num, config, test_idx, test_name, schedule_test_item,
+            planned_start_date, planned_end_date, source_row, confidence,
+            inference_reason, marker_labels)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        rows,
+    )
+
+
+def get_report_schedule_segments(conn, report_id, wf_num=None):
+    sql = """SELECT * FROM report_schedule_segments
+             WHERE report_id = ?"""
+    params = [report_id]
+    if wf_num is not None:
+        sql += " AND wf_num = ?"
+        params.append(str(wf_num))
+    sql += " ORDER BY CAST(wf_num AS REAL), config, test_idx"
+    rows = conn.execute(sql, params).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item['marker_labels'] = json.loads(item.get('marker_labels') or '[]')
+        except (TypeError, json.JSONDecodeError):
+            item['marker_labels'] = []
+        result.append(item)
+    return result
+
+
 def get_report_wf_meta(conn, report_id):
     rows = conn.execute(
         "SELECT wf_num, wf_name FROM report_wf_meta WHERE report_id = ?",
@@ -839,6 +886,7 @@ def init_db(drop_all=False, conn=None):
             DROP TABLE IF EXISTS sn_check_state_history;
             DROP TABLE IF EXISTS sn_check_results;
             DROP TABLE IF EXISTS sn_cp_results;
+            DROP TABLE IF EXISTS report_schedule_segments;
             DROP TABLE IF EXISTS report_cps;
             DROP TABLE IF EXISTS report_test_names;
             DROP TABLE IF EXISTS report_wf_meta;
@@ -986,6 +1034,22 @@ def init_db(drop_all=False, conn=None):
             test_idx INTEGER,
             check_items TEXT DEFAULT '[]',
             PRIMARY KEY (report_id, wf_num, cp_idx)
+        );
+
+        CREATE TABLE IF NOT EXISTS report_schedule_segments (
+            report_id INTEGER NOT NULL REFERENCES reports(id),
+            wf_num TEXT NOT NULL,
+            config TEXT NOT NULL,
+            test_idx INTEGER NOT NULL,
+            test_name TEXT NOT NULL,
+            schedule_test_item TEXT DEFAULT '',
+            planned_start_date TEXT NOT NULL,
+            planned_end_date TEXT NOT NULL,
+            source_row INTEGER DEFAULT 0,
+            confidence TEXT DEFAULT 'medium',
+            inference_reason TEXT DEFAULT '',
+            marker_labels TEXT DEFAULT '[]',
+            PRIMARY KEY (report_id, wf_num, config, test_idx)
         );
 
         CREATE TABLE IF NOT EXISTS sn_cp_results (

@@ -7,6 +7,7 @@ export const messages = {
       failureAnalysis: '失效分析',
       snLookup: 'SN 查询',
       predictions: '预测',
+      schedule: '排程',
       export: '导出',
       loading: '加载中',
       dailyUpdate: '每日更新'
@@ -61,7 +62,9 @@ export const messages = {
       categories: '分类',
       failureTrend: '失效趋势',
       topFailures: '主要失效',
-      dailyUpdates: '每日更新'
+      dailyUpdates: '每日更新',
+      crossAnalysis: '交叉分析热力图',
+      snQuickSearch: 'SN 快捷查询'
     },
     testSummary: {
       title: '测试汇总',
@@ -150,6 +153,23 @@ export const messages = {
       editDate: '日期',
       filterWfPlaceholder: '例如 1'
     },
+    schedule: {
+      title: '测试排程',
+      subtitle: '按 WF / Test / Config 展示计划开始、结束与 CP 日期分布',
+      totalSegments: '测试段',
+      totalWfs: 'WF 数',
+      dateRange: '日期范围',
+      cpLabels: 'CP 节点',
+      filterWf: 'WF',
+      filterWfPlaceholder: '例如 16.1',
+      filterConfig: '配置',
+      allConfigs: '全部配置',
+      timeline: '计划时间线',
+      cpCount: 'CP',
+      noCps: '无 CP 结构',
+      inferred: '推断',
+      clear: '清除筛选'
+    },
     export: {
       title: '导出',
       exportData: '导出数据',
@@ -214,6 +234,7 @@ export const messages = {
       failureAnalysis: 'Failure Analysis',
       snLookup: 'SN Lookup',
       predictions: 'Predictions',
+      schedule: 'Schedule',
       export: 'Export',
       loading: 'Loading',
       dailyUpdate: 'Daily Update'
@@ -268,7 +289,9 @@ export const messages = {
       categories: 'Categories',
       failureTrend: 'Failure Trend',
       topFailures: 'Top Failures',
-      dailyUpdates: 'Daily Updates'
+      dailyUpdates: 'Daily Updates',
+      crossAnalysis: 'Cross-Analysis Heatmap',
+      snQuickSearch: 'SN Quick Search'
     },
     testSummary: {
       title: 'Test Summary',
@@ -356,6 +379,23 @@ export const messages = {
       editTest: 'Test:',
       editDate: 'Date',
       filterWfPlaceholder: 'e.g. 1'
+    },
+    schedule: {
+      title: 'Test Schedule',
+      subtitle: 'Planned start/end and sampled CP date distribution by WF / Test / Config',
+      totalSegments: 'Segments',
+      totalWfs: 'WFs',
+      dateRange: 'Date Range',
+      cpLabels: 'CP Nodes',
+      filterWf: 'WF',
+      filterWfPlaceholder: 'e.g. 16.1',
+      filterConfig: 'Config',
+      allConfigs: 'All Configs',
+      timeline: 'Planned Timeline',
+      cpCount: 'CPs',
+      noCps: 'No CP structure',
+      inferred: 'Inferred',
+      clear: 'Clear Filters'
     },
     export: {
       title: 'Export',

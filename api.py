@@ -8,7 +8,7 @@ from flask import Flask, render_template, request, jsonify, send_file, send_from
 import os, sys, json, io, csv, datetime, re, logging
 
 sys.path.insert(0, os.path.dirname(__file__))
-from engine import analyze, build_summary_table, build_failure_detail
+from engine import analyze, build_summary_table, build_failure_detail, extract_test_schedule_segments
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
 import fa_analysis
 from db import (
@@ -22,7 +22,8 @@ from db import (
     get_latest_wf_config_progress, get_failure_rate_stats_from_facts,
     build_failure_rate_stats_from_facts,
     get_latest_active_report_id, get_previous_active_report_id,
-    get_cell_failures,
+    get_cell_failures, get_report_schedule_segments, save_report_schedule_segments,
+    get_report_test_names,
 )
 
 BASE_DIR = os.path.dirname(__file__)
@@ -232,9 +233,16 @@ def api_overview():
     if not fail_stats:
         fail_stats = get_failure_rate_stats(rid)
     
-    # Latest report date
-    rpt = conn.execute("SELECT report_date FROM reports WHERE id = ?", (rid,)).fetchone()
+    # Latest report date and source_file_name for project name extraction
+    rpt = conn.execute("SELECT report_date, source_file_name FROM reports WHERE id = ?", (rid,)).fetchone()
     report_date = rpt['report_date'] if rpt else ''
+    
+    project_name = 'M60 EVT REL'
+    if rpt and rpt['source_file_name']:
+        import re
+        m = re.match(r'^(.*?)\s*Daily Report_', rpt['source_file_name'], re.IGNORECASE)
+        if m:
+            project_name = m.group(1).upper()
     
     # Historical trend data
     reports = conn.execute("SELECT id, report_date FROM reports ORDER BY id ASC").fetchall()
@@ -254,6 +262,7 @@ def api_overview():
     conn.close()
     
     return jsonify({
+        'project_name': project_name,
         'report_date': report_date,
         'completion': completion,
         'daily_updates': {
@@ -697,6 +706,135 @@ def api_predictions_update():
         data.get('predicted_date'), is_manual=1
     )
     return jsonify({'status': 'ok'})
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  API: Schedule
+# ═══════════════════════════════════════════════════════════════════════
+
+def _schedule_wf_sort_key(wf_num):
+    try:
+        return [int(part) for part in str(wf_num).split('.')]
+    except ValueError:
+        return [9999, str(wf_num)]
+
+
+def _find_report_excel_path(report):
+    candidates = []
+    if report and report.get('excel_path'):
+        candidates.append(report['excel_path'])
+    if report and report.get('source_file_name'):
+        candidates.append(os.path.join(DATA_DIR, report['source_file_name']))
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path
+    return None
+
+
+def _load_or_build_schedule_segments(conn, report):
+    report_id = report['id']
+    segments = get_report_schedule_segments(conn, report_id)
+    if segments:
+        return segments
+
+    excel_path = _find_report_excel_path(report)
+    if not excel_path:
+        return []
+
+    test_names = get_report_test_names(conn, report_id)
+    cp_rows = conn.execute(
+        """SELECT wf_num, cp_idx, cp_name, test_idx, check_items
+           FROM report_cps
+           WHERE report_id = ?
+           ORDER BY CAST(wf_num AS REAL), cp_idx""",
+        (report_id,),
+    ).fetchall()
+    cps_by_wf = {}
+    for row in cp_rows:
+        try:
+            check_items = json.loads(row.get('check_items') or '[]')
+        except (TypeError, json.JSONDecodeError):
+            check_items = []
+        cps_by_wf.setdefault(row['wf_num'], []).append({
+            'cp_idx': row['cp_idx'],
+            'cp_name': row['cp_name'],
+            'test_idx': row['test_idx'],
+            'check_items': check_items,
+        })
+
+    segments = extract_test_schedule_segments(excel_path, test_names, cps_by_wf)
+    save_report_schedule_segments(conn, report_id, segments)
+    conn.commit()
+    return get_report_schedule_segments(conn, report_id)
+
+
+@app.route('/api/schedule')
+def api_schedule():
+    conn = get_conn()
+    try:
+        report = conn.execute(
+            """SELECT * FROM reports
+               WHERE is_active = 1
+               ORDER BY report_date DESC, version DESC
+               LIMIT 1"""
+        ).fetchone()
+        if not report:
+            return jsonify({'report_id': None, 'report_date': None, 'segments': []})
+
+        segments = [
+            segment for segment in _load_or_build_schedule_segments(conn, report)
+            if segment['wf_num'] not in {'43', '44'}
+        ]
+        wf_meta = get_wf_names()
+        cp_rows = conn.execute(
+            """SELECT wf_num, cp_idx, cp_name, test_idx
+               FROM report_cps
+               WHERE report_id = ?
+               ORDER BY CAST(wf_num AS REAL), cp_idx""",
+            (report['id'],),
+        ).fetchall()
+        cps_by_key = {}
+        for row in cp_rows:
+            if row['wf_num'] in {'43', '44'}:
+                continue
+            key = (row['wf_num'], row['test_idx'])
+            cps_by_key.setdefault(key, []).append({
+                'cp_idx': row['cp_idx'],
+                'cp_name': row['cp_name'],
+            })
+
+        payload_segments = []
+        for segment in segments:
+            wf_meta_value = wf_meta.get(segment['wf_num'], '')
+            if isinstance(wf_meta_value, dict):
+                wf_meta_value = wf_meta_value.get('name', '')
+            payload_segments.append({
+                'wf_num': segment['wf_num'],
+                'wf_name': wf_meta_value,
+                'config': segment['config'],
+                'test_idx': segment['test_idx'],
+                'test_name': segment['test_name'],
+                'schedule_test_item': segment.get('schedule_test_item', ''),
+                'planned_start_date': segment['planned_start_date'],
+                'planned_end_date': segment['planned_end_date'],
+                'confidence': segment.get('confidence', ''),
+                'inference_reason': segment.get('inference_reason', ''),
+                'marker_labels': segment.get('marker_labels', []),
+                'cps': cps_by_key.get((segment['wf_num'], segment['test_idx']), []),
+            })
+
+        payload_segments.sort(key=lambda row: (
+            _schedule_wf_sort_key(row['wf_num']),
+            row['config'],
+            row['test_idx'],
+        ))
+        return jsonify({
+            'report_id': report['id'],
+            'report_date': report['report_date'],
+            'segments': payload_segments,
+        })
+    finally:
+        conn.close()
 
 
 # ═══════════════════════════════════════════════════════════════════════

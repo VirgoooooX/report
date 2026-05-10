@@ -28,6 +28,7 @@ export const useAppStore = defineStore('app', () => {
     document.documentElement.dataset.theme = theme.value
   }
 
+  const projectName = ref('')
   const reportDate = ref('')
   const wfNames = ref({})
   const overviewData = ref(null)
@@ -40,8 +41,10 @@ export const useAppStore = defineStore('app', () => {
   const categories = ref([])
   const categoryDetail = ref(null)
   const predictions = ref([])
+  const scheduleData = ref(null)
   const snResult = ref(null)
   const exportData = ref(null)
+  const crossData = ref(null)
   const configColors = {
     overall: '#4f6f8f',
     R1FNF: '#4f6f8f',
@@ -67,6 +70,7 @@ export const useAppStore = defineStore('app', () => {
       const data = await requestJson('/api/dashboard/overview')
       overviewData.value = data
       reportDate.value = data.report_date || ''
+      projectName.value = data.project_name || ''
       if (data.wf_names) {
         // Normalize: API returns {wf: {name, test_names}} -> flatten to {wf: name} for compat
         const names = {}
@@ -124,6 +128,11 @@ export const useAppStore = defineStore('app', () => {
     return predictions.value
   }
 
+  async function fetchSchedule() {
+    scheduleData.value = await requestJson('/api/schedule')
+    return scheduleData.value
+  }
+
   async function fetchCategoryDetail(name) {
     const d = await requestJson(`/api/completion/category/${encodeURIComponent(name)}`)
     categoryDetail.value = d
@@ -149,6 +158,16 @@ export const useAppStore = defineStore('app', () => {
     return d
   }
 
+  async function fetchFaCross(dim1 = 'location', dim2 = 'config') {
+    try {
+      crossData.value = await requestJson(`/api/fa/cross?dim1=${dim1}&dim2=${dim2}`)
+      return crossData.value
+    } catch (e) {
+      error.value = e.message
+      throw e
+    }
+  }
+
   function wfSortKey(wfn) {
     try {
       const parts = String(wfn).split('.')
@@ -169,12 +188,13 @@ export const useAppStore = defineStore('app', () => {
 
   return {
     language, theme, setLanguage, setTheme, toggleTheme, applyPreferences,
-    reportDate, wfNames, overviewData, summaryData, loading, error,
+    projectName, reportDate, wfNames, overviewData, summaryData, loading, error,
     dailyIssues, dailyIssuesConsistency, dailyIssuesReportDate,
-    categories, categoryDetail, predictions, snResult, exportData,
+    categories, categoryDetail, predictions, scheduleData, snResult, exportData,
     configColors, catColors, CONFIG_ORDER, CAT_ORDER,
-    fetchOverview, fetchDailyIssues, fetchSummary, fetchCategories, fetchPredictions,
-    fetchCategoryDetail, fetchSnResult, searchSn, fetchExportData,
+    fetchOverview, fetchDailyIssues, fetchSummary, fetchCategories, fetchPredictions, fetchSchedule,
+    fetchCategoryDetail, fetchSnResult, searchSn, fetchExportData, fetchFaCross,
+    crossData,
     wfSortKey, sortedWfKeys
   }
 })

@@ -33,6 +33,28 @@ export function heatmapCellDisplay(cell, mode = 'spec') {
   return failureMetricDisplay(cell)
 }
 
+export function heatmapBackgroundColor(cell, mode = 'spec', maxTotal = 1, theme) {
+  if (!cell || !cell.totalCount || !theme) return theme?.heatmapEmptyBg ?? '#ffffff'
+
+  const ratio = toNumber(cell.totalCount) / Math.max(toNumber(maxTotal), 1)
+  const colorsByMode = theme.heatmapColors ?? {}
+  let colors
+
+  if (mode === 'spec' && toNumber(cell.specSnCount) > 0) {
+    colors = colorsByMode.spec
+  } else if (
+    (mode === 'spec' && toNumber(cell.specSnCount) === 0 && toNumber(cell.strifeSnCount) > 0) ||
+    mode === 'strife'
+  ) {
+    colors = colorsByMode.strife
+  } else {
+    colors = colorsByMode.total
+  }
+
+  const index = ratio < 0.33 ? 0 : ratio < 0.66 ? 1 : 2
+  return colors?.[index] ?? theme.heatmapEmptyBg
+}
+
 export function chartMetricValue(item = {}) {
   const explicitPpm = item.specFailureRate ?? item.specRatePpm
   if (explicitPpm != null) return toNumber(explicitPpm)

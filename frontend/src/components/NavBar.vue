@@ -2,8 +2,7 @@
   <nav class="nav">
     <div class="nav-inner">
       <div class="nav-brand">
-        M60 EVT REL
-        <span class="nav-badge">Dashboard</span>
+        {{ store.projectName || 'M60 EVT REL' }}
       </div>
       <div class="nav-links">
         <router-link to="/">{{ t('nav.dashboard') }}</router-link>
@@ -11,8 +10,7 @@
         <router-link to="/test-summary">{{ t('nav.testSummary') }}</router-link>
         <router-link to="/failure-analysis">{{ t('nav.failureAnalysis') }}</router-link>
         <router-link to="/predictions">{{ t('nav.predictions') }}</router-link>
-        <router-link to="/category/Drop">{{ t('nav.categories') }}</router-link>
-        <router-link to="/sn">{{ t('nav.snLookup') }}</router-link>
+        <router-link to="/schedule">{{ t('nav.schedule') }}</router-link>
         <router-link to="/export">{{ t('nav.export') }}</router-link>
       </div>
       <div class="nav-controls">
@@ -74,8 +72,7 @@ const navLinks = [
   { to: '/test-summary', label: t('nav.testSummary') },
   { to: '/failure-analysis', label: t('nav.failureAnalysis') },
   { to: '/predictions', label: t('nav.predictions') },
-  { to: '/category/Drop', label: t('nav.categories') },
-  { to: '/sn', label: t('nav.snLookup') },
+  { to: '/schedule', label: t('nav.schedule') },
   { to: '/export', label: t('nav.export') },
 ]
 

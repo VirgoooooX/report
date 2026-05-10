@@ -16,3 +16,4 @@ node_modules/
 .DS_Store
 *.log
 /runtime/
+report.before-state-history.db

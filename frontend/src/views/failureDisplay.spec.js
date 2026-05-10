@@ -3,10 +3,12 @@ import {
   chartMetricValue,
   failureMetricDisplay,
   getClampedTooltipPosition,
+  heatmapBackgroundColor,
   heatmapCellDisplay,
   oneLineLabel,
   overviewFailureDisplay,
 } from './failureDisplay.js'
+import { getFailureTheme } from './failureTheme.js'
 
 assert.equal(
   failureMetricDisplay({ specSnCount: 3, strifeSnCount: 8, totalSamples: 40 }),
@@ -61,6 +63,43 @@ assert.deepEqual(
     14
   ),
   { left: 746, top: 626 },
+)
+
+const lightTheme = getFailureTheme('light')
+
+assert.equal(
+  heatmapBackgroundColor(null, 'spec', 30, lightTheme),
+  lightTheme.heatmapEmptyBg,
+)
+
+assert.equal(
+  heatmapBackgroundColor(
+    { totalCount: 9, specSnCount: 1, strifeSnCount: 0 },
+    'spec',
+    30,
+    lightTheme,
+  ),
+  lightTheme.heatmapColors.spec[0],
+)
+
+assert.equal(
+  heatmapBackgroundColor(
+    { totalCount: 15, specSnCount: 0, strifeSnCount: 2 },
+    'spec',
+    30,
+    lightTheme,
+  ),
+  lightTheme.heatmapColors.strife[1],
+)
+
+assert.equal(
+  heatmapBackgroundColor(
+    { totalCount: 21, specSnCount: 2, strifeSnCount: 0 },
+    'total',
+    30,
+    lightTheme,
+  ),
+  lightTheme.heatmapColors.total[2],
 )
 
 console.log('failureDisplay formatting tests passed')

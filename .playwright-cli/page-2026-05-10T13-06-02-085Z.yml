@@ -1,0 +1,173 @@
+- generic [ref=e3]:
+  - navigation [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]:
+        - text: M60 EVT REL
+        - generic [ref=e7]: Dashboard
+      - generic [ref=e8]:
+        - link "仪表盘" [ref=e9] [cursor=pointer]:
+          - /url: /
+        - link "每日更新" [ref=e10] [cursor=pointer]:
+          - /url: /daily-update
+        - link "测试汇总" [ref=e11] [cursor=pointer]:
+          - /url: /test-summary
+        - link "失效分析" [ref=e12] [cursor=pointer]:
+          - /url: /failure-analysis
+        - link "预测" [ref=e13] [cursor=pointer]:
+          - /url: /predictions
+        - link "分类" [ref=e14] [cursor=pointer]:
+          - /url: /category/Drop
+        - link "导出" [ref=e15] [cursor=pointer]:
+          - /url: /export
+      - generic [ref=e16]:
+        - button "Switch to English" [ref=e17] [cursor=pointer]:
+          - generic [ref=e18]: 中
+        - button "Switch to dark mode" [ref=e19] [cursor=pointer]:
+          - generic [ref=e20]: ☾
+      - generic [ref=e21]: 加载中
+  - generic [ref=e23]:
+    - generic [ref=e24]:
+      - heading "仪表盘" [level=1] [ref=e25]
+      - generic [ref=e28]:
+        - img "search" [ref=e29]:
+          - img [ref=e30]
+        - textbox "输入 SN..." [ref=e32]
+    - generic [ref=e34]:
+      - generic [ref=e35]:
+        - generic [ref=e37]:
+          - generic [ref=e38]: Overall Completion
+          - generic [ref=e39]: 0.0%
+          - generic [ref=e40]: 0/0 CPs completed
+        - generic [ref=e41]:
+          - generic [ref=e42]:
+            - generic [ref=e43]: Completed
+            - generic [ref=e44]: "0"
+          - generic [ref=e45]:
+            - generic [ref=e46]: Remaining
+            - generic [ref=e47]: "0"
+      - generic [ref=e48]:
+        - img [ref=e50]:
+          - generic [ref=e53]: 0.0%
+        - generic [ref=e54]:
+          - generic [ref=e55]: R1FNF
+          - generic [ref=e56]: 0/0 CPs
+      - generic [ref=e57]:
+        - img [ref=e59]:
+          - generic [ref=e62]: 0.0%
+        - generic [ref=e63]:
+          - generic [ref=e64]: R2CNM
+          - generic [ref=e65]: 0/0 CPs
+      - generic [ref=e66]:
+        - img [ref=e68]:
+          - generic [ref=e71]: 0.0%
+        - generic [ref=e72]:
+          - generic [ref=e73]: R3
+          - generic [ref=e74]: 0/0 CPs
+      - generic [ref=e75]:
+        - img [ref=e77]:
+          - generic [ref=e80]: 0.0%
+        - generic [ref=e81]:
+          - generic [ref=e82]: R4
+          - generic [ref=e83]: 0/0 CPs
+    - generic [ref=e84]:
+      - generic [ref=e85]:
+        - heading "分类" [level=2] [ref=e86]
+        - button "编辑" [ref=e88] [cursor=pointer]
+      - generic [ref=e89]:
+        - generic [ref=e90] [cursor=pointer]:
+          - generic [ref=e91]: Drop
+          - generic [ref=e93]:
+            - generic [ref=e94]: 0%
+            - generic [ref=e95]: 0 / 0 CPs
+        - generic [ref=e96] [cursor=pointer]:
+          - generic [ref=e97]: Ingress
+          - generic [ref=e99]:
+            - generic [ref=e100]: 0%
+            - generic [ref=e101]: 0 / 0 CPs
+        - generic [ref=e102] [cursor=pointer]:
+          - generic [ref=e103]: Environmental
+          - generic [ref=e105]:
+            - generic [ref=e106]: 0%
+            - generic [ref=e107]: 0 / 0 CPs
+        - generic [ref=e108] [cursor=pointer]:
+          - generic [ref=e109]: Mechanical
+          - generic [ref=e111]:
+            - generic [ref=e112]: 0%
+            - generic [ref=e113]: 0 / 0 CPs
+    - generic [ref=e115]:
+      - generic [ref=e116]:
+        - generic [ref=e117]: 失效趋势
+        - generic [ref=e120]: No trend data available
+      - generic [ref=e121]:
+        - generic [ref=e122]:
+          - text: 交叉分析热力图
+          - link "详情 →" [ref=e123] [cursor=pointer]:
+            - /url: /failure-analysis
+        - table [ref=e127]:
+          - rowgroup [ref=e128]:
+            - row "Failed Location R1FNF R2CNM R3 R4" [ref=e129]:
+              - columnheader "Failed Location" [ref=e130]
+              - columnheader "R1FNF" [ref=e131]
+              - columnheader "R2CNM" [ref=e132]
+              - columnheader "R3" [ref=e133]
+              - columnheader "R4" [ref=e134]
+          - rowgroup [ref=e135]:
+            - row "BT-OTA 5F/304T 7F/304T - -" [ref=e136]:
+              - cell "BT-OTA" [ref=e137]
+              - cell "5F/304T" [ref=e138] [cursor=pointer]
+              - cell "7F/304T" [ref=e139] [cursor=pointer]
+              - cell "-" [ref=e140]
+              - cell "-" [ref=e141]
+            - row "Charging 2F/304T - 2F/316T 1F/312T" [ref=e142]:
+              - cell "Charging" [ref=e143]
+              - cell "2F/304T" [ref=e144] [cursor=pointer]
+              - cell "-" [ref=e145]
+              - cell "2F/316T" [ref=e146] [cursor=pointer]
+              - cell "1F/312T" [ref=e147] [cursor=pointer]
+            - row "FACT 3F/304T - 2F/316T 1F/312T" [ref=e148]:
+              - cell "FACT" [ref=e149]
+              - cell "3F/304T" [ref=e150] [cursor=pointer]
+              - cell "-" [ref=e151]
+              - cell "2F/316T" [ref=e152] [cursor=pointer]
+              - cell "1F/312T" [ref=e153] [cursor=pointer]
+            - row "Home - 1SF/304T - -" [ref=e154]:
+              - cell "Home" [ref=e155]
+              - cell "-" [ref=e156]
+              - cell "1SF/304T" [ref=e157] [cursor=pointer]
+              - cell "-" [ref=e158]
+              - cell "-" [ref=e159]
+            - row "IR Lens 2F/304T 3F/304T 4F/316T 4F/312T" [ref=e160]:
+              - cell "IR Lens" [ref=e161]
+              - cell "2F/304T" [ref=e162] [cursor=pointer]
+              - cell "3F/304T" [ref=e163] [cursor=pointer]
+              - cell "4F/316T" [ref=e164] [cursor=pointer]
+              - cell "4F/312T" [ref=e165] [cursor=pointer]
+            - row "ISB 3F/304T 3F/304T 1F/316T 2SF/312T" [ref=e166]:
+              - cell "ISB" [ref=e167]
+              - cell "3F/304T" [ref=e168] [cursor=pointer]
+              - cell "3F/304T" [ref=e169] [cursor=pointer]
+              - cell "1F/316T" [ref=e170] [cursor=pointer]
+              - cell "2SF/312T" [ref=e171] [cursor=pointer]
+            - row "Power 2SF/304T 2SF/304T 1SF/316T 2SF/312T" [ref=e172]:
+              - cell "Power" [ref=e173]
+              - cell "2SF/304T" [ref=e174] [cursor=pointer]
+              - cell "2SF/304T" [ref=e175] [cursor=pointer]
+              - cell "1SF/316T" [ref=e176] [cursor=pointer]
+              - cell "2SF/312T" [ref=e177] [cursor=pointer]
+            - row "System 1SF/304T - - -" [ref=e178]:
+              - cell "System" [ref=e179]
+              - cell "1SF/304T" [ref=e180] [cursor=pointer]
+              - cell "-" [ref=e181]
+              - cell "-" [ref=e182]
+              - cell "-" [ref=e183]
+            - row "Touch Post 6F/304T 2F/304T 1F/316T -" [ref=e184]:
+              - cell "Touch Post" [ref=e185]
+              - cell "6F/304T" [ref=e186] [cursor=pointer]
+              - cell "2F/304T" [ref=e187] [cursor=pointer]
+              - cell "1F/316T" [ref=e188] [cursor=pointer]
+              - cell "-" [ref=e189]
+    - contentinfo [ref=e190]:
+      - generic [ref=e191]: "报告日期: —"
+      - generic [ref=e192]: 0 配置
+      - generic [ref=e193]: 0 WF
+      - generic [ref=e194]: 0 失效

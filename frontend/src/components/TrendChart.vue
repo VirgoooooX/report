@@ -4,7 +4,6 @@
       v-if="chartData"
       :data="chartData"
       :options="chartOptions"
-      :height="280"
     />
     <div v-else class="empty-state">No trend data available</div>
   </div>
@@ -124,14 +123,23 @@ const chartOptions = computed(() => ({
 <style scoped>
 .chart-container {
   position: relative;
-  min-height: 280px;
+  display: flex;
+  flex: 1;
+  min-height: 320px;
+  height: 100%;
+}
+
+.chart-container :deep(canvas) {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 .empty-state {
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 280px;
+  width: 100%;
+  min-height: 320px;
   color: var(--text-muted);
   font-size: 13px;
 }

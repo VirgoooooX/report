@@ -106,13 +106,15 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAppStore } from '@/stores/app'
 import LoadingState from '@/components/LoadingState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 
 const store = useAppStore()
+const route = useRoute()
 const query = ref('')
 const suggestions = ref([])
 const errorMsg = ref('')
@@ -191,6 +193,14 @@ async function doSearch() {
     store.snResult = null
   }
 }
+
+onMounted(() => {
+  const q = route.query.q
+  if (q) {
+    query.value = q
+    doSearch()
+  }
+})
 </script>
 
 <style scoped>

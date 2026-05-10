@@ -18,14 +18,14 @@ import argparse
 import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
-from engine import analyze, extract_sn_progress, extract_sn_fact_rows, build_failure_detail, read_test_schedule, read_test_summary, extract_all_cp_structures, attach_test_idx_to_cps
+from engine import analyze, extract_sn_progress, extract_sn_fact_rows, build_failure_detail, read_test_schedule, read_test_summary, extract_all_cp_structures, attach_test_idx_to_cps, extract_test_schedule_segments
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
 from db import (
     init_db, save_report, save_sn_progress, save_wf_names, save_wf_cps, get_completion_stats,
     get_failure_rate_stats, get_daily_changes_by_cp,
     save_predictions, init_categories, get_conn,
     create_report_version, save_report_wf_meta, save_report_test_names,
-    save_report_cps, save_sn_cp_results, save_sn_check_state_history,
+    save_report_cps, save_report_schedule_segments, save_sn_cp_results, save_sn_check_state_history,
     detect_definition_changes, save_definition_changes
 )
 
@@ -83,10 +83,12 @@ def save_report_definitions(conn, report_id, daily_path):
     _, _, ts_test_names, _ = read_test_summary(daily_path)
     cp_structures = extract_all_cp_structures(daily_path)
     mapped_cps = attach_test_idx_to_cps(cp_structures, ts_test_names)
+    schedule_segments = extract_test_schedule_segments(daily_path, ts_test_names, mapped_cps)
 
     save_report_wf_meta(conn, report_id, wf_names)
     save_report_test_names(conn, report_id, ts_test_names)
     save_report_cps(conn, report_id, mapped_cps)
+    save_report_schedule_segments(conn, report_id, schedule_segments)
 
     # Keep latest/global caches for existing category and compatibility views.
     if wf_names:
@@ -94,7 +96,7 @@ def save_report_definitions(conn, report_id, daily_path):
     for wfn, cp_list in cp_structures.items():
         save_wf_cps(wfn, cp_list, conn=conn)
 
-    return wf_names, ts_test_names, mapped_cps
+    return wf_names, ts_test_names, mapped_cps, schedule_segments
 
 
 # ═══════════════════════════════════════════════════════════════════════
