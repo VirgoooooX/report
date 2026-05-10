@@ -3,7 +3,7 @@
     <h1 class="page-title">{{ t('failureAnalysis.title') }}</h1>
 
     <div class="kpi-grid">
-      <a-card :bordered="false" class="kpi-card">
+      <div class="card kpi-card">
         <div class="kpi-content">
           <div class="kpi-title"><CalendarOutlined class="kpi-icon blue" /> {{ t('failureAnalysis.newToday') }}</div>
           <div class="kpi-value">{{ summary.todayCount ?? 0 }}</div>
@@ -12,8 +12,8 @@
             <span class="strife-text">{{ summary.todayStrifeCount ?? 0 }}SF</span>
           </div>
         </div>
-      </a-card>
-      <a-card :bordered="false" class="kpi-card">
+      </div>
+      <div class="card kpi-card">
         <div class="kpi-content">
           <div class="kpi-title"><BugOutlined class="kpi-icon blue" /> {{ t('failureAnalysis.totalIssues') }}</div>
           <div class="kpi-value">{{ summary.totalIssues ?? 0 }}</div>
@@ -22,22 +22,22 @@
             <span class="strife-text">{{ summary.strifeIssues ?? 0 }}SF</span>
           </div>
         </div>
-      </a-card>
-      <a-card :bordered="false" class="kpi-card">
+      </div>
+      <div class="card kpi-card">
         <div class="kpi-content">
           <div class="kpi-title"><WarningOutlined class="kpi-icon amber" /> {{ t('failureAnalysis.symptomTypes') }}</div>
           <div class="kpi-value">{{ summary.uniqueSymptoms ?? 0 }}</div>
           <div class="kpi-foot muted">{{ summary.uniqueSymptoms ?? 0 }} {{ t('failureAnalysis.uniqueSymptoms') }}</div>
         </div>
-      </a-card>
-      <a-card :bordered="false" class="kpi-card">
+      </div>
+      <div class="card kpi-card">
         <div class="kpi-content">
           <div class="kpi-title"><ExperimentOutlined class="kpi-icon green" /> {{ t('failureAnalysis.wfCount') }}</div>
           <div class="kpi-value">{{ summary.uniqueWFs ?? 0 }}</div>
           <div class="kpi-foot muted">{{ summary.uniqueWFs ?? 0 }} {{ t('failureAnalysis.uniqueWfs') }}</div>
         </div>
-      </a-card>
-      <a-card :bordered="false" class="kpi-card">
+      </div>
+      <div class="card kpi-card">
         <div class="kpi-content">
           <div class="kpi-title"><SettingOutlined class="kpi-icon red" /> {{ t('failureAnalysis.specFailureRate') }}</div>
           <div class="kpi-value">{{ displayedFailurePercent }}<span class="percent-sign">%</span></div>
@@ -45,7 +45,7 @@
             <span class="spec-text">{{ overviewFailureText }}</span>
           </div>
         </div>
-      </a-card>
+      </div>
     </div>
 
     <!-- Top 10 Charts -->
@@ -494,24 +494,31 @@ watch([dim1, dim2], loadCross)
 
 <style scoped>
 .page-container { color: var(--text-primary); }
-.kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(160px, 1fr)); gap: 16px; margin-bottom: 20px; }
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin-bottom: 20px;
+}
 .kpi-card,
 .section-card { background: var(--bg-card); color: var(--text-primary); }
-.kpi-card { height: 112px; border-radius: 8px; box-shadow: var(--shadow-card); border: 1px solid var(--border-card, #e8ecf1); }
-.kpi-card :deep(.ant-card-body) { height: 100%; padding: 16px 18px; }
+.kpi-card {
+  height: 112px;
+  padding: 16px 18px;
+}
 .kpi-content { height: 100%; display: flex; flex-direction: column; justify-content: space-between; }
 .kpi-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--text-secondary); white-space: nowrap; }
 .kpi-icon { font-size: 15px; }
-.kpi-icon.blue { color: #1890ff; }
-.kpi-icon.amber { color: #faad14; }
-.kpi-icon.green { color: #52c41a; }
-.kpi-icon.red { color: #ff4d4f; }
+.kpi-icon.blue { color: var(--color-info); }
+.kpi-icon.amber { color: var(--color-warning); }
+.kpi-icon.green { color: var(--color-success); }
+.kpi-icon.red { color: var(--color-danger); }
 .kpi-value { text-align: center; font-size: 34px; line-height: 1; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
 .percent-sign { font-size: 20px; font-weight: 600; margin-left: 2px; }
 .kpi-foot { min-height: 18px; display: flex; justify-content: center; gap: 12px; font-size: 12px; font-weight: 600; }
 .kpi-foot.muted { color: var(--text-muted); font-weight: 500; }
-.spec-text { color: #ff4d4f; }
-.strife-text { color: #faad14; }
+.spec-text { color: var(--color-danger); }
+.strife-text { color: var(--color-warning); }
 .chart-row { margin-bottom: 24px; }
 .section-card { border-radius: 8px; margin-bottom: 24px; border: 1px solid var(--border-card, #e8ecf1); box-shadow: var(--shadow-card, 0 1px 3px rgba(0,0,0,0.06)); }
 .section-card :deep(.ant-card-head) { border-bottom: 1px solid var(--border-light, #f0f0f0); background: var(--bg-card); color: var(--text-primary); }
@@ -595,12 +602,7 @@ watch([dim1, dim2], loadCross)
   background: var(--bg-row-hover) !important;
 }
 
-@media (max-width: 1180px) {
-  .kpi-grid { grid-template-columns: repeat(3, minmax(180px, 1fr)); }
-}
-
 @media (max-width: 760px) {
   .page-container { padding: 16px; }
-  .kpi-grid { grid-template-columns: 1fr; }
 }
 </style>
