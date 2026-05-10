@@ -178,6 +178,7 @@ import {
   chartMetricValue,
   failureMetricDisplay,
   formatPpmTick,
+  getClampedTooltipPosition,
   heatmapCellDisplay,
   oneLineLabel,
   overviewFailureDisplay,
@@ -432,9 +433,12 @@ function onCellHover(e, v1, v2) {
   const d = getCell(v1, v2)
   if (!d) { hovered.value = null; return }
   hovered.value = d
-  const rect = e.target.getBoundingClientRect()
-  tooltipPos.x = rect.left + 10
-  tooltipPos.y = rect.top - 180
+  const nextPosition = getClampedTooltipPosition(
+    { x: e.clientX, y: e.clientY },
+    { width: window.innerWidth, height: window.innerHeight }
+  )
+  tooltipPos.x = nextPosition.left
+  tooltipPos.y = nextPosition.top
 }
 
 // ── Detail Popup ──
@@ -616,7 +620,20 @@ watch([dim1, dim2], loadCross)
 }
 
 /* Tooltip */
-.heat-tooltip { position: fixed; z-index: 1000; background: var(--bg-card); padding: 14px 18px; border-radius: 8px; box-shadow: var(--shadow-modal); font-size: 12px; min-width: 200px; pointer-events: none; border: 1px solid var(--border-card); }
+.heat-tooltip {
+  position: fixed;
+  z-index: 1000;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 28px));
+  padding: 14px 18px;
+  pointer-events: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  font-size: 12px;
+}
 .tt-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .tt-row:last-child { margin-bottom: 0; }
 .tt-row span { color: var(--text-secondary); font-weight: 500; font-size: 13px; }

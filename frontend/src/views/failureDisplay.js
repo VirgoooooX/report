@@ -52,3 +52,15 @@ export function oneLineLabel(value = '') {
 export function formatPpmTick(value) {
   return toNumber(value).toLocaleString()
 }
+
+export function getClampedTooltipPosition(pointer, viewport, tooltip = { width: 240, height: 160 }, offset = 14) {
+  const preferredLeft = pointer.x + offset
+  const preferredTop = pointer.y + offset
+  const maxLeft = Math.max(offset, viewport.width - tooltip.width - offset)
+  const maxTop = Math.max(offset, viewport.height - tooltip.height - offset)
+
+  return {
+    left: Math.min(Math.max(offset, preferredLeft), maxLeft),
+    top: Math.min(Math.max(offset, preferredTop), maxTop)
+  }
+}

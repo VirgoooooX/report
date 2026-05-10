@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {
   chartMetricValue,
   failureMetricDisplay,
+  getClampedTooltipPosition,
   heatmapCellDisplay,
   oneLineLabel,
   overviewFailureDisplay,
@@ -41,5 +42,25 @@ assert.equal(
 )
 
 assert.equal(oneLineLabel('WF 25 - Non Op Storage\nTaber Abrasion'), 'WF 25 - Non Op Storage Taber Abrasion')
+
+assert.deepEqual(
+  getClampedTooltipPosition(
+    { x: 100, y: 120 },
+    { width: 1000, height: 800 },
+    { width: 240, height: 160 },
+    14
+  ),
+  { left: 114, top: 134 },
+)
+
+assert.deepEqual(
+  getClampedTooltipPosition(
+    { x: 980, y: 760 },
+    { width: 1000, height: 800 },
+    { width: 240, height: 160 },
+    14
+  ),
+  { left: 746, top: 626 },
+)
 
 console.log('failureDisplay formatting tests passed')
