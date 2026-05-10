@@ -16,7 +16,7 @@
   /* 文字 */
   --text-primary: #1a2332;
   --text-secondary: #4a5568;
-  --text-muted: #8e99a8;
+  --text-muted: #64748b;
   --text-inverse: #ffffff;
 
   /* 边框 */
@@ -44,10 +44,31 @@
   --chart-r4: #059669;
   --chart-spec: #ef4444;
   --chart-strife: #f59e0b;
-  --cat-drop: #ef4444;
-  --cat-ingress: #4f6f8f;
-  --cat-environmental: #22c55e;
-  --cat-mechanical: #d97706;
+  /* Category gradients */
+  --cat-drop-start: #fb7185;
+  --cat-drop-end: #f43f5e;
+  --cat-ingress-start: #60a5fa;
+  --cat-ingress-end: #2563eb;
+  --cat-environmental-start: #34d399;
+  --cat-environmental-end: #059669;
+  --cat-mechanical-start: #fbbf24;
+  --cat-mechanical-end: #d97706;
+  --cat-drop-track: color-mix(in srgb, var(--cat-drop-start) 14%, var(--bg-card));
+  --cat-ingress-track: color-mix(in srgb, var(--cat-ingress-start) 14%, var(--bg-card));
+  --cat-environmental-track: color-mix(in srgb, var(--cat-environmental-start) 14%, var(--bg-card));
+  --cat-mechanical-track: color-mix(in srgb, var(--cat-mechanical-start) 14%, var(--bg-card));
+
+  /* Category compatibility aliases */
+  --cat-drop: var(--cat-drop-end);
+  --cat-ingress: var(--cat-ingress-end);
+  --cat-environmental: var(--cat-environmental-end);
+  --cat-mechanical: var(--cat-mechanical-end);
+
+  /* Chart sizing */
+  --chart-height-sm: clamp(280px, 34vh, 360px);
+  --chart-height-md: clamp(320px, 42vh, 440px);
+  --chart-height-lg: clamp(360px, 52vh, 560px);
+
   --overall-fill-start: color-mix(in srgb, var(--accent-steel) 22%, var(--bg-card));
   --overall-fill-mid: color-mix(in srgb, var(--chart-r2cnm) 14%, var(--bg-card));
   --overall-fill-end: color-mix(in srgb, var(--chart-r2cnm) 8%, var(--bg-card));
@@ -66,6 +87,18 @@
   --space-2xl: 32px;
   --space-3xl: 40px;
 
+  /* Layout */
+  --layout-max-width: 1440px;
+  --layout-wide-max-width: 1600px;
+  --page-padding-x: 32px;
+  --page-padding-y: 24px;
+  --page-padding-bottom: 40px;
+
+  /* Typography scale */
+  --font-page-title: clamp(20px, 1.2vw + 14px, 28px);
+  --font-section-title: 16px;
+  --font-card-title: 14px;
+
   /* 圆角 */
   --radius-sm: 4px;
   --radius-md: 8px;
@@ -73,9 +106,11 @@
   --radius-full: 9999px;
 
   /* 阴影 */
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-card-hover: 0 4px 12px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-  --shadow-modal: 0 20px 60px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.05);
+  --ring-card: inset 0 1px 0 rgba(255,255,255,0.72);
+  --ring-card-hover: inset 0 1px 0 rgba(255,255,255,0.86);
+  --shadow-card: 0 1px 2px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.06);
+  --shadow-card-hover: 0 2px 4px rgba(15,23,42,0.05), 0 16px 36px rgba(15,23,42,0.10);
+  --shadow-modal: 0 20px 60px rgba(15,23,42,0.16), 0 0 0 1px rgba(15,23,42,0.06);
   --shadow-nav: 0 1px 0 rgba(0,0,0,0.05);
 
   /* Test Summary 进度状态 */
@@ -123,11 +158,21 @@
   --color-in-progress: #93c5fd;
   --color-in-progress-bg: #1b2b45;
 
-  --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
-  --shadow-card-hover: 0 4px 12px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
+  --shadow-card: 0 1px 2px rgba(0,0,0,0.38), 0 10px 30px rgba(0,0,0,0.24);
+  --shadow-card-hover: 0 2px 4px rgba(0,0,0,0.42), 0 18px 42px rgba(0,0,0,0.34);
+  --shadow-modal: 0 24px 70px rgba(0,0,0,0.48), 0 0 0 1px rgba(255,255,255,0.08);
   --shadow-nav: 0 1px 0 rgba(255,255,255,0.05);
 
+  --ring-card: inset 0 1px 0 rgba(255,255,255,0.08);
+  --ring-card-hover: inset 0 1px 0 rgba(255,255,255,0.12);
+
   --accent-steel: #60a5fa;
+
+  --cat-drop-track: color-mix(in srgb, var(--cat-drop-start) 22%, var(--bg-card));
+  --cat-ingress-track: color-mix(in srgb, var(--cat-ingress-start) 22%, var(--bg-card));
+  --cat-environmental-track: color-mix(in srgb, var(--cat-environmental-start) 22%, var(--bg-card));
+  --cat-mechanical-track: color-mix(in srgb, var(--cat-mechanical-start) 22%, var(--bg-card));
+
   --overall-fill-start: color-mix(in srgb, var(--accent-steel) 30%, var(--bg-card));
   --overall-fill-mid: color-mix(in srgb, var(--chart-r2cnm) 18%, var(--bg-card));
   --overall-fill-end: color-mix(in srgb, var(--chart-r2cnm) 10%, var(--bg-card));
