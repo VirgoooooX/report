@@ -539,10 +539,7 @@ watch([dim1, dim2], loadCross)
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card), var(--ring-card);
 }
-.section-card :deep(.ant-card-head) { border-bottom: 1px solid var(--border-light, #f0f0f0); background: var(--bg-card); color: var(--text-primary); }
-.section-card :deep(.ant-card-head-title) { color: var(--text-primary); }
-.section-card :deep(.ant-card-body),
-.kpi-card :deep(.ant-card-body) { background: var(--bg-card); color: var(--text-primary); }
+
 .loading-wrap,
 .error-wrap,
 .empty-wrap {
@@ -654,50 +651,10 @@ watch([dim1, dim2], loadCross)
 /* Modal */
 .modal-loading, .modal-error, .modal-empty { text-align: center; padding: 40px; color: var(--text-muted); }
 
-.page-container :deep(.ant-select-selector),
-.page-container :deep(.ant-radio-button-wrapper),
-.page-container :deep(.ant-modal-content),
-.page-container :deep(.ant-modal-header),
-.page-container :deep(.ant-table),
-.page-container :deep(.ant-table-container),
-.page-container :deep(.ant-table-thead > tr > th),
-.page-container :deep(.ant-table-tbody > tr > td) {
-  background: var(--bg-card);
-  color: var(--text-primary);
-}
-
-.page-container :deep(.ant-select-selector),
-.page-container :deep(.ant-radio-button-wrapper),
-.page-container :deep(.ant-table-thead > tr > th),
-.page-container :deep(.ant-table-tbody > tr > td),
-.page-container :deep(.ant-modal-header),
-.page-container :deep(.ant-modal-content) {
-  border-color: var(--border-card) !important;
-}
-
-.page-container :deep(.ant-select-selection-item),
-.page-container :deep(.ant-select-arrow),
-.page-container :deep(.ant-radio-button-wrapper),
-.page-container :deep(.ant-modal-title),
-.page-container :deep(.ant-modal-close),
-.page-container :deep(.ant-table-thead > tr > th),
-.page-container :deep(.ant-table-tbody > tr > td),
-.page-container :deep(.ant-empty-description) {
-  color: var(--text-primary);
-}
-
 .page-container :deep(.ant-radio-button-wrapper-checked:not(.ant-radio-button-wrapper-disabled)) {
   background: var(--accent-steel);
   border-color: var(--accent-steel) !important;
   color: var(--text-inverse);
-}
-
-.page-container :deep(.ant-table-thead > tr > th) {
-  background: var(--bg-row-hover);
-}
-
-.page-container :deep(.ant-table-tbody > tr > td) {
-  background: var(--bg-card);
 }
 
 .page-container :deep(.ant-table-tbody > tr.ant-table-row:hover > td) {
