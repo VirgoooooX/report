@@ -4,7 +4,7 @@ import { messages } from './messages'
 export function useI18n() {
   const store = useAppStore()
 
-  function t(path) {
+  function t(path, params) {
     const lang = store.language || 'zh-CN'
     const keys = path.split('.')
     let value = messages[lang]
@@ -12,14 +12,29 @@ export function useI18n() {
       if (value == null) break
       value = value[key]
     }
-    if (value != null) return value
+    if (value != null) {
+      if (params) {
+        for (const [k, v] of Object.entries(params)) {
+          value = String(value).replace(new RegExp(`\\{\\{\\s*${k}\\s*\\}\\}`, 'g'), String(v))
+        }
+      }
+      return value
+    }
     // fallback to en-US
     value = messages['en-US']
     for (const key of keys) {
       if (value == null) break
       value = value[key]
     }
-    return value ?? path
+    if (value != null) {
+      if (params) {
+        for (const [k, v] of Object.entries(params)) {
+          value = String(value).replace(new RegExp(`\\{\\{\\s*${k}\\s*\\}\\}`, 'g'), String(v))
+        }
+      }
+      return value
+    }
+    return path
   }
 
   return { t, language: store.language }

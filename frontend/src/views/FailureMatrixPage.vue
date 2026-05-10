@@ -1,11 +1,11 @@
 <template>
   <div class="page-container">
-    <h1 class="page-title">Failure Analysis</h1>
+    <h1 class="page-title">{{ t('failureAnalysis.title') }}</h1>
 
     <div class="kpi-grid">
       <a-card :bordered="false" class="kpi-card">
         <div class="kpi-content">
-          <div class="kpi-title"><CalendarOutlined class="kpi-icon blue" /> New Today</div>
+          <div class="kpi-title"><CalendarOutlined class="kpi-icon blue" /> {{ t('failureAnalysis.newToday') }}</div>
           <div class="kpi-value">{{ summary.todayCount ?? 0 }}</div>
           <div class="kpi-foot">
             <span class="spec-text">{{ summary.todaySpecCount ?? 0 }}F</span>
@@ -15,7 +15,7 @@
       </a-card>
       <a-card :bordered="false" class="kpi-card">
         <div class="kpi-content">
-          <div class="kpi-title"><BugOutlined class="kpi-icon blue" /> Total Issues</div>
+          <div class="kpi-title"><BugOutlined class="kpi-icon blue" /> {{ t('failureAnalysis.totalIssues') }}</div>
           <div class="kpi-value">{{ summary.totalIssues ?? 0 }}</div>
           <div class="kpi-foot">
             <span class="spec-text">{{ summary.specIssues ?? 0 }}F</span>
@@ -25,21 +25,21 @@
       </a-card>
       <a-card :bordered="false" class="kpi-card">
         <div class="kpi-content">
-          <div class="kpi-title"><WarningOutlined class="kpi-icon amber" /> Symptom Types</div>
+          <div class="kpi-title"><WarningOutlined class="kpi-icon amber" /> {{ t('failureAnalysis.symptomTypes') }}</div>
           <div class="kpi-value">{{ summary.uniqueSymptoms ?? 0 }}</div>
-          <div class="kpi-foot muted">{{ summary.uniqueSymptoms ?? 0 }} unique symptoms</div>
+          <div class="kpi-foot muted">{{ summary.uniqueSymptoms ?? 0 }} {{ t('failureAnalysis.uniqueSymptoms') }}</div>
         </div>
       </a-card>
       <a-card :bordered="false" class="kpi-card">
         <div class="kpi-content">
-          <div class="kpi-title"><ExperimentOutlined class="kpi-icon green" /> WF Count</div>
+          <div class="kpi-title"><ExperimentOutlined class="kpi-icon green" /> {{ t('failureAnalysis.wfCount') }}</div>
           <div class="kpi-value">{{ summary.uniqueWFs ?? 0 }}</div>
-          <div class="kpi-foot muted">{{ summary.uniqueWFs ?? 0 }} unique WFs</div>
+          <div class="kpi-foot muted">{{ summary.uniqueWFs ?? 0 }} {{ t('failureAnalysis.uniqueWfs') }}</div>
         </div>
       </a-card>
       <a-card :bordered="false" class="kpi-card">
         <div class="kpi-content">
-          <div class="kpi-title"><SettingOutlined class="kpi-icon red" /> Spec Failure Rate</div>
+          <div class="kpi-title"><SettingOutlined class="kpi-icon red" /> {{ t('failureAnalysis.specFailureRate') }}</div>
           <div class="kpi-value">{{ displayedFailurePercent }}<span class="percent-sign">%</span></div>
           <div class="kpi-foot">
             <span class="spec-text">{{ overviewFailureText }}</span>
@@ -51,28 +51,28 @@
     <!-- Top 10 Charts -->
     <a-row :gutter="16" class="chart-row">
       <a-col :span="8">
-        <a-card title="Top 10 Symptom Spec Failure Rate" :bordered="false" class="section-card">
+        <a-card :title="t('failureAnalysis.top10Symptom')" :bordered="false" class="section-card">
           <div v-if="loading" class="loading-wrap"><a-spin /></div>
           <div v-else-if="error" class="error-wrap">{{ error }}</div>
-          <div v-else-if="!overviewData?.topSymptom?.length" class="empty-wrap">No data</div>
+          <div v-else-if="!overviewData?.topSymptom?.length" class="empty-wrap">{{ t('common.noData') }}</div>
           <div v-else style="height:380px">
             <Bar :data="symptomChartData" :options="barOptions" :plugins="[datalabelsPlugin, fixedValueLabelsPlugin]" />
           </div>
         </a-card>
       </a-col>
       <a-col :span="8">
-        <a-card title="Top 10 WF Spec Failure Rate" :bordered="false" class="section-card">
+        <a-card :title="t('failureAnalysis.top10Wf')" :bordered="false" class="section-card">
           <div v-if="loading" class="loading-wrap"><a-spin /></div>
-          <div v-else-if="!overviewData?.topWf?.length" class="empty-wrap">No data</div>
+          <div v-else-if="!overviewData?.topWf?.length" class="empty-wrap">{{ t('common.noData') }}</div>
           <div v-else style="height:380px">
             <Bar :data="wfChartData" :options="barOptions" :plugins="[datalabelsPlugin, fixedValueLabelsPlugin]" />
           </div>
         </a-card>
       </a-col>
       <a-col :span="8">
-        <a-card title="Top 10 Test Item Spec Failure Rate" :bordered="false" class="section-card">
+        <a-card :title="t('failureAnalysis.top10Test')" :bordered="false" class="section-card">
           <div v-if="loading" class="loading-wrap"><a-spin /></div>
-          <div v-else-if="!overviewData?.topFailedTest?.length" class="empty-wrap">No data</div>
+          <div v-else-if="!overviewData?.topFailedTest?.length" class="empty-wrap">{{ t('common.noData') }}</div>
           <div v-else style="height:380px">
             <Bar :data="testChartData" :options="barOptions" :plugins="[datalabelsPlugin, fixedValueLabelsPlugin]" />
           </div>
@@ -84,25 +84,25 @@
     <a-card :bordered="false" class="section-card">
       <template #title>
         <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
-          <span>Cross-Analysis Heatmap</span>
-          <span style="font-weight:400;font-size:13px;color:#8c8c8c">Dim 1:</span>
+          <span>{{ t('failureAnalysis.crossAnalysis') }}</span>
+          <span style="font-weight:400;font-size:13px;color:#8c8c8c">{{ t('failureAnalysis.dim1') }}</span>
           <a-select v-model:value="dim1" size="small" style="width:130px" @change="loadCross">
             <a-select-option v-for="d in dimOptions" :key="d.value" :value="d.value" :disabled="d.value===dim2">{{ d.label }}</a-select-option>
           </a-select>
-          <span style="font-weight:400;font-size:13px;color:#8c8c8c">Dim 2:</span>
+          <span style="font-weight:400;font-size:13px;color:#8c8c8c">{{ t('failureAnalysis.dim2') }}</span>
           <a-select v-model:value="dim2" size="small" style="width:130px" @change="loadCross">
             <a-select-option v-for="d in dimOptions" :key="d.value" :value="d.value" :disabled="d.value===dim1">{{ d.label }}</a-select-option>
           </a-select>
           <a-radio-group v-model:value="displayMode" size="small" button-style="solid">
-            <a-radio-button value="spec">Spec</a-radio-button>
-            <a-radio-button value="strife">Strife</a-radio-button>
-            <a-radio-button value="total">Total</a-radio-button>
+            <a-radio-button value="spec">{{ t('failureAnalysis.spec') }}</a-radio-button>
+            <a-radio-button value="strife">{{ t('failureAnalysis.strife') }}</a-radio-button>
+            <a-radio-button value="total">{{ t('failureAnalysis.total') }}</a-radio-button>
           </a-radio-group>
         </div>
       </template>
       <div v-if="crossLoading" class="loading-wrap" style="min-height:300px"><a-spin size="large" /></div>
       <div v-else-if="crossError" class="error-wrap">{{ crossError }}</div>
-      <div v-else-if="!crossData?.matrix?.length" class="empty-wrap">No data</div>
+          <div v-else-if="!crossData?.matrix?.length" class="empty-wrap">{{ t('common.noData') }}</div>
       <div v-else class="heatmap-wrap">
         <table class="heatmap-table">
           <thead>
@@ -137,17 +137,17 @@
       class="heat-tooltip"
       :style="{ left: tooltipPos.x + 'px', top: tooltipPos.y + 'px' }"
     >
-      <div class="tt-row"><span>Total Failures:</span><b>{{ hovered.totalCount }}</b></div>
-      <div class="tt-row"><span>Spec Failure Rate:</span><b class="c-red">{{ hovered.specRate.toFixed(2) }}%</b></div>
-      <div class="tt-row"><span>Strife Failure Rate:</span><b class="c-yellow">{{ hovered.strifeRate.toFixed(2) }}%</b></div>
-      <div class="tt-row"><span>Percentage:</span><b class="c-green">{{ hovered.percentage.toFixed(2) }}%</b></div>
+      <div class="tt-row"><span>{{ t('failureAnalysis.totalFailures') }}</span><b>{{ hovered.totalCount }}</b></div>
+      <div class="tt-row"><span>{{ t('failureAnalysis.specFailureRateLabel') }}</span><b class="c-red">{{ hovered.specRate.toFixed(2) }}%</b></div>
+      <div class="tt-row"><span>{{ t('failureAnalysis.strifeFailureRateLabel') }}</span><b class="c-yellow">{{ hovered.strifeRate.toFixed(2) }}%</b></div>
+      <div class="tt-row"><span>{{ t('failureAnalysis.percentage') }}</span><b class="c-green">{{ hovered.percentage.toFixed(2) }}%</b></div>
     </div>
 
     <!-- Detail Popup -->
     <a-modal v-model:open="detailVisible" :title="detailTitle" width="850px" :footer="null" @cancel="detailVisible=false">
       <div v-if="detailLoading" class="modal-loading"><a-spin /></div>
       <div v-else-if="detailError" class="modal-error">{{ detailError }}</div>
-      <div v-else-if="!detailRecords.length" class="modal-empty">No records found</div>
+      <div v-else-if="!detailRecords.length" class="modal-empty">{{ t('failureAnalysis.noRecordsFound') }}</div>
       <a-table v-else :data-source="detailRecords" :columns="detailColumns" row-key="fa_num" size="small" :pagination="false" :scroll="{ y: 400 }" />
     </a-modal>
   </div>
@@ -156,6 +156,7 @@
 <script setup>
 import { ref, computed, onMounted, watch, reactive } from 'vue'
 import { Bar } from 'vue-chartjs'
+import { useI18n } from '@/i18n/useI18n'
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js'
 import ChartDataLabels from 'chartjs-plugin-datalabels'
 import { requestJson } from '@/composables/useApi'
@@ -183,6 +184,7 @@ import {
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 const datalabelsPlugin = ChartDataLabels
+const { t } = useI18n()
 const ASelectOption = ASelect.Option
 const ARadioGroup = ARadio.Group
 const ARadioButton = ARadio.Button
@@ -439,7 +441,7 @@ const detailColumns = [
 
 async function openDetail(filters) {
   detailVisible.value = true
-  detailTitle.value = 'Failure Detail'
+  detailTitle.value = t('failureAnalysis.failureDetail')
   detailLoading.value = true
   detailError.value = null
   detailRecords.value = []
@@ -475,7 +477,7 @@ watch([dim1, dim2], loadCross)
 
 <style scoped>
 .page-container { max-width: 1440px; margin: 0 auto; padding: 24px 32px 40px; }
-.page-title { font-family: 'Work Sans', sans-serif; font-weight: 700; font-size: 20px; color: #1a2332; margin-bottom: 24px; }
+.page-title { font-family: 'Work Sans', sans-serif; font-weight: 700; font-size: 20px; color: var(--text-primary); margin-bottom: 24px; }
 .kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(160px, 1fr)); gap: 16px; margin-bottom: 20px; }
 .kpi-card { height: 112px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid var(--border-card, #e8ecf1); }
 .kpi-card :deep(.ant-card-body) { height: 100%; padding: 16px 18px; }

@@ -2,7 +2,7 @@
   <div class="page-container">
     <!-- Breadcrumb -->
     <div class="breadcrumb">
-      <router-link to="/">Dashboard</router-link>
+      <router-link to="/">{{ t('nav.dashboard') }}</router-link>
       <span class="sep">/</span>
       <strong>{{ categoryName }}</strong>
     </div>
@@ -10,14 +10,14 @@
     <!-- Header -->
     <div class="page-header">
       <div>
-        <h1 class="page-title">{{ categoryName }} Category</h1>
-        <p class="page-subtitle">Completion breakdown by config and waterfall</p>
+        <h1 class="page-title">{{ categoryName }} {{ t('categories.detail') }}</h1>
+        <p class="page-subtitle">{{ t('categories.completionBreakdown') }}</p>
       </div>
-      <router-link to="/" class="back-btn">&larr; Back to Dashboard</router-link>
+      <router-link to="/" class="back-btn">&larr; {{ t('common.back') }} {{ t('nav.dashboard') }}</router-link>
     </div>
 
     <!-- Loading / Error -->
-    <LoadingState v-if="store.loading && !store.categoryDetail" text="Loading category..." />
+    <LoadingState v-if="store.loading && !store.categoryDetail" :text="t('categories.loadingCategory')" />
     <ErrorState
       v-else-if="store.error && !store.categoryDetail"
       :message="store.error"
@@ -29,7 +29,7 @@
         <div class="stat-banner">
           <div class="stat-overall">
             <span class="stat-overall-pct">{{ overallPct.toFixed(1) }}%</span>
-            <span class="stat-overall-label">{{ overallCompleted }} / {{ overallTotal }} CPs completed</span>
+            <span class="stat-overall-label">{{ overallCompleted }} / {{ overallTotal }} {{ t('categories.cpsCompleted') }}</span>
           </div>
           <div class="stat-configs">
             <div v-for="(cfg, idx) in configs" :key="cfg.name" class="stat-cfg">
@@ -47,12 +47,12 @@
       <!-- WF Accordion -->
       <section class="section">
         <div class="section-header">
-          <h2>Waterfalls</h2>
+          <h2>{{ t('categories.waterfalls') }}</h2>
           <div class="divider"></div>
-          <span class="wf-count">{{ sortedWfs.length }} WFs</span>
+          <span class="wf-count">{{ sortedWfs.length }} {{ t('common.wfs') }}</span>
         </div>
 
-        <div v-if="!sortedWfs.length" class="empty-state">No waterfall data available</div>
+        <div v-if="!sortedWfs.length" class="empty-state">{{ t('categories.noWaterfallData') }}</div>
 
         <div v-for="wf in sortedWfs" :key="wf.name" class="card wf-card">
           <div class="wf-row" @click="toggleWf(wf.name)">
@@ -87,12 +87,14 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from '@/i18n/useI18n'
 import { useAppStore } from '@/stores/app'
 import LoadingState from '@/components/LoadingState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 
 const store = useAppStore()
 const route = useRoute()
+const { t } = useI18n()
 
 const categoryName = computed(() => route.params.name || 'Unknown')
 const expandedWfs = ref({})
@@ -205,7 +207,7 @@ watch(categoryName, load)
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
-  color: #1a2332;
+  color: var(--text-primary);
   margin-bottom: 4px;
 }
 

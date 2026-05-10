@@ -43,7 +43,7 @@
             </td>
           </tr>
           <tr v-if="!tableData.length">
-            <td colspan="6" class="empty-row">No failures recorded</td>
+            <td colspan="6" class="empty-row">{{ t('common.empty') }}</td>
           </tr>
         </tbody>
       </table>
@@ -53,6 +53,9 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useI18n } from '@/i18n/useI18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   failuresData: { type: Object, default: () => ({}) }

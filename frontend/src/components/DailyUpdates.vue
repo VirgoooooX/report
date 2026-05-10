@@ -7,7 +7,7 @@
       <button class="toggle-btn" @click.stop="toggle">{{ expanded ? 'Collapse' : 'Expand' }}</button>
     </div>
     <div class="daily-body" :class="{ collapsed: !expanded }">
-      <div v-if="!wfUpdates.length" class="daily-empty">No updates today</div>
+      <div v-if="!wfUpdates.length" class="daily-empty">{{ t('common.empty') }}</div>
       <div v-else class="flow-list">
         <div v-for="wf in wfUpdates" :key="wf.wf" class="flow-block">
           <div class="flow-label">
@@ -36,6 +36,9 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { useI18n } from '@/i18n/useI18n'
+
+const { t } = useI18n()
 
 const props = defineProps({ dailyData: { type: Object, default: () => ({}) } })
 const store = useAppStore()

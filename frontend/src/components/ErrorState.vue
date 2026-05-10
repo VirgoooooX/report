@@ -1,13 +1,17 @@
 <template>
   <div class="error-placeholder">
-    <span class="error-message">{{ message }}</span>
-    <button v-if="retry" class="retry-btn" @click="retry">Retry</button>
+    <span class="error-message">{{ message || t('common.error') }}</span>
+    <button v-if="retry" class="retry-btn" @click="retry">{{ t('actions.retry') }}</button>
   </div>
 </template>
 
 <script setup>
+import { useI18n } from '@/i18n/useI18n'
+
+const { t } = useI18n()
+
 defineProps({
-  message: { type: String, default: 'An error occurred' },
+  message: { type: String, default: '' },
   retry: { type: Function, default: null }
 })
 </script>
@@ -32,7 +36,7 @@ defineProps({
 .retry-btn {
   padding: 8px 20px;
   background: var(--color-danger);
-  color: #fff;
+  color: var(--text-inverse);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;

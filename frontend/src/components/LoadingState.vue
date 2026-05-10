@@ -1,13 +1,17 @@
 <template>
   <div class="loading">
     <div class="spinner"></div>
-    <span class="loading-text">{{ text }}</span>
+    <span class="loading-text">{{ text || t('common.loading') }}</span>
   </div>
 </template>
 
 <script setup>
+import { useI18n } from '@/i18n/useI18n'
+
+const { t } = useI18n()
+
 defineProps({
-  text: { type: String, default: 'Loading...' }
+  text: { type: String, default: '' }
 })
 </script>
 

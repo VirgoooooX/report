@@ -9,25 +9,25 @@
     >
       <div class="fa-modal" :class="{ show: visible }">
         <div class="fa-modal-header">
-          <h2 class="fa-modal-title">{{ title || 'FA Records' }}</h2>
+          <h2 class="fa-modal-title">{{ title || t('failureAnalysis.title') }}</h2>
           <button class="fa-close-btn" @click="close">&times;</button>
         </div>
         <div class="fa-modal-body">
           <!-- Loading -->
           <div v-if="faLoading" class="fa-loading">
             <div class="spinner"></div>
-            <span>Loading FA records…</span>
+            <span>{{ t('common.loading') }}</span>
           </div>
 
           <!-- Error -->
           <div v-else-if="faError" class="fa-error">
             <span class="error-message">{{ faError }}</span>
-            <button class="retry-btn" @click="fetchFa">Retry</button>
+            <button class="retry-btn" @click="fetchFa">{{ t('actions.retry') }}</button>
           </div>
 
           <!-- Empty -->
           <div v-else-if="faData.length === 0" class="fa-empty">
-            <p>No FA records found</p>
+            <p>{{ t('common.empty') }}</p>
             <div v-if="sns.length" class="fa-sns-list">
               <span v-for="sn in sns" :key="sn" class="fa-sn-tag">{{ sn }}</span>
             </div>
@@ -53,7 +53,10 @@
 
 <script setup>
 import { ref, watch, nextTick } from 'vue'
+import { useI18n } from '@/i18n/useI18n'
 import { requestJson } from '@/composables/useApi'
+
+const { t } = useI18n()
 
 const props = defineProps({
   show: Boolean,
@@ -220,7 +223,7 @@ watch(() => props.show, async (val) => {
 .retry-btn {
   padding: 8px 20px;
   background: var(--color-danger);
-  color: #fff;
+  color: var(--text-inverse);
   border: none;
   border-radius: var(--radius-sm);
   cursor: pointer;

@@ -1,27 +1,27 @@
 <template>
   <div class="page-container">
-    <h1 class="page-title">Export Data</h1>
+    <h1 class="page-title">{{ t('export.title') }}</h1>
 
     <!-- Filter form -->
     <div class="card filter-card">
       <div class="filter-form">
         <div class="filter-group">
-          <label class="filter-label">WF</label>
-          <input v-model="filters.wf" class="filter-input" placeholder="e.g. 1.1" />
+          <label class="filter-label">{{ t('export.filterWf') }}</label>
+          <input v-model="filters.wf" class="filter-input" :placeholder="t('export.wfPlaceholder')" />
         </div>
         <div class="filter-group">
-          <label class="filter-label">Config</label>
+          <label class="filter-label">{{ t('export.filterConfig') }}</label>
           <select v-model="filters.config" class="filter-select">
-            <option value="">All</option>
+            <option value="">{{ t('export.all') }}</option>
             <option v-for="c in configOptions" :key="c" :value="c">{{ c }}</option>
           </select>
         </div>
         <div class="filter-group">
-          <label class="filter-label">SN</label>
-          <input v-model="filters.sn" class="filter-input" placeholder="Serial number" />
+          <label class="filter-label">{{ t('export.filterSn') }}</label>
+          <input v-model="filters.sn" class="filter-input" :placeholder="t('export.serialNumber')" />
         </div>
         <div class="filter-group">
-          <label class="filter-label">Format</label>
+          <label class="filter-label">{{ t('export.filterFormat') }}</label>
           <select v-model="exportFormat" class="filter-select">
             <option value="csv">CSV</option>
             <option value="json">JSON</option>
@@ -30,13 +30,13 @@
       </div>
       <div class="filter-actions">
         <button class="btn-outline" @click="previewData" :disabled="store.loading">
-          {{ store.loading ? 'Loading...' : 'Preview' }}
+          {{ store.loading ? t('export.loading') : t('export.preview') }}
         </button>
         <button class="btn-primary" @click="downloadCSV" :disabled="!hasData">
-          Download CSV
+          {{ t('export.downloadCsv') }}
         </button>
         <button class="btn-secondary" @click="downloadJSON" :disabled="!hasData">
-          Download JSON
+          {{ t('export.downloadJson') }}
         </button>
       </div>
     </div>
@@ -47,19 +47,19 @@
     <!-- Preview table -->
     <div v-if="previewRows.length" class="card table-wrap">
       <div class="preview-header">
-        <span class="preview-title">Preview ({{ previewRows.length }} rows)</span>
-        <span class="preview-note">Showing up to 50 rows</span>
+        <span class="preview-title">{{ t('export.previewRows', { count: previewRows.length }) }}</span>
+        <span class="preview-note">{{ t('export.showingUpTo') }}</span>
       </div>
       <table>
         <thead>
           <tr>
-            <th>SN</th>
-            <th>Unit</th>
-            <th>WF</th>
-            <th>Config</th>
-            <th>Current CP</th>
-            <th>Progress</th>
-            <th>CP Results</th>
+            <th>{{ t('export.colSn') }}</th>
+            <th>{{ t('export.colUnit') }}</th>
+            <th>{{ t('export.colWf') }}</th>
+            <th>{{ t('export.colConfig') }}</th>
+            <th>{{ t('export.colCurrentCp') }}</th>
+            <th>{{ t('export.colProgress') }}</th>
+            <th>{{ t('export.colCpResults') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -88,7 +88,7 @@
             </td>
           </tr>
           <tr v-if="!previewRows.length">
-            <td colspan="7" class="empty-row">No data to preview. Adjust filters and click Preview.</td>
+            <td colspan="7" class="empty-row">{{ t('export.noDataPreview') }}</td>
           </tr>
         </tbody>
       </table>
@@ -96,7 +96,7 @@
 
     <!-- Empty state -->
     <div v-else-if="!store.loading" class="empty-state">
-      <p>Use the filters above and click <strong>Preview</strong> to see data.</p>
+      <p v-html="t('export.adjustFilters')"></p>
     </div>
   </div>
 </template>
@@ -104,10 +104,12 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { useI18n } from '@/i18n/useI18n'
 import { requestJson } from '@/composables/useApi'
 import LoadingState from '@/components/LoadingState.vue'
 
 const store = useAppStore()
+const { t } = useI18n()
 const filters = ref({ wf: '', config: '', sn: '' })
 const exportFormat = ref('csv')
 
@@ -200,7 +202,7 @@ async function downloadJSON() {
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
-  color: #1a2332;
+  color: var(--text-primary);
   margin-bottom: 24px;
 }
 

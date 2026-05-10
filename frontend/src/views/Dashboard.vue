@@ -1,6 +1,6 @@
 <template>
   <div class="page-container">
-    <h1 class="page-title">M60 EVT REL — Test Progress Dashboard</h1>
+    <h1 class="page-title">{{ t('dashboard.title') }}</h1>
 
     <!-- 1. Overview Cards -->
     <section class="section">
@@ -10,9 +10,9 @@
     <!-- 2. Category Cards + Edit button -->
     <section class="section">
       <div class="section-header">
-        <h2>Categories</h2>
+        <h2>{{ t('dashboard.categories') }}</h2>
         <div class="divider"></div>
-        <button class="edit-btn" @click="showCatModal = true">Edit</button>
+        <button class="edit-btn" @click="showCatModal = true">{{ t('common.edit') }}</button>
       </div>
       <CategoryCards
         @category-click="goCategory"
@@ -23,11 +23,11 @@
     <section class="section">
       <div class="chart-row">
         <div class="chart-col card">
-          <div class="chart-col-header">Failure Trend</div>
+          <div class="chart-col-header">{{ t('dashboard.failureTrend') }}</div>
           <TrendChart :trend-data="trendData" />
         </div>
         <div class="chart-col card">
-          <div class="chart-col-header">Top Failures</div>
+          <div class="chart-col-header">{{ t('dashboard.topFailures') }}</div>
           <TopFailChart :top-failures="topFailData" />
         </div>
       </div>
@@ -36,7 +36,7 @@
     <!-- 4. Daily Updates -->
     <section class="section">
       <div class="section-header">
-        <h2>Daily Updates</h2>
+        <h2>{{ t('dashboard.dailyUpdates') }}</h2>
         <div class="divider"></div>
       </div>
       <DailyUpdates :daily-data="store.overviewData?.daily_updates" />
@@ -45,7 +45,7 @@
     <!-- 5. Daily Issues -->
     <section class="section">
       <div class="section-header">
-        <h2>Daily Issues</h2>
+        <h2>{{ t('dashboard.dailyIssues') }}</h2>
         <div class="divider"></div>
       </div>
       <DailyIssues :consistency="dailyIssuesConsistency" :issues="dailyIssues" />
@@ -53,10 +53,10 @@
 
     <!-- Footer -->
     <footer class="page-footer">
-      <span>Report Date: {{ store.reportDate || '—' }}</span>
-      <span>{{ configCount }} Configs</span>
-      <span>{{ wfCount }} WFs</span>
-      <span>{{ failureCount }} Failures</span>
+      <span>{{ t('dashboard.reportDate') }}: {{ store.reportDate || '—' }}</span>
+      <span>{{ configCount }} {{ t('common.configs') }}</span>
+      <span>{{ wfCount }} {{ t('common.wfs') }}</span>
+      <span>{{ failureCount }} {{ t('common.failures') }}</span>
     </footer>
 
     <!-- CatManage Modal -->
@@ -67,6 +67,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from '@/i18n/useI18n'
 import { useAppStore } from '@/stores/app'
 import { requestJson } from '@/composables/useApi'
 import OverviewCards from '@/components/OverviewCards.vue'
@@ -79,6 +80,7 @@ import CatManageModal from '@/components/CatManageModal.vue'
 
 const store = useAppStore()
 const router = useRouter()
+const { t } = useI18n()
 
 const showCatModal = ref(false)
 
@@ -155,7 +157,7 @@ onMounted(async () => {
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
-  color: #1a2332;
+  color: var(--text-primary);
   margin-bottom: 24px;
 }
 

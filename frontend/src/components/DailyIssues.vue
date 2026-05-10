@@ -22,7 +22,7 @@
           <span>All {{ issues.length }} issue(s) confirmed in both sources</span>
         </div>
       </div>
-      <div v-if="!issues.length" class="daily-empty">No issues today</div>
+      <div v-if="!issues.length" class="daily-empty">{{ t('common.empty') }}</div>
 
       <!-- Issue Table -->
       <div v-if="issues.length" class="table-wrap">
@@ -75,6 +75,9 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from '@/i18n/useI18n'
+
+const { t } = useI18n()
 
 defineProps({
   consistency: { type: Object, default: () => ({}) },

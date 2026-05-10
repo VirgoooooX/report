@@ -1,7 +1,7 @@
 <template>
   <div class="page-container">
-    <h1 class="page-title">Test Summary</h1>
-    <p class="page-subtitle">{{ summaryList.length }} Waterfalls, {{ configList.length }} Configs, {{ tests.length }} Tests</p>
+    <h1 class="page-title">{{ t('testSummary.title') }}</h1>
+    <p class="page-subtitle">{{ summaryList.length }} {{ t('testSummary.labelWaterfalls') }}, {{ configList.length }} {{ t('testSummary.labelConfigs') }}, {{ tests.length }} {{ t('testSummary.labelTests') }}</p>
 
     <LoadingState v-if="loading" />
     <ErrorState v-else-if="error" :message="error" :retry="load" />
@@ -15,12 +15,14 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { useI18n } from '@/i18n/useI18n'
 import TestSummary from '@/components/TestSummary.vue'
 import FAModal from '@/components/FAModal.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 
 const store = useAppStore()
+const { t } = useI18n()
 const loading = ref(false)
 const error = ref('')
 

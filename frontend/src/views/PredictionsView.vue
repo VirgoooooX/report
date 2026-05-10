@@ -1,23 +1,23 @@
 <template>
   <div class="page-container">
-    <h1 class="page-title">Predictions</h1>
+    <h1 class="page-title">{{ t('predictions.title') }}</h1>
 
     <!-- Stats cards row -->
     <div class="stats-row">
       <div class="card stat-card">
-        <span class="stat-label">Total</span>
+        <span class="stat-label">{{ t('predictions.statsTotal') }}</span>
         <span class="stat-value">{{ totalCount }}</span>
       </div>
       <div class="card stat-card">
-        <span class="stat-label">Manual</span>
+        <span class="stat-label">{{ t('predictions.statsManual') }}</span>
         <span class="stat-value">{{ manualCount }}</span>
       </div>
       <div class="card stat-card stat-overdue">
-        <span class="stat-label">Overdue</span>
+        <span class="stat-label">{{ t('predictions.statsOverdue') }}</span>
         <span class="stat-value">{{ overdueCount }}</span>
       </div>
       <div class="card stat-card stat-completed">
-        <span class="stat-label">Completed</span>
+        <span class="stat-label">{{ t('predictions.statsCompleted') }}</span>
         <span class="stat-value">{{ completedCount }}</span>
       </div>
     </div>
@@ -26,18 +26,18 @@
     <div class="card filter-card">
       <div class="filter-row">
         <div class="filter-group">
-          <label class="filter-label">WF</label>
-          <input v-model="filterWf" class="filter-input" placeholder="e.g. 1" />
+          <label class="filter-label">{{ t('predictions.filterWf') }}</label>
+          <input v-model="filterWf" class="filter-input" :placeholder="t('predictions.filterWfPlaceholder')" />
         </div>
         <div class="filter-group">
-          <label class="filter-label">Config</label>
+          <label class="filter-label">{{ t('predictions.filterConfig') }}</label>
           <select v-model="filterConfig" class="filter-select">
-            <option value="">All Configs</option>
+            <option value="">{{ t('predictions.allConfigs') }}</option>
             <option v-for="c in configOptions" :key="c" :value="c">{{ c }}</option>
           </select>
         </div>
         <button class="refresh-btn" :disabled="store.loading" @click="loadData">
-          {{ store.loading ? 'Loading...' : 'Refresh' }}
+          {{ store.loading ? t('common.loading') : t('common.refresh') }}
         </button>
       </div>
     </div>
@@ -47,19 +47,19 @@
     <!-- Predictions by WF -->
     <div v-if="store.predictions.length" class="card pred-card">
       <div class="pred-header">
-        <span class="pred-title">By Workflow</span>
-        <span class="pred-count">{{ groupedWfs.length }} WF(s), {{ totalCount }} test(s)</span>
+        <span class="pred-title">{{ t('predictions.byWorkflow') }}</span>
+        <span class="pred-count">{{ groupedWfs.length }} WF(s), {{ totalCount }} {{ t('predictions.countTests') }}</span>
       </div>
       <div class="flow-list">
         <!-- Global column headers — same flex structure as data rows -->
         <div class="test-row test-row-hdr">
-          <span class="col-cfg">Config</span>
-          <span class="test-name">Test</span>
-          <div class="test-progress">Progress</div>
-          <span class="test-rate">Rate</span>
-          <span class="test-remaining">Rem.</span>
-          <span class="test-date">Pred. Date</span>
-          <span class="col-type">Type</span>
+          <span class="col-cfg">{{ t('predictions.colConfig') }}</span>
+          <span class="test-name">{{ t('predictions.colTest') }}</span>
+          <div class="test-progress">{{ t('predictions.colProgress') }}</div>
+          <span class="test-rate">{{ t('predictions.colRate') }}</span>
+          <span class="test-remaining">{{ t('predictions.colRemaining') }}</span>
+          <span class="test-date">{{ t('predictions.colPredDate') }}</span>
+          <span class="col-type">{{ t('predictions.colType') }}</span>
         </div>
         <div v-for="wf in groupedWfs" :key="wf.wfNum" class="flow-block">
           <!-- WF label -->
@@ -67,7 +67,7 @@
             <span class="chevron" :class="{ open: expandedWfs[wf.wfNum] }">▶</span>
             <span class="flow-pill">WF{{ wf.wfNum }}</span>
             <span class="flow-name">{{ wfName(wf.wfNum) }}</span>
-            <span class="flow-count">{{ wf.tests.length }} test{{ wf.tests.length > 1 ? 's' : '' }}</span>
+            <span class="flow-count">{{ wf.tests.length }} {{ t('predictions.countTests') }}</span>
           </div>
 
           <!-- WF body -->
@@ -101,21 +101,21 @@
     <div v-if="editModal" class="modal-overlay" @click.self="editModal = false">
       <div class="modal-card">
         <div class="modal-header">
-          <h3>Edit Predicted Date</h3>
+          <h3>{{ t('predictions.editTitle') }}</h3>
           <button class="modal-close" @click="editModal = false">&times;</button>
         </div>
         <div class="modal-body">
           <div class="modal-field">
-            <strong>Test:</strong> WF{{ editRow?.wf_num }} / {{ editRow?.config }} / {{ editRow?.test_name || 'Test' + ((editRow?.test_idx || 0) + 1) }}
+            <strong>{{ t('predictions.editTest') }}</strong> WF{{ editRow?.wf_num }} / {{ editRow?.config }} / {{ editRow?.test_name || 'Test' + ((editRow?.test_idx || 0) + 1) }}
           </div>
           <div class="modal-field">
-            <label class="field-label">Date</label>
+            <label class="field-label">{{ t('predictions.editDate') }}</label>
             <input v-model="editDate" type="date" class="date-input" />
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn-secondary" @click="editModal = false">Cancel</button>
-          <button class="btn-primary" @click="saveEdit">Save</button>
+          <button class="btn-secondary" @click="editModal = false">{{ t('common.cancel') }}</button>
+          <button class="btn-primary" @click="saveEdit">{{ t('common.save') }}</button>
         </div>
       </div>
     </div>
@@ -125,11 +125,13 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useAppStore } from '@/stores/app'
+import { useI18n } from '@/i18n/useI18n'
 import { requestJson } from '@/composables/useApi'
 import StatusBadge from '@/components/StatusBadge.vue'
 import LoadingState from '@/components/LoadingState.vue'
 
 const store = useAppStore()
+const { t } = useI18n()
 const filterWf = ref('')
 const filterConfig = ref('')
 const editModal = ref(false)
@@ -248,7 +250,7 @@ onMounted(loadData)
   font-family: var(--font-display);
   font-size: 22px;
   font-weight: 700;
-  color: #1a2332;
+  color: var(--text-primary);
   margin-bottom: 24px;
 }
 
