@@ -50,6 +50,12 @@ class ApiConsistencyTests(unittest.TestCase):
         """Seed data and verify both endpoints report identical by_config failure stats."""
         rid = self._seed_report()
 
+        # Insert report_cps for CP-to-test mapping
+        self.conn.execute(
+            "INSERT INTO report_cps (report_id, wf_num, cp_idx, cp_name, test_idx) VALUES (?, '16.1', 0, 'CP0', 0)",
+            (rid,),
+        )
+
         # Insert basic sn_cp_results so both endpoints have data
         self.conn.execute(
             """INSERT INTO sn_cp_results
@@ -93,8 +99,18 @@ class ApiConsistencyTests(unittest.TestCase):
         )
 
     def test_failure_stats_only_count_latest_cp_check_items(self):
-        """Old CP failures are historical when the SN's latest CP check items pass."""
+        """Failures on any CP in a test are counted, not just the current CP."""
         rid = self._seed_report()
+
+        # Need report_cps to define CP-to-test mapping
+        self.conn.execute(
+            "INSERT INTO report_cps (report_id, wf_num, cp_idx, cp_name, test_idx) VALUES (?, '37', 0, 'CP0', 0)",
+            (rid,),
+        )
+        self.conn.execute(
+            "INSERT INTO report_cps (report_id, wf_num, cp_idx, cp_name, test_idx) VALUES (?, '37', 1, 'CP1', 0)",
+            (rid,),
+        )
 
         rows = [
             (rid, 'SN001', 0, 'spec_fail', 'spec', 0),
@@ -122,6 +138,8 @@ class ApiConsistencyTests(unittest.TestCase):
         stats = client.get('/api/failures/stats').get_json()
         top = stats['top_failures'][0]
 
+        # SN001: CP0=spec_fail but CP1=pass → latest CP in test is CP1 (pass) → not a failure
+        # SN002: CP0=pass, CP1=strife_fail → latest CP in test is CP1 (strife_fail) → failure
         self.assertEqual(top['spec'], 0)
         self.assertEqual(top['strife'], 1)
         self.assertEqual(top['total'], 2)

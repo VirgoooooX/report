@@ -395,37 +395,66 @@ def get_latest_wf_config_progress(conn, report_id):
 def get_failure_rate_stats_from_facts(report_id):
     conn = get_conn()
     rows = conn.execute(
-        """WITH latest_cp AS (
-               SELECT report_id, wf_num, config, sn, test_idx, cp_idx
+        """WITH cp_test_ranges AS (
+               SELECT wf_num, test_idx, MIN(cp_idx) AS first_cp, MAX(cp_idx) AS last_cp
+               FROM report_cps
+               WHERE report_id = ?
+               GROUP BY wf_num, test_idx
+           ),
+           sn_current AS (
+               SELECT wf_num, config, sn, cp_idx AS current_cp_idx
                FROM sn_cp_results
                WHERE report_id = ? AND is_current_cp = 1
            ),
-           latest_check_summary AS (
-               SELECT l.wf_num, l.config, l.sn, l.test_idx,
-                      MAX(CASE WHEN c.status IN ('pass', 'spec_fail', 'strife_fail') THEN 1 ELSE 0 END) AS has_result,
-                      MAX(CASE WHEN c.failure_type = 'spec' THEN 1 ELSE 0 END) AS has_spec,
-                      MAX(CASE WHEN c.failure_type = 'strife' THEN 1 ELSE 0 END) AS has_strife
-               FROM latest_cp l
-               LEFT JOIN sn_check_results c
-                 ON c.report_id = l.report_id
-                AND c.wf_num = l.wf_num
-                AND c.config = l.config
-                AND c.sn = l.sn
-                AND c.cp_idx = l.cp_idx
-               GROUP BY l.wf_num, l.config, l.sn, l.test_idx
+           test_totals AS (
+               SELECT tr.wf_num, sc.config, tr.test_idx,
+                      COUNT(DISTINCT sc.sn) AS total_units
+               FROM cp_test_ranges tr
+               JOIN sn_current sc
+                 ON sc.wf_num = tr.wf_num
+                AND sc.current_cp_idx >= tr.first_cp
+               GROUP BY tr.wf_num, sc.config, tr.test_idx
+           ),
+           sn_test_latest_cp AS (
+               SELECT cp.wf_num, cp.config, cp.sn, rcp.test_idx,
+                      MAX(cp.cp_idx) AS latest_cp_idx
+               FROM sn_cp_results cp
+               JOIN report_cps rcp
+                 ON rcp.report_id = ? AND rcp.wf_num = cp.wf_num AND rcp.cp_idx = cp.cp_idx
+               WHERE cp.report_id = ? AND cp.has_data = 1
+               GROUP BY cp.wf_num, cp.config, cp.sn, rcp.test_idx
+           ),
+           sn_test_failure AS (
+               SELECT stl.wf_num, stl.config, stl.sn, stl.test_idx,
+                      cp.failure_type
+               FROM sn_test_latest_cp stl
+               JOIN sn_cp_results cp
+                 ON cp.report_id = ?
+                AND cp.wf_num = stl.wf_num AND cp.config = stl.config
+                AND cp.sn = stl.sn AND cp.cp_idx = stl.latest_cp_idx
+               WHERE cp.failure_type IS NOT NULL
+           ),
+           test_fail_agg AS (
+               SELECT wf_num, config, test_idx,
+                      COUNT(DISTINCT CASE WHEN failure_type = 'spec' THEN sn END) AS spec,
+                      COUNT(DISTINCT CASE WHEN failure_type = 'strife' THEN sn END) AS strife
+               FROM sn_test_failure
+               GROUP BY wf_num, config, test_idx
            )
-           SELECT f.wf_num, f.config, f.test_idx,
+           SELECT tt.wf_num, tt.config, tt.test_idx,
                   MAX(tn.test_name) AS test_name,
-                  COUNT(DISTINCT CASE WHEN f.has_result = 1 THEN f.sn END) AS total,
-                  COUNT(DISTINCT CASE WHEN f.has_spec = 1 THEN f.sn END) AS spec,
-                  COUNT(DISTINCT CASE WHEN COALESCE(f.has_spec, 0) = 0 AND f.has_strife = 1 THEN f.sn END) AS strife
-           FROM latest_check_summary f
+                  COALESCE(tt.total_units, 0) AS total,
+                  COALESCE(fa.spec, 0) AS spec,
+                  COALESCE(fa.strife, 0) AS strife
+           FROM test_totals tt
+           LEFT JOIN test_fail_agg fa
+             ON fa.wf_num = tt.wf_num AND fa.config = tt.config AND fa.test_idx = tt.test_idx
            LEFT JOIN report_test_names tn
              ON tn.report_id = ?
-            AND tn.wf_num = f.wf_num
-            AND tn.test_idx = f.test_idx
-           GROUP BY f.wf_num, f.config, f.test_idx""",
-        (report_id, report_id),
+            AND tn.wf_num = tt.wf_num
+            AND tn.test_idx = tt.test_idx
+           GROUP BY tt.wf_num, tt.config, tt.test_idx""",
+        (report_id, report_id, report_id, report_id, report_id, report_id),
     ).fetchall()
     conn.close()
     return rows

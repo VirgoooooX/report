@@ -190,6 +190,8 @@ td {
   color: var(--color-in-progress);
   font-weight: 600;
 }
+.ts-fail-text { color: var(--color-danger); font-weight: 700; cursor: pointer; }
+.ts-strife-text { color: var(--color-warning); font-weight: 700; cursor: pointer; }
 
 .ts-not-started {
   background: var(--color-not-started-bg);

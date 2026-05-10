@@ -10,6 +10,14 @@ assert(testSummaryCellClass({ status: 'not_started' }) === 'ts-not-started', 'no
 
 // in-progress
 assert(testSummaryCellClass({ status: 'in_progress' }) === 'ts-in-progress', 'in_progress → ts-in-progress')
+assert(
+  testSummaryCellClass({ status: 'in_progress', spec: 1, strife: 0 }) === 'ts-in-progress ts-fail-text',
+  'in_progress spec → blue background with red text'
+)
+assert(
+  testSummaryCellClass({ status: 'in_progress', spec: 0, strife: 1 }) === 'ts-in-progress ts-strife-text',
+  'in_progress strife → blue background with yellow text'
+)
 
 // spec
 assert(testSummaryCellClass({ status: 'complete', spec: 1, strife: 0 }) === 'ts-fail', 'spec → ts-fail')
