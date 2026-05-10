@@ -32,18 +32,52 @@
         >
           <span class="theme-icon" aria-hidden="true">{{ store.theme === 'dark' ? '☀' : '☾' }}</span>
         </button>
+        <button
+          class="nav-menu-btn"
+          type="button"
+          :aria-expanded="mobileOpen"
+          aria-controls="mobile-nav"
+          @click="mobileOpen = !mobileOpen"
+        >
+          <MenuOutlined />
+        </button>
       </div>
       <div class="nav-date">{{ store.reportDate || t('nav.loading') }}</div>
+    </div>
+    <div id="mobile-nav" class="mobile-nav" :class="{ open: mobileOpen }">
+      <router-link
+        v-for="link in navLinks"
+        :key="link.to"
+        :to="link.to"
+        class="mobile-nav-link"
+        @click="mobileOpen = false"
+      >
+        {{ link.label }}
+      </router-link>
     </div>
   </nav>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n/useI18n'
+import { MenuOutlined } from '@ant-design/icons-vue'
 
 const store = useAppStore()
 const { t } = useI18n()
+const mobileOpen = ref(false)
+
+const navLinks = [
+  { to: '/', label: t('nav.dashboard') },
+  { to: '/daily-update', label: t('nav.dailyUpdate') },
+  { to: '/test-summary', label: t('nav.testSummary') },
+  { to: '/failure-analysis', label: t('nav.failureAnalysis') },
+  { to: '/predictions', label: t('nav.predictions') },
+  { to: '/category/Drop', label: t('nav.categories') },
+  { to: '/sn', label: t('nav.snLookup') },
+  { to: '/export', label: t('nav.export') },
+]
 
 function toggleLanguage() {
   store.setLanguage(store.language === 'zh-CN' ? 'en-US' : 'zh-CN')
@@ -135,5 +169,72 @@ function toggleLanguage() {
   font-size: 13px; color: var(--text-muted);
   padding: 4px 12px; background: var(--bg-tag);
   border-radius: 6px; white-space: nowrap;
+}
+
+.nav-menu-btn {
+  display: none;
+  width: 36px;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.mobile-nav {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .nav-links {
+    display: none;
+  }
+
+  .nav-menu-btn {
+    display: inline-flex;
+  }
+
+  .mobile-nav {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 4px;
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    top: calc(100% + 8px);
+    padding: 8px;
+    border: 1px solid var(--border-card);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    box-shadow: var(--shadow-modal);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition:
+      opacity var(--duration-fast) var(--ease-in-out),
+      transform var(--duration-fast) var(--ease-in-out);
+    z-index: 50;
+  }
+
+  .mobile-nav.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+  }
+
+  .mobile-nav-link {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+
+  .mobile-nav-link.router-link-active,
+  .mobile-nav-link:hover {
+    background: var(--bg-row-hover);
+  }
 }
 </style>
