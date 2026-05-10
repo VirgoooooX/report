@@ -264,6 +264,19 @@ FA 记录通过以下字段关联到 WF 原始数据：
 - `report_test_names` — 每个报告的测试名称快照
 - `report_cps` — 每个报告的 CP 结构快照
 - `sn_cp_results` — SN 级 CP 结果事实表
-- `sn_check_results` — SN 级检查项结果事实表
+- `sn_check_state_history` — SN 级检查项状态历史表（状态不变时只延长区间，不重复插入每日快照）
+
+### 11.1 Check Item 状态历史模型
+
+`sn_cp_results` 仍按“每日报告快照”保存 CP 级事实，作为完成率、Failure Rate、趋势和预测的主数据源。  
+检查项级别不再每日全量落库，而是使用状态历史段：
+
+- 同一 `WF + Config + SN + CP + check_item` 的状态若与前一份报告一致，只更新 `last_seen_report_*`
+- 若状态发生变化，关闭上一段并新增一段
+- 查询某个报告日的检查项明细时，按“报告 ID 落在状态段有效区间”还原
+
+这样既保留了可追溯性，也避免了大量 `pass/pending/skip` 的重复存储。
+
+`sn_check_results` 仍保留为兼容回退路径，在迁移完成后可逐步下线。
 
 `wf_results` 和 `sn_progress` 在迁移期间作为兼容性/缓存表维护。
