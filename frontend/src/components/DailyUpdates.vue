@@ -2,9 +2,9 @@
   <div class="card daily-card">
     <div class="daily-header" @click="toggle">
       <span class="chevron" :class="{ open: expanded }">▶</span>
-      <span class="daily-title">CP Changes Today</span>
-      <span class="daily-count">{{ wfCount }} WF(s) updated</span>
-      <button class="toggle-btn" @click.stop="toggle">{{ expanded ? 'Collapse' : 'Expand' }}</button>
+      <span class="daily-title">{{ t('dailyUpdate.cpChanges') }}</span>
+      <span class="daily-count">{{ wfCount }} {{ t('dailyUpdate.wfsUpdated') }}</span>
+      <button class="toggle-btn" @click.stop="toggle">{{ expanded ? t('dailyUpdate.collapse') : t('dailyUpdate.expand') }}</button>
     </div>
     <div class="daily-body" :class="{ collapsed: !expanded }">
       <div v-if="!wfUpdates.length" class="daily-empty">{{ t('common.empty') }}</div>

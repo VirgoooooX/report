@@ -74,7 +74,28 @@ onMounted(load)
 </script>
 
 <style scoped>
-.page-container { max-width: 100%; margin: 0 auto; padding: 24px 32px 40px; }
-.page-title { font-size: 22px; font-weight: 700; color: var(--text-primary); margin-bottom: 4px; }
-.page-subtitle { font-size: 14px; color: var(--text-muted); margin-bottom: 24px; }
+.page-container {
+  width: min(100%, 1800px);
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+
+.page-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.page-subtitle {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  .page-container {
+    padding: 16px 12px 28px;
+  }
+}
 </style>

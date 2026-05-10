@@ -33,6 +33,9 @@ export const useAppStore = defineStore('app', () => {
   const overviewData = ref(null)
   const summaryData = ref(null)
   const loading = ref(false)
+  const dailyIssues = ref([])
+  const dailyIssuesConsistency = ref({})
+  const dailyIssuesReportDate = ref('')
   const error = ref(null)
   const categories = ref([])
   const categoryDetail = ref(null)
@@ -78,6 +81,19 @@ export const useAppStore = defineStore('app', () => {
       throw e
     } finally {
       loading.value = false
+    }
+  }
+
+  async function fetchDailyIssues() {
+    try {
+      const data = await requestJson('/api/daily/issues')
+      dailyIssues.value = data.issues || []
+      dailyIssuesConsistency.value = data.consistency || {}
+      dailyIssuesReportDate.value = data.report_date || ''
+      return data
+    } catch (e) {
+      error.value = e.message
+      throw e
     }
   }
 
@@ -154,9 +170,10 @@ export const useAppStore = defineStore('app', () => {
   return {
     language, theme, setLanguage, setTheme, toggleTheme, applyPreferences,
     reportDate, wfNames, overviewData, summaryData, loading, error,
+    dailyIssues, dailyIssuesConsistency, dailyIssuesReportDate,
     categories, categoryDetail, predictions, snResult, exportData,
     configColors, catColors, CONFIG_ORDER, CAT_ORDER,
-    fetchOverview, fetchSummary, fetchCategories, fetchPredictions,
+    fetchOverview, fetchDailyIssues, fetchSummary, fetchCategories, fetchPredictions,
     fetchCategoryDetail, fetchSnResult, searchSn, fetchExportData,
     wfSortKey, sortedWfKeys
   }

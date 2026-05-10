@@ -8,7 +8,8 @@ export const messages = {
       snLookup: 'SN 查询',
       predictions: '预测',
       export: '导出',
-      loading: '加载中'
+      loading: '加载中',
+      dailyUpdate: '每日更新'
     },
     actions: {
       search: '搜索',
@@ -184,6 +185,25 @@ export const messages = {
       waterfalls: 'Waterfall',
       noWaterfallData: '暂无 Waterfall 数据',
       loadingCategory: '正在加载分类...'
+    },
+    dailyUpdate: {
+      title: '每日更新',
+      subtitle: '快速查看今日 CP 推进、问题新增和数据一致性',
+      cpChanges: '今日 CP 变化',
+      issues: '每日问题',
+      kpiWfUpdated: '更新 WF',
+      kpiWfUpdatedSub: '今日有 CP 推进的 WF',
+      kpiCpAdvanced: 'CP 推进',
+      kpiCpAdvancedSub: '今日累计推进 CP 数',
+      kpiNewIssues: '新增问题',
+      kpiNewIssuesSub: '今日问题数量',
+      kpiConsistency: '一致性',
+      kpiConsistencyOk: 'Daily Report 与 FA Tracker 一致',
+      kpiConsistencyMismatch: '存在待核对差异',
+      wfsUpdated: '个 WF 更新',
+      issueCount: '个问题',
+      expand: '展开',
+      collapse: '收起'
     }
   },
   'en-US': {
@@ -195,7 +215,8 @@ export const messages = {
       snLookup: 'SN Lookup',
       predictions: 'Predictions',
       export: 'Export',
-      loading: 'Loading'
+      loading: 'Loading',
+      dailyUpdate: 'Daily Update'
     },
     actions: {
       search: 'Search',
@@ -371,6 +392,25 @@ export const messages = {
       waterfalls: 'Waterfalls',
       noWaterfallData: 'No waterfall data available',
       loadingCategory: 'Loading category...'
+    },
+    dailyUpdate: {
+      title: 'Daily Update',
+      subtitle: 'Review today\'s CP movement, new issues, and data consistency',
+      cpChanges: 'CP Changes Today',
+      issues: 'Daily Issues',
+      kpiWfUpdated: 'WF Updated',
+      kpiWfUpdatedSub: 'WFs with CP movement today',
+      kpiCpAdvanced: 'CP Advanced',
+      kpiCpAdvancedSub: 'Total CP delta today',
+      kpiNewIssues: 'New Issues',
+      kpiNewIssuesSub: 'Issues opened today',
+      kpiConsistency: 'Consistency',
+      kpiConsistencyOk: 'Daily Report and FA Tracker match',
+      kpiConsistencyMismatch: 'Differences need review',
+      wfsUpdated: 'WF(s) updated',
+      issueCount: 'issue(s)',
+      expand: 'Expand',
+      collapse: 'Collapse'
     }
   }
 }

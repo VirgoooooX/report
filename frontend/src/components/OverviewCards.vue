@@ -116,9 +116,9 @@ const configs = computed(() => {
   min-width: 2px;
   background:
     linear-gradient(90deg,
-      color-mix(in srgb, var(--accent-steel) 22%, #fff),
-      color-mix(in srgb, var(--chart-r2cnm) 14%, #fff) 82%,
-      color-mix(in srgb, var(--chart-r2cnm) 8%, #fff)
+      var(--overall-fill-start),
+      var(--overall-fill-mid) 82%,
+      var(--overall-fill-end)
     );
   transition: width 0.65s var(--ease-out);
 }
@@ -140,7 +140,7 @@ const configs = computed(() => {
   width: fit-content;
   padding: 3px 9px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--accent-steel) 10%, #fff);
+  background: var(--overall-kicker-bg);
   color: var(--accent-steel);
   font-size: 10px;
   font-weight: 700;

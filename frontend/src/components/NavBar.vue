@@ -7,29 +7,30 @@
       </div>
       <div class="nav-links">
         <router-link to="/">{{ t('nav.dashboard') }}</router-link>
-        <router-link to="/category/Drop">{{ t('nav.categories') }}</router-link>
+        <router-link to="/daily-update">{{ t('nav.dailyUpdate') }}</router-link>
         <router-link to="/test-summary">{{ t('nav.testSummary') }}</router-link>
         <router-link to="/failure-analysis">{{ t('nav.failureAnalysis') }}</router-link>
-        <router-link to="/sn">{{ t('nav.snLookup') }}</router-link>
         <router-link to="/predictions">{{ t('nav.predictions') }}</router-link>
+        <router-link to="/category/Drop">{{ t('nav.categories') }}</router-link>
+        <router-link to="/sn">{{ t('nav.snLookup') }}</router-link>
         <router-link to="/export">{{ t('nav.export') }}</router-link>
       </div>
       <div class="nav-controls">
-        <div class="lang-control">
-          <button
-            class="lang-btn"
-            :class="{ active: store.language === 'zh-CN' }"
-            @click="store.setLanguage('zh-CN')"
-          >中文</button>
-          <button
-            class="lang-btn"
-            :class="{ active: store.language === 'en-US' }"
-            @click="store.setLanguage('en-US')"
-          >EN</button>
-        </div>
-        <button class="theme-btn" @click="store.toggleTheme()">
-          <ThunderboltOutlined v-if="store.theme === 'dark'" />
-          <ThunderboltFilled v-else />
+        <button
+          class="lang-toggle-btn"
+          :title="store.language === 'zh-CN' ? 'Switch to English' : '切换到中文'"
+          :aria-label="store.language === 'zh-CN' ? 'Switch to English' : '切换到中文'"
+          @click="toggleLanguage"
+        >
+          <span class="lang-icon" aria-hidden="true">{{ store.language === 'zh-CN' ? '中' : 'EN' }}</span>
+        </button>
+        <button
+          class="theme-btn"
+          :title="store.theme === 'dark' ? '切换到浅色模式' : 'Switch to dark mode'"
+          :aria-label="store.theme === 'dark' ? '切换到浅色模式' : 'Switch to dark mode'"
+          @click="store.toggleTheme()"
+        >
+          <span class="theme-icon" aria-hidden="true">{{ store.theme === 'dark' ? '☀' : '☾' }}</span>
         </button>
       </div>
       <div class="nav-date">{{ store.reportDate || t('nav.loading') }}</div>
@@ -38,12 +39,15 @@
 </template>
 
 <script setup>
-import { ThunderboltOutlined, ThunderboltFilled } from '@ant-design/icons-vue'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n/useI18n'
 
 const store = useAppStore()
 const { t } = useI18n()
+
+function toggleLanguage() {
+  store.setLanguage(store.language === 'zh-CN' ? 'en-US' : 'zh-CN')
+}
 </script>
 
 <style scoped>
@@ -84,24 +88,48 @@ const { t } = useI18n()
 .nav-controls {
   display: flex; align-items: center; gap: 8px;
 }
-.lang-control {
-  display: flex; border: 1px solid var(--border-input); border-radius: var(--radius-sm); overflow: hidden;
-}
-.lang-btn {
-  padding: 4px 10px; font-size: 12px; font-family: var(--font-display);
-  font-weight: 500; background: var(--bg-card); color: var(--text-muted);
-  border: none; cursor: pointer; transition: background var(--duration-fast), color var(--duration-fast);
-}
-.lang-btn:first-child { border-right: 1px solid var(--border-input); }
-.lang-btn.active { background: var(--text-primary); color: var(--text-inverse); }
-.lang-btn:hover:not(.active) { color: var(--text-primary); }
+.lang-toggle-btn,
 .theme-btn {
-  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
-  background: var(--bg-card); border: 1px solid var(--border-input); border-radius: var(--radius-sm);
-  color: var(--text-secondary); cursor: pointer; font-size: 16px;
-  transition: color var(--duration-fast);
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 1;
+  transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
 }
-.theme-btn:hover { color: var(--text-primary); }
+.lang-toggle-btn {
+  font-size: 11px;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.lang-icon,
+.theme-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.lang-icon {
+  min-width: 1.5em;
+  font-size: 11px;
+  letter-spacing: 0;
+  transform: translateY(-0.5px);
+}
+.theme-icon {
+  font-size: 15px;
+  transform: translateY(-0.5px);
+}
+.lang-toggle-btn:hover,
+.theme-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
 .nav-date {
   font-family: 'Source Code Pro', monospace;
   font-size: 13px; color: var(--text-muted);

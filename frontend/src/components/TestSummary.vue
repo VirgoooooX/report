@@ -6,30 +6,30 @@
           <tr>
             <th class="ts-wf-hd" rowspan="2">WF</th>
             <template v-for="ti in maxTestSlots" :key="ti">
-              <th class="ts-test-hd" :colspan="5">Test{{ ti }}</th>
-              <th v-if="ti < maxTestSlots" class="ts-gap"></th>
+              <th class="ts-test-hd" :class="{ 'ts-test-hd--with-divider': ti < maxTestSlots }" :colspan="5">Test{{ ti }}</th>
+              <th v-if="ti < maxTestSlots" class="ts-gap" aria-hidden="true"></th>
             </template>
           </tr>
           <tr>
             <template v-for="ti in maxTestSlots" :key="'sub-'+ti">
-              <th class="ts-tn-sub">Name</th>
+              <th class="ts-tn-sub" :class="{ 'ts-tn-sub--with-divider': ti < maxTestSlots }">Name</th>
               <th v-for="cfg in configList" :key="cfg" class="ts-cfg-sub"
                   :style="{ color: cfgColor(cfg) }">{{ cfg }}</th>
-              <th v-if="ti < maxTestSlots" class="ts-gap"></th>
+              <th v-if="ti < maxTestSlots" class="ts-gap" aria-hidden="true"></th>
             </template>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="wf in sortedWfs" :key="wf.wf">
+          <tr v-for="(wf, rowIndex) in sortedWfs" :key="wf.wf" :class="{ 'ts-row-alt': rowIndex % 2 === 1 }">
             <td class="ts-wf-col">WF{{ wf.wf }}</td>
             <template v-for="ti in maxTestSlots" :key="ti">
-              <td class="ts-tn-col">{{ wfTestName(wf, ti - 1) }}</td>
+              <td class="ts-tn-col" :class="{ 'ts-tn-col--with-divider': ti < maxTestSlots }">{{ wfTestName(wf, ti - 1) }}</td>
               <td v-for="cfg in configList" :key="cfg"
-                  :class="cellClass(wf, cfg, ti - 1)"
+                  :class="[cellClass(wf, cfg, ti - 1), { 'ts-cell-group-end': cfg === configList[configList.length - 1] && ti < maxTestSlots }]"
                   @click="onCellClick(wf, cfg, ti - 1)">
                 {{ cellText(wf, cfg, ti - 1) }}
               </td>
-              <td v-if="ti < maxTestSlots" class="ts-gap"></td>
+              <td v-if="ti < maxTestSlots" class="ts-gap" aria-hidden="true"></td>
             </template>
           </tr>
         </tbody>
@@ -129,57 +129,134 @@ function onCellClick(wf, cfg, slotIdx) {
 </script>
 
 <style scoped>
-.card { background: var(--bg-card); border-radius: var(--radius-md); border: 1px solid var(--border-card); box-shadow: var(--shadow-card); overflow: hidden; }
-.ts-scroll { overflow-x: auto; }
-.ts-table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 700px; }
+.card {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.ts-wrap {
+  width: 100%;
+}
+
+.ts-scroll {
+  overflow-x: auto;
+  scrollbar-color: var(--border-input) transparent;
+}
+
+.ts-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+  min-width: 1080px;
+}
 
 .ts-wf-hd {
-  padding: 6px 8px; font-size: 10px; font-weight: 600; text-align: left;
-  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
-  background: var(--bg-row-stripe); border-bottom: 1px solid var(--border-light);
-  position: sticky; left: 0; z-index: 3;
+  padding: 8px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: left;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: color-mix(in srgb, var(--bg-row-hover) 70%, var(--bg-card));
+  border-bottom: 1px solid var(--border-light);
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  box-shadow: 1px 0 0 var(--border-light);
 }
 .ts-test-hd {
-  padding: 5px 2px; font-size: 11px; font-weight: 600;
-  color: var(--text-primary); background: var(--bg-row-stripe);
+  padding: 8px 10px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-row-hover) 70%, var(--bg-card));
   border-bottom: 1px solid var(--border-light);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   max-width: 120px;
 }
+.ts-test-hd--with-divider {
+  box-shadow: inset -1px 0 0 var(--border-light);
+}
 .ts-tn-sub {
-  padding: 4px 6px; font-size: 10px; font-weight: 400;
-  color: var(--text-muted); background: var(--bg-row-stripe);
+  padding: 6px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-align: left;
+  background: color-mix(in srgb, var(--bg-row-stripe) 82%, var(--bg-card));
   border-bottom: 1px solid var(--border-light);
-  min-width: 60px; max-width: 140px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  min-width: 72px;
+  max-width: 152px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ts-tn-sub--with-divider {
+  box-shadow: inset -1px 0 0 var(--border-light);
 }
 .ts-cfg-sub {
-  padding: 4px 6px; font-size: 10px; font-weight: 600; text-align: center;
-  background: var(--bg-row-stripe); border-bottom: 1px solid var(--border-light);
+  padding: 6px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+  background: color-mix(in srgb, var(--bg-row-stripe) 82%, var(--bg-card));
+  border-bottom: 1px solid var(--border-light);
 }
-.ts-gap { width: 3px; min-width: 3px; background: var(--border-light); padding: 0 !important; border-bottom: 1px solid var(--border-light); }
+.ts-gap {
+  width: 10px;
+  min-width: 10px;
+  background: color-mix(in srgb, var(--bg-root) 55%, var(--bg-card));
+  padding: 0 !important;
+  border-bottom: 1px solid var(--border-light);
+  border-left: 1px solid var(--border-light);
+  border-right: 1px solid var(--border-light);
+}
 
 .ts-wf-col {
-  padding: 6px 6px; text-align: left; font-family: var(--font-mono);
-  font-size: 11px; font-weight: 600; color: var(--text-secondary);
+  padding: 7px 8px;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-secondary);
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-card);
   position: sticky; left: 0; z-index: 1; white-space: nowrap;
+  box-shadow: 1px 0 0 var(--border-light);
 }
 .ts-tn-col {
-  padding: 5px 6px; text-align: left;
-  font-size: 11px; color: var(--text-secondary);
+  padding: 7px 8px;
+  text-align: left;
+  font-size: 11px;
+  color: var(--text-secondary);
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-card);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  max-width: 140px; font-weight: 500;
+  max-width: 156px;
+  font-weight: 500;
+}
+.ts-tn-col--with-divider,
+.ts-cell-group-end {
+  box-shadow: inset -1px 0 0 var(--border-light);
 }
 
 td {
-  padding: 5px 4px; text-align: center; font-family: var(--font-mono);
-  font-size: 11px; font-variant-numeric: tabular-nums;
+  padding: 6px 4px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
   border-bottom: 1px solid var(--border-light);
-  transition: filter var(--duration-fast); white-space: nowrap;
+  transition: filter var(--duration-fast), background var(--duration-fast), color var(--duration-fast);
+  white-space: nowrap;
 }
 
 .ts-pass { background: var(--color-success-bg); color: var(--color-success); }
@@ -194,11 +271,42 @@ td {
 .ts-strife-text { color: var(--color-warning); font-weight: 700; cursor: pointer; }
 
 .ts-not-started {
-  background: var(--color-not-started-bg);
+  background: color-mix(in srgb, var(--color-not-started-bg) 82%, var(--bg-card));
   color: var(--text-muted);
-  opacity: 0.75;
+  opacity: 0.65;
 }
 
-.ts-empty { color: var(--text-muted); opacity: 0.35; }
+.ts-empty { color: var(--text-muted); opacity: 0.28; }
 .ts-strife:hover, .ts-fail:hover { filter: brightness(0.94); }
+
+.ts-row-alt .ts-tn-col,
+.ts-row-alt .ts-wf-col {
+  background: color-mix(in srgb, var(--bg-row-stripe) 40%, var(--bg-card));
+}
+
+.ts-row-alt .ts-not-started {
+  background: color-mix(in srgb, var(--bg-row-stripe) 48%, var(--color-not-started-bg));
+}
+
+.ts-row-alt .ts-empty {
+  background: color-mix(in srgb, var(--bg-row-stripe) 48%, var(--bg-card));
+}
+
+tbody tr:hover .ts-wf-col,
+tbody tr:hover .ts-tn-col,
+tbody tr:hover .ts-empty,
+tbody tr:hover .ts-not-started {
+  background: var(--bg-row-hover);
+}
+
+@media (max-width: 900px) {
+  .ts-table {
+    min-width: 960px;
+  }
+
+  .ts-gap {
+    width: 8px;
+    min-width: 8px;
+  }
+}
 </style>

@@ -48,6 +48,10 @@
   --cat-ingress: #4f6f8f;
   --cat-environmental: #22c55e;
   --cat-mechanical: #d97706;
+  --overall-fill-start: color-mix(in srgb, var(--accent-steel) 22%, var(--bg-card));
+  --overall-fill-mid: color-mix(in srgb, var(--chart-r2cnm) 14%, var(--bg-card));
+  --overall-fill-end: color-mix(in srgb, var(--chart-r2cnm) 8%, var(--bg-card));
+  --overall-kicker-bg: color-mix(in srgb, var(--accent-steel) 10%, var(--bg-card));
 
   /* 字体 */
   --font-display: 'Work Sans', system-ui, -apple-system, sans-serif;
@@ -116,12 +120,18 @@
   --color-info-bg: #1e3a5f;
 
   --color-not-started-bg: #111827;
+  --color-in-progress: #93c5fd;
+  --color-in-progress-bg: #1b2b45;
 
   --shadow-card: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
   --shadow-card-hover: 0 4px 12px rgba(0,0,0,0.4), 0 1px 2px rgba(0,0,0,0.3);
   --shadow-nav: 0 1px 0 rgba(255,255,255,0.05);
 
   --accent-steel: #60a5fa;
+  --overall-fill-start: color-mix(in srgb, var(--accent-steel) 30%, var(--bg-card));
+  --overall-fill-mid: color-mix(in srgb, var(--chart-r2cnm) 18%, var(--bg-card));
+  --overall-fill-end: color-mix(in srgb, var(--chart-r2cnm) 10%, var(--bg-card));
+  --overall-kicker-bg: color-mix(in srgb, var(--accent-steel) 18%, var(--bg-card));
 }
 
 /* Reset */

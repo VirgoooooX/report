@@ -32,7 +32,12 @@ const routes = [
     path: '/export',
     name: 'export',
     component: () => import('@/views/ExportView.vue')
-  }
+  },
+  {
+    path: '/daily-update',
+    name: 'daily-update',
+    component: () => import('@/views/DailyUpdateView.vue')
+  },
 ]
 
 export default createRouter({

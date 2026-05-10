@@ -33,23 +33,7 @@
       </div>
     </section>
 
-    <!-- 4. Daily Updates -->
-    <section class="section">
-      <div class="section-header">
-        <h2>{{ t('dashboard.dailyUpdates') }}</h2>
-        <div class="divider"></div>
-      </div>
-      <DailyUpdates :daily-data="store.overviewData?.daily_updates" />
-    </section>
 
-    <!-- 5. Daily Issues -->
-    <section class="section">
-      <div class="section-header">
-        <h2>{{ t('dashboard.dailyIssues') }}</h2>
-        <div class="divider"></div>
-      </div>
-      <DailyIssues :consistency="dailyIssuesConsistency" :issues="dailyIssues" />
-    </section>
 
     <!-- Footer -->
     <footer class="page-footer">
@@ -69,13 +53,10 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/i18n/useI18n'
 import { useAppStore } from '@/stores/app'
-import { requestJson } from '@/composables/useApi'
 import OverviewCards from '@/components/OverviewCards.vue'
 import CategoryCards from '@/components/CategoryCards.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import TopFailChart from '@/components/TopFailChart.vue'
-import DailyUpdates from '@/components/DailyUpdates.vue'
-import DailyIssues from '@/components/DailyIssues.vue'
 import CatManageModal from '@/components/CatManageModal.vue'
 
 const store = useAppStore()
@@ -83,19 +64,6 @@ const router = useRouter()
 const { t } = useI18n()
 
 const showCatModal = ref(false)
-
-const dailyIssues = ref([])
-const dailyIssuesConsistency = ref({})
-
-async function fetchDailyIssues() {
-  try {
-    const data = await requestJson('/api/daily/issues')
-    dailyIssues.value = data.issues || []
-    dailyIssuesConsistency.value = data.consistency || {}
-  } catch (e) {
-    store.error = e.message || 'Failed to load daily issues'
-  }
-}
 
 const trendData = computed(() => {
   return store.overviewData?.trend ?? []
@@ -131,10 +99,7 @@ function goCategory(name) {
 }
 
 async function loadAll() {
-  await Promise.all([
-    store.fetchOverview(),
-    fetchDailyIssues(),
-  ])
+  await store.fetchOverview()
 }
 
 onMounted(async () => {

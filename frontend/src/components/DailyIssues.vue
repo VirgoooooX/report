@@ -2,9 +2,9 @@
   <div class="card daily-card">
     <div class="daily-header" @click="toggle">
       <span class="chevron" :class="{ open: expanded }">▶</span>
-      <span class="daily-title">Daily Issues</span>
-      <span class="daily-count">{{ issues.length }} issue(s)</span>
-      <button class="toggle-btn" @click.stop="toggle">{{ expanded ? 'Collapse' : 'Expand' }}</button>
+      <span class="daily-title">{{ t('dailyUpdate.issues') }}</span>
+      <span class="daily-count">{{ issues.length }} {{ t('dailyUpdate.issueCount') }}</span>
+      <button class="toggle-btn" @click.stop="toggle">{{ expanded ? t('dailyUpdate.collapse') : t('dailyUpdate.expand') }}</button>
     </div>
     <div class="daily-body" :class="{ collapsed: !expanded }">
       <!-- Warning / Confirmation Banner -->
