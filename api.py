@@ -794,6 +794,16 @@ def api_export():
 #  API: Test Summary
 # ═══════════════════════════════════════════════════════════════════════
 
+def _test_progress_state(current_cp_idx, first_cp_idx, last_cp_idx):
+    if current_cp_idx is None or first_cp_idx is None or last_cp_idx is None:
+        return 'not_started'
+    if current_cp_idx < first_cp_idx:
+        return 'not_started'
+    if current_cp_idx < last_cp_idx:
+        return 'in_progress'
+    return 'complete'
+
+
 @app.route('/api/test-summary')
 def api_test_summary():
     """Generate a test summary table similar to Daily Report's Test Summary."""
@@ -829,6 +839,32 @@ def api_test_summary():
            ORDER BY CAST(wf_num AS REAL), config, test_idx""",
         (rid,),
     ).fetchall()
+
+    # 查询每个 WF/Config/test 的 CP 范围
+    cp_ranges = {}
+    for row in conn.execute(
+        """SELECT wf_num, test_idx, MIN(cp_idx) AS first_cp_idx, MAX(cp_idx) AS last_cp_idx
+           FROM report_cps
+           WHERE report_id = ?
+           GROUP BY wf_num, test_idx""",
+        (rid,),
+    ).fetchall():
+        cp_ranges[(row['wf_num'], row['test_idx'])] = {
+            'first_cp_idx': row['first_cp_idx'],
+            'last_cp_idx': row['last_cp_idx'],
+        }
+
+    # 查询每个 WF/Config 的最新 current CP
+    current_cps = {}
+    for row in conn.execute(
+        """SELECT wf_num, config, MAX(cp_idx) AS current_cp_idx
+           FROM sn_cp_results
+           WHERE report_id = ? AND is_current_cp = 1
+           GROUP BY wf_num, config""",
+        (rid,),
+    ).fetchall():
+        current_cps[(row['wf_num'], row['config'])] = row['current_cp_idx']
+
     conn.close()
 
     # Load real test names from wf_names table for fallback
@@ -876,6 +912,13 @@ def api_test_summary():
         if cfg not in summary[wf]['configs']:
             summary[wf]['configs'][cfg] = {}
 
+        # 计算进度状态
+        cp_range = cp_ranges.get((wf, ti))
+        current_cp = current_cps.get((wf, cfg))
+        first_cp = cp_range['first_cp_idx'] if cp_range else None
+        last_cp = cp_range['last_cp_idx'] if cp_range else None
+        state = _test_progress_state(current_cp, first_cp, last_cp)
+
         summary[wf]['configs'][cfg][tname] = {
             'result': res,
             'spec': sf,
@@ -883,6 +926,10 @@ def api_test_summary():
             'total': t,
             'has_failure': has_fail,
             'failure_sns': [x for x in (r.get('failure_sns_csv') or '').split(',') if x],
+            'status': state,
+            'current_cp_idx': current_cp,
+            'first_cp_idx': first_cp,
+            'last_cp_idx': last_cp,
         }
 
     return jsonify({'summary': list(summary.values())})
