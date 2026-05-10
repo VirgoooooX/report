@@ -53,6 +53,7 @@ const summaryList = computed(() => props.summaryData?.summary ?? [])
 const configList = computed(() => {
   const set = new Set()
   summaryList.value.forEach(wf => {
+    if (wf.config_results) Object.keys(wf.config_results).forEach(c => set.add(c))
     if (wf.configs) Object.keys(wf.configs).forEach(c => set.add(c))
   })
   const ordered = CFG_ORDER.filter(c => set.has(c))
@@ -100,6 +101,8 @@ function wfTestKey(wf, slotIdx) {
 function cfgColor(c) { return CFG_COLORS[c] || '#4f6f8f' }
 
 function getResult(wf, cfg, slotIdx) {
+  const indexed = wf.config_results?.[cfg]
+  if (Array.isArray(indexed) && indexed[slotIdx]) return indexed[slotIdx]
   const key = wfTestKey(wf, slotIdx)
   return wf.configs?.[cfg]?.[key] || null
 }

@@ -395,19 +395,37 @@ def get_latest_wf_config_progress(conn, report_id):
 def get_failure_rate_stats_from_facts(report_id):
     conn = get_conn()
     rows = conn.execute(
-        """SELECT f.wf_num, f.config, f.test_idx,
+        """WITH latest_cp AS (
+               SELECT report_id, wf_num, config, sn, test_idx, cp_idx
+               FROM sn_cp_results
+               WHERE report_id = ? AND is_current_cp = 1
+           ),
+           latest_check_summary AS (
+               SELECT l.wf_num, l.config, l.sn, l.test_idx,
+                      MAX(CASE WHEN c.status IN ('pass', 'spec_fail', 'strife_fail') THEN 1 ELSE 0 END) AS has_result,
+                      MAX(CASE WHEN c.failure_type = 'spec' THEN 1 ELSE 0 END) AS has_spec,
+                      MAX(CASE WHEN c.failure_type = 'strife' THEN 1 ELSE 0 END) AS has_strife
+               FROM latest_cp l
+               LEFT JOIN sn_check_results c
+                 ON c.report_id = l.report_id
+                AND c.wf_num = l.wf_num
+                AND c.config = l.config
+                AND c.sn = l.sn
+                AND c.cp_idx = l.cp_idx
+               GROUP BY l.wf_num, l.config, l.sn, l.test_idx
+           )
+           SELECT f.wf_num, f.config, f.test_idx,
                   MAX(tn.test_name) AS test_name,
-                  COUNT(DISTINCT CASE WHEN status IN ('pass', 'spec_fail', 'strife_fail') THEN sn END) AS total,
-                  COUNT(DISTINCT CASE WHEN failure_type = 'spec' THEN sn END) AS spec,
-                  COUNT(DISTINCT CASE WHEN failure_type = 'strife' THEN sn END) AS strife
-           FROM sn_cp_results f
+                  COUNT(DISTINCT CASE WHEN f.has_result = 1 THEN f.sn END) AS total,
+                  COUNT(DISTINCT CASE WHEN f.has_spec = 1 THEN f.sn END) AS spec,
+                  COUNT(DISTINCT CASE WHEN COALESCE(f.has_spec, 0) = 0 AND f.has_strife = 1 THEN f.sn END) AS strife
+           FROM latest_check_summary f
            LEFT JOIN report_test_names tn
-             ON tn.report_id = f.report_id
+             ON tn.report_id = ?
             AND tn.wf_num = f.wf_num
             AND tn.test_idx = f.test_idx
-           WHERE f.report_id = ?
            GROUP BY f.wf_num, f.config, f.test_idx""",
-        (report_id,),
+        (report_id, report_id),
     ).fetchall()
     conn.close()
     return rows

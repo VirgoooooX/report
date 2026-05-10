@@ -92,6 +92,97 @@ class ApiConsistencyTests(unittest.TestCase):
             stats_json.get('by_config', {}),
         )
 
+    def test_failure_stats_only_count_latest_cp_check_items(self):
+        """Old CP failures are historical when the SN's latest CP check items pass."""
+        rid = self._seed_report()
+
+        rows = [
+            (rid, 'SN001', 0, 'spec_fail', 'spec', 0),
+            (rid, 'SN001', 1, 'pass', None, 1),
+            (rid, 'SN002', 0, 'pass', None, 0),
+            (rid, 'SN002', 1, 'strife_fail', 'strife', 1),
+        ]
+        for report_id, sn, cp_idx, status, failure_type, is_current in rows:
+            self.conn.execute(
+                """INSERT INTO sn_cp_results
+                   (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, status, failure_type, has_data, is_current_cp)
+                   VALUES (?, '2025-01-01', '37', 'R1FNF', ?, '', 0, ?, ?, ?, 1, ?)""",
+                (report_id, sn, cp_idx, status, failure_type, is_current),
+            )
+            self.conn.execute(
+                """INSERT INTO sn_check_results
+                   (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                    check_item, raw_value, normalized_value, status, failure_type)
+                   VALUES (?, '2025-01-01', '37', 'R1FNF', ?, '', 0, ?, 0, 'FACT', ?, ?, ?, ?)""",
+                (report_id, sn, cp_idx, status, status, status, failure_type),
+            )
+        self.conn.commit()
+
+        client = api.app.test_client()
+        stats = client.get('/api/failures/stats').get_json()
+        top = stats['top_failures'][0]
+
+        self.assertEqual(top['spec'], 0)
+        self.assertEqual(top['strife'], 1)
+        self.assertEqual(top['total'], 2)
+        self.assertEqual(top['rate'], 50.0)
+
+        wf_detail = client.get('/api/failures/wf/37').get_json()
+        self.assertEqual(wf_detail['results'][0]['spec_fail_count'], 0)
+        self.assertEqual(wf_detail['results'][0]['strife_fail_count'], 1)
+        self.assertEqual(wf_detail['results'][0]['total_units'], 2)
+
+    def test_summary_preserves_duplicate_test_name_slots(self):
+        """WF37-style duplicate test names should not let later 0T slots overwrite earlier 4T slots."""
+        rid = self._seed_report()
+
+        self.conn.execute(
+            "INSERT INTO report_test_names (report_id, wf_num, test_idx, test_name) VALUES (?, '37', 0, 'Random Drop')",
+            (rid,),
+        )
+        self.conn.execute(
+            "INSERT INTO report_test_names (report_id, wf_num, test_idx, test_name) VALUES (?, '37', 1, 'Battery Swap')",
+            (rid,),
+        )
+        self.conn.execute(
+            "INSERT INTO report_test_names (report_id, wf_num, test_idx, test_name) VALUES (?, '37', 2, 'Random Drop')",
+            (rid,),
+        )
+        for cp_idx, test_idx in [(0, 0), (1, 0), (2, 1), (3, 2)]:
+            self.conn.execute(
+                "INSERT INTO report_cps (report_id, wf_num, cp_idx, cp_name, test_idx) VALUES (?, '37', ?, ?, ?)",
+                (rid, cp_idx, f'CP{cp_idx}', test_idx),
+            )
+        for sn in ['SN001', 'SN002', 'SN003', 'SN004']:
+            for cp_idx, test_idx, is_current, status in [
+                (0, 0, 0, 'pass'),
+                (1, 0, 1, 'pass'),
+                (2, 1, 0, 'pending'),
+                (3, 2, 0, 'pending'),
+            ]:
+                self.conn.execute(
+                    """INSERT INTO sn_cp_results
+                       (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, status, failure_type, has_data, is_current_cp)
+                       VALUES (?, '2025-01-01', '37', 'R1FNF', ?, '', ?, ?, ?, NULL, ?, ?)""",
+                    (rid, sn, test_idx, cp_idx, status, int(status != 'pending'), is_current),
+                )
+                self.conn.execute(
+                    """INSERT INTO sn_check_results
+                       (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                        check_item, raw_value, normalized_value, status, failure_type)
+                       VALUES (?, '2025-01-01', '37', 'R1FNF', ?, '', ?, ?, 0, 'FACT', ?, ?, ?, NULL)""",
+                    (rid, sn, test_idx, cp_idx, status, status, status),
+                )
+        self.conn.commit()
+
+        client = api.app.test_client()
+        data = client.get('/api/test-summary').get_json()
+        wf = next(s for s in data['summary'] if s['wf'] == '37')
+
+        self.assertEqual(wf['test_names'], ['Random Drop', 'Battery Swap', 'Random Drop'])
+        self.assertEqual(wf['config_results']['R1FNF'][0]['result'], '0F/4T')
+        self.assertEqual(wf['config_results']['R1FNF'][2]['result'], '0F/0T')
+
     def test_summary_in_progress(self):
         """WF 16.1, config R3, Test1 CP range 0..1, latest current CP 0 → status 'in_progress'."""
         rid = self._seed_report()
@@ -195,6 +286,13 @@ class ApiConsistencyTests(unittest.TestCase):
             """INSERT INTO sn_cp_results
                (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, status, failure_type, has_data, is_current_cp)
                VALUES (?, '2025-01-01', '16.1', 'R3', 'SN001', '', 0, 0, 'pass', NULL, 1, 0)""",
+            (rid,),
+        )
+        self.conn.execute(
+            """INSERT INTO sn_check_results
+               (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                check_item, raw_value, normalized_value, status, failure_type)
+               VALUES (?, '2025-01-01', '16.1', 'R3', 'SN001', '', 0, 1, 0, 'FACT', 'pass', 'pass', 'pass', NULL)""",
             (rid,),
         )
         self.conn.commit()

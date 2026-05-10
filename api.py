@@ -596,12 +596,30 @@ def api_wf_failures(wfn):
     rid = get_latest_active_report_id(conn)
     
     rows = conn.execute(
-        """SELECT f.wf_num, f.config, f.test_idx,
-                  COUNT(DISTINCT CASE WHEN f.status IN ('pass', 'spec_fail', 'strife_fail') THEN f.sn END) AS total_units,
-                  COUNT(DISTINCT CASE WHEN f.failure_type = 'spec' THEN f.sn END) AS spec_fail_count,
-                  COUNT(DISTINCT CASE WHEN f.failure_type = 'strife' THEN f.sn END) AS strife_fail_count
-           FROM sn_cp_results f
-           WHERE f.report_id = ? AND f.wf_num = ?
+        """WITH latest_cp AS (
+               SELECT report_id, wf_num, config, sn, test_idx, cp_idx
+               FROM sn_cp_results
+               WHERE report_id = ? AND wf_num = ? AND is_current_cp = 1
+           ),
+           latest_check_summary AS (
+               SELECT l.wf_num, l.config, l.sn, l.test_idx,
+                      MAX(CASE WHEN c.status IN ('pass', 'spec_fail', 'strife_fail') THEN 1 ELSE 0 END) AS has_result,
+                      MAX(CASE WHEN c.failure_type = 'spec' THEN 1 ELSE 0 END) AS has_spec,
+                      MAX(CASE WHEN c.failure_type = 'strife' THEN 1 ELSE 0 END) AS has_strife
+               FROM latest_cp l
+               LEFT JOIN sn_check_results c
+                 ON c.report_id = l.report_id
+                AND c.wf_num = l.wf_num
+                AND c.config = l.config
+                AND c.sn = l.sn
+                AND c.cp_idx = l.cp_idx
+               GROUP BY l.wf_num, l.config, l.sn, l.test_idx
+           )
+           SELECT f.wf_num, f.config, f.test_idx,
+                  COUNT(DISTINCT CASE WHEN f.has_result = 1 THEN f.sn END) AS total_units,
+                  COUNT(DISTINCT CASE WHEN f.has_spec = 1 THEN f.sn END) AS spec_fail_count,
+                  COUNT(DISTINCT CASE WHEN COALESCE(f.has_spec, 0) = 0 AND f.has_strife = 1 THEN f.sn END) AS strife_fail_count
+           FROM latest_check_summary f
            GROUP BY f.wf_num, f.config, f.test_idx
            ORDER BY f.config, f.test_idx""",
         (rid, wfn),
@@ -844,16 +862,50 @@ def api_test_summary():
         names[row['test_idx']] = row['test_name']
 
     rows = conn.execute(
-        """SELECT wf_num, config, test_idx,
-                  COUNT(DISTINCT CASE WHEN status IN ('pass', 'spec_fail', 'strife_fail') THEN sn END) AS total_units,
-                  COUNT(DISTINCT CASE WHEN failure_type = 'spec' THEN sn END) AS spec_fail_count,
-                  COUNT(DISTINCT CASE WHEN failure_type = 'strife' THEN sn END) AS strife_fail_count,
-                  GROUP_CONCAT(DISTINCT CASE WHEN failure_type IN ('spec', 'strife') THEN sn END) AS failure_sns_csv
-           FROM sn_cp_results
-           WHERE report_id = ?
-           GROUP BY wf_num, config, test_idx
-           ORDER BY CAST(wf_num AS REAL), config, test_idx""",
-        (rid,),
+        """WITH wf_configs AS (
+               SELECT DISTINCT wf_num, config
+               FROM sn_cp_results
+               WHERE report_id = ?
+           ),
+           test_slots AS (
+               SELECT DISTINCT wf_num, test_idx
+               FROM report_cps
+               WHERE report_id = ?
+           ),
+           latest_cp AS (
+               SELECT report_id, wf_num, config, sn, test_idx, cp_idx
+               FROM sn_cp_results
+               WHERE report_id = ? AND is_current_cp = 1
+           ),
+           latest_check_summary AS (
+               SELECT l.wf_num, l.config, l.sn, l.test_idx,
+                      MAX(CASE WHEN c.status IN ('pass', 'spec_fail', 'strife_fail') THEN 1 ELSE 0 END) AS has_result,
+                      MAX(CASE WHEN c.failure_type = 'spec' THEN 1 ELSE 0 END) AS has_spec,
+                      MAX(CASE WHEN c.failure_type = 'strife' THEN 1 ELSE 0 END) AS has_strife
+               FROM latest_cp l
+               LEFT JOIN sn_check_results c
+                 ON c.report_id = l.report_id
+                AND c.wf_num = l.wf_num
+                AND c.config = l.config
+                AND c.sn = l.sn
+                AND c.cp_idx = l.cp_idx
+               GROUP BY l.wf_num, l.config, l.sn, l.test_idx
+           )
+           SELECT s.wf_num, c.config, s.test_idx,
+                  COUNT(DISTINCT CASE WHEN l.has_result = 1 THEN l.sn END) AS total_units,
+                  COUNT(DISTINCT CASE WHEN l.has_spec = 1 THEN l.sn END) AS spec_fail_count,
+                  COUNT(DISTINCT CASE WHEN COALESCE(l.has_spec, 0) = 0 AND l.has_strife = 1 THEN l.sn END) AS strife_fail_count,
+                  GROUP_CONCAT(DISTINCT CASE WHEN l.has_spec = 1 OR (COALESCE(l.has_spec, 0) = 0 AND l.has_strife = 1) THEN l.sn END) AS failure_sns_csv
+           FROM test_slots s
+           JOIN wf_configs c
+             ON c.wf_num = s.wf_num
+           LEFT JOIN latest_check_summary l
+             ON l.wf_num = s.wf_num
+            AND l.config = c.config
+            AND l.test_idx = s.test_idx
+           GROUP BY s.wf_num, c.config, s.test_idx
+           ORDER BY CAST(s.wf_num AS REAL), c.config, s.test_idx""",
+        (rid, rid, rid),
     ).fetchall()
 
     # 查询每个 WF/Config/test 的 CP 范围
@@ -896,6 +948,7 @@ def api_test_summary():
                 'wf': wf,
                 'wf_name': wf_names.get(wf, {}).get('name', ''),
                 'configs': {},
+                'config_results': {},
                 'test_names': list(wf_real_names),
             }
 
@@ -927,6 +980,8 @@ def api_test_summary():
 
         if cfg not in summary[wf]['configs']:
             summary[wf]['configs'][cfg] = {}
+        if cfg not in summary[wf]['config_results']:
+            summary[wf]['config_results'][cfg] = []
 
         # 计算进度状态
         cp_range = cp_ranges.get((wf, ti))
@@ -935,7 +990,7 @@ def api_test_summary():
         last_cp = cp_range['last_cp_idx'] if cp_range else None
         state = _test_progress_state(current_cp, first_cp, last_cp)
 
-        summary[wf]['configs'][cfg][tname] = {
+        entry = {
             'result': res,
             'spec': sf,
             'strife': stf,
@@ -947,6 +1002,11 @@ def api_test_summary():
             'first_cp_idx': first_cp,
             'last_cp_idx': last_cp,
         }
+        summary[wf]['configs'][cfg][tname] = entry
+        indexed_results = summary[wf]['config_results'][cfg]
+        if ti >= len(indexed_results):
+            indexed_results.extend([None] * (ti - len(indexed_results) + 1))
+        indexed_results[ti] = entry
 
     return jsonify({'summary': list(summary.values())})
 
