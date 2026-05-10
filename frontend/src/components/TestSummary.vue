@@ -40,6 +40,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { testSummaryCellClass } from '@/views/testSummaryDisplay.js'
 
 const props = defineProps({ summaryData: { type: Object, default: () => ({}) } })
 const emit = defineEmits(['cell-click'])
@@ -105,10 +106,7 @@ function getResult(wf, cfg, slotIdx) {
 
 function cellClass(wf, cfg, slotIdx) {
   const r = getResult(wf, cfg, slotIdx)
-  if (!r) return 'ts-empty'
-  if (r.spec > 0) return 'ts-fail'
-  if (r.strife > 0) return 'ts-strife'
-  return 'ts-pass'
+  return testSummaryCellClass(r)
 }
 
 function cellText(wf, cfg, slotIdx) {
@@ -184,6 +182,18 @@ td {
 .ts-pass { background: var(--color-success-bg); color: var(--color-success); }
 .ts-strife { background: var(--color-warning-bg); color: var(--color-warning); cursor: pointer; }
 .ts-fail { background: var(--color-danger-bg); color: var(--color-danger); font-weight: 700; cursor: pointer; }
+.ts-in-progress {
+  background: var(--color-in-progress-bg);
+  color: var(--color-in-progress);
+  font-weight: 600;
+}
+
+.ts-not-started {
+  background: var(--color-not-started-bg);
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
 .ts-empty { color: var(--text-muted); opacity: 0.35; }
 .ts-strife:hover, .ts-fail:hover { filter: brightness(0.94); }
 </style>
