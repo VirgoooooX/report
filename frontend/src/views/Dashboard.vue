@@ -111,6 +111,7 @@ onMounted(async () => {
 })
 </script>
 
+<style scoped>
 .page-container {
   color: var(--text-primary);
 }
@@ -195,3 +196,4 @@ onMounted(async () => {
     gap: 8px;
   }
 }
+</style>

@@ -25,7 +25,7 @@ from db import (
     get_failure_rate_stats, get_daily_changes_by_cp,
     save_predictions, init_categories, get_conn,
     create_report_version, save_report_wf_meta, save_report_test_names,
-    save_report_cps, save_sn_cp_results, save_sn_check_results,
+    save_report_cps, save_sn_cp_results, save_sn_check_state_history,
     detect_definition_changes, save_definition_changes
 )
 
@@ -217,7 +217,7 @@ def process_all(rebuild=False):
             cp_fact_rows, check_fact_rows = extract_sn_fact_rows(filepath, report_id, date_str)
             conn = get_conn()
             save_sn_cp_results(conn, cp_fact_rows)
-            save_sn_check_results(conn, check_fact_rows)
+            save_sn_check_state_history(conn, report_id, date_str, check_fact_rows)
             conn.commit()
             conn.close()
             print(f"   [+] SN facts: {len(cp_fact_rows)} CP rows, {len(check_fact_rows)} check rows")
@@ -343,7 +343,7 @@ def process_newest():
         cp_fact_rows, check_fact_rows = extract_sn_fact_rows(latest_path, report_id, latest_date)
         conn = get_conn()
         save_sn_cp_results(conn, cp_fact_rows)
-        save_sn_check_results(conn, check_fact_rows)
+        save_sn_check_state_history(conn, report_id, latest_date, check_fact_rows)
         conn.commit()
         conn.close()
         print(f"   [+] SN facts: {len(cp_fact_rows)} CP rows, {len(check_fact_rows)} check rows")

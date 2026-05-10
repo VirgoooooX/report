@@ -185,6 +185,162 @@ class SnFactPersistenceTests(unittest.TestCase):
             conn.close()
             os.remove(path)
 
+    def test_save_sn_check_state_history_compacts_unchanged_rows(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            first_id = db.create_report_version(conn, '2026-05-08', 'r1.xlsx')
+            second_id = db.create_report_version(conn, '2026-05-09', 'r2.xlsx')
+
+            base = {
+                'wf_num': '16.1',
+                'config': 'R3',
+                'sn': 'SN001',
+                'unit_num': 'U1',
+                'test_idx': 0,
+                'cp_idx': 3,
+                'check_item_idx': 0,
+                'check_item': 'FACT',
+                'raw_value': 'PASS',
+                'normalized_value': 'PASS',
+                'status': 'pass',
+                'failure_type': None,
+                'fill_color': '',
+                'font_color': '',
+                'source_row': 20,
+                'source_col': 10,
+            }
+
+            db.save_sn_check_state_history(conn, first_id, '2026-05-08', [dict(base)])
+            changed_location = dict(base, source_row=22, source_col=11)
+            db.save_sn_check_state_history(conn, second_id, '2026-05-09', [changed_location])
+
+            rows = conn.execute('SELECT * FROM sn_check_state_history').fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]['first_report_id'], first_id)
+            self.assertEqual(rows[0]['last_seen_report_id'], second_id)
+            self.assertIsNone(rows[0]['closed_before_report_id'])
+            self.assertEqual(rows[0]['first_source_row'], 20)
+            self.assertEqual(rows[0]['last_source_row'], 22)
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_save_sn_check_state_history_splits_on_state_change(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            r1 = db.create_report_version(conn, '2026-05-08', 'r1.xlsx')
+            r2 = db.create_report_version(conn, '2026-05-09', 'r2.xlsx')
+            r3 = db.create_report_version(conn, '2026-05-10', 'r3.xlsx')
+
+            base = {
+                'wf_num': '16.1',
+                'config': 'R3',
+                'sn': 'SN001',
+                'unit_num': 'U1',
+                'test_idx': 0,
+                'cp_idx': 3,
+                'check_item_idx': 0,
+                'check_item': 'FACT',
+                'raw_value': 'PASS',
+                'normalized_value': 'PASS',
+                'status': 'pass',
+                'failure_type': None,
+                'fill_color': '',
+                'font_color': '',
+                'source_row': 20,
+                'source_col': 10,
+            }
+
+            db.save_sn_check_state_history(conn, r1, '2026-05-08', [dict(base)])
+            db.save_sn_check_state_history(conn, r2, '2026-05-09', [
+                dict(base, raw_value='FAIL', normalized_value='FAIL',
+                     status='spec_fail', failure_type='spec', fill_color='FFFF0000')
+            ])
+            db.save_sn_check_state_history(conn, r3, '2026-05-10', [dict(base)])
+
+            rows = conn.execute(
+                'SELECT status, failure_type, first_report_id, closed_before_report_id '
+                'FROM sn_check_state_history ORDER BY first_report_id'
+            ).fetchall()
+            self.assertEqual([r['status'] for r in rows], ['pass', 'spec_fail', 'pass'])
+            self.assertEqual(rows[0]['closed_before_report_id'], r2)
+            self.assertEqual(rows[1]['closed_before_report_id'], r3)
+            self.assertIsNone(rows[2]['closed_before_report_id'])
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_get_sn_check_details_reads_state_active_at_report(self):
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        old_db_path = db.DB_PATH
+        db.DB_PATH = path
+        try:
+            db.init_db()
+            conn = db.get_conn()
+            r1 = db.create_report_version(conn, '2026-05-08', 'r1.xlsx')
+            r2 = db.create_report_version(conn, '2026-05-09', 'r2.xlsx')
+
+            db.save_sn_check_state_history(conn, r1, '2026-05-08', [{
+                'wf_num': '16.1', 'config': 'R3', 'sn': 'SN001', 'unit_num': 'U1',
+                'test_idx': 0, 'cp_idx': 3, 'check_item_idx': 0, 'check_item': 'FACT',
+                'raw_value': 'PASS', 'normalized_value': 'PASS',
+                'status': 'pass', 'failure_type': None, 'fill_color': '',
+                'font_color': '', 'source_row': 20, 'source_col': 10,
+            }])
+            db.save_sn_check_state_history(conn, r2, '2026-05-09', [{
+                'wf_num': '16.1', 'config': 'R3', 'sn': 'SN001', 'unit_num': 'U1',
+                'test_idx': 0, 'cp_idx': 3, 'check_item_idx': 0, 'check_item': 'FACT',
+                'raw_value': 'FAIL', 'normalized_value': 'FAIL',
+                'status': 'strife_fail', 'failure_type': 'strife', 'fill_color': 'FFFFFF00',
+                'font_color': '', 'source_row': 20, 'source_col': 10,
+            }])
+            conn.commit()
+
+            old_rows = db.get_sn_check_details(r1, '16.1', 'R3', 'SN001', 3)
+            new_rows = db.get_sn_check_details(r2, '16.1', 'R3', 'SN001', 3)
+
+            self.assertEqual(old_rows[0]['status'], 'pass')
+            self.assertIsNone(old_rows[0]['failure_type'])
+            self.assertEqual(new_rows[0]['status'], 'strife_fail')
+            self.assertEqual(new_rows[0]['failure_type'], 'strife')
+        finally:
+            conn.close()
+            db.DB_PATH = old_db_path
+            os.remove(path)
+
+    def test_save_sn_check_state_history_closes_rows_not_observed(self):
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        old_db_path = db.DB_PATH
+        db.DB_PATH = path
+        try:
+            db.init_db()
+            conn = db.get_conn()
+            r1 = db.create_report_version(conn, '2026-05-08', 'r1.xlsx')
+            r2 = db.create_report_version(conn, '2026-05-09', 'r2.xlsx')
+
+            db.save_sn_check_state_history(conn, r1, '2026-05-08', [{
+                'wf_num': '16.1', 'config': 'R3', 'sn': 'SN001', 'unit_num': 'U1',
+                'test_idx': 0, 'cp_idx': 3, 'check_item_idx': 0, 'check_item': 'FACT',
+                'raw_value': 'PASS', 'normalized_value': 'PASS',
+                'status': 'pass', 'failure_type': None, 'fill_color': '',
+                'font_color': '', 'source_row': 20, 'source_col': 10,
+            }])
+            db.save_sn_check_state_history(conn, r2, '2026-05-09', [])
+
+            rows = db.get_sn_check_details(r2, '16.1', 'R3', 'SN001', 3)
+            closed = conn.execute('SELECT closed_before_report_id FROM sn_check_state_history').fetchone()
+
+            self.assertEqual(rows, [])
+            self.assertEqual(closed['closed_before_report_id'], r2)
+        finally:
+            conn.close()
+            db.DB_PATH = old_db_path
+            os.remove(path)
+
 
 class FactAggregateTests(unittest.TestCase):
     def test_get_sn_cp_current_progress_uses_current_marker(self):

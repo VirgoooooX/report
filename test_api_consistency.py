@@ -23,6 +23,7 @@ class ApiConsistencyTests(unittest.TestCase):
         # 清理以前的测试
         self.conn = db.get_conn()
         self.conn.execute("DELETE FROM sn_cp_results")
+        self.conn.execute("DELETE FROM sn_check_state_history")
         self.conn.execute("DELETE FROM sn_check_results")
         self.conn.execute("DELETE FROM report_cps")
         self.conn.execute("DELETE FROM report_test_names")
@@ -488,23 +489,45 @@ class ApiConsistencyTests(unittest.TestCase):
                 (rid, sn, cp_idx, is_current),
             )
 
-        # sn_check_results: one spec fail on SN001 CP1, one strife fail on SN002 CP2
-        self.conn.execute(
-            """INSERT INTO sn_check_results
-               (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
-                check_item, raw_value, normalized_value, status, failure_type)
-               VALUES (?, '2025-01-01', '37', 'R3', 'SN001', '', 0, 0, 0,
-                       'FACT', '2.5', 'FAIL', 'fail', 'spec')""",
-            (rid,),
-        )
-        self.conn.execute(
-            """INSERT INTO sn_check_results
-               (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
-                check_item, raw_value, normalized_value, status, failure_type)
-               VALUES (?, '2025-01-01', '37', 'R3', 'SN002', '', 0, 1, 0,
-                       'DROP', 'FAIL', 'FAIL', 'fail', 'strife')""",
-            (rid,),
-        )
+        # check-item failures stored as state history
+        db.save_sn_check_state_history(self.conn, rid, '2025-01-01', [
+            {
+                'wf_num': '37',
+                'config': 'R3',
+                'sn': 'SN001',
+                'unit_num': '',
+                'test_idx': 0,
+                'cp_idx': 0,
+                'check_item_idx': 0,
+                'check_item': 'FACT',
+                'raw_value': '2.5',
+                'normalized_value': 'FAIL',
+                'status': 'fail',
+                'failure_type': 'spec',
+                'fill_color': 'FFFF0000',
+                'font_color': '',
+                'source_row': 10,
+                'source_col': 20,
+            },
+            {
+                'wf_num': '37',
+                'config': 'R3',
+                'sn': 'SN002',
+                'unit_num': '',
+                'test_idx': 0,
+                'cp_idx': 1,
+                'check_item_idx': 0,
+                'check_item': 'DROP',
+                'raw_value': 'FAIL',
+                'normalized_value': 'FAIL',
+                'status': 'fail',
+                'failure_type': 'strife',
+                'fill_color': 'FFFFFF00',
+                'font_color': '',
+                'source_row': 11,
+                'source_col': 21,
+            },
+        ])
         self.conn.commit()
 
         client = api.app.test_client()

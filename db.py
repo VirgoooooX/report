@@ -280,6 +280,8 @@ def save_sn_cp_results(conn, rows):
 
 
 def save_sn_check_results(conn, rows):
+    # Legacy daily snapshot writer. New imports use save_sn_check_state_history().
+    # Keep this during the transition so fallback reads remain possible.
     values = [
         (
             r['report_id'], r['report_date'], r['wf_num'], r['config'], r['sn'],
@@ -299,6 +301,147 @@ def save_sn_check_results(conn, rows):
         values,
     )
     return len(values)
+
+
+def _check_state_tuple(row):
+    return (
+        row.get('status') or '',
+        row.get('failure_type') or '',
+        row.get('normalized_value') or '',
+        row.get('fill_color') or '',
+        row.get('font_color') or '',
+    )
+
+
+def _check_state_hash(row):
+    return json.dumps(_check_state_tuple(row), ensure_ascii=True, separators=(',', ':'))
+
+
+def _check_identity_tuple(row):
+    return (
+        row['wf_num'],
+        row['config'],
+        row['sn'],
+        int(row['cp_idx']),
+        int(row['check_item_idx']),
+    )
+
+
+def save_sn_check_state_history(conn, report_id, report_date, rows):
+    observed = set()
+    inserted = 0
+    updated = 0
+    closed = 0
+
+    for r in rows:
+        identity = _check_identity_tuple(r)
+        observed.add(identity)
+        state_hash = _check_state_hash(r)
+
+        current = conn.execute(
+            """SELECT id, state_hash
+               FROM sn_check_state_history
+               WHERE wf_num = ? AND config = ? AND sn = ?
+                 AND cp_idx = ? AND check_item_idx = ?
+                 AND closed_before_report_id IS NULL
+               ORDER BY first_report_id DESC
+               LIMIT 1""",
+            identity,
+        ).fetchone()
+
+        if current and current['state_hash'] == state_hash:
+            conn.execute(
+                """UPDATE sn_check_state_history
+                   SET last_seen_report_id = ?,
+                       last_seen_report_date = ?,
+                       last_source_row = ?,
+                       last_source_col = ?
+                   WHERE id = ?""",
+                (
+                    report_id,
+                    report_date,
+                    r.get('source_row'),
+                    r.get('source_col'),
+                    current['id'],
+                ),
+            )
+            updated += 1
+            continue
+
+        if current:
+            conn.execute(
+                """UPDATE sn_check_state_history
+                   SET closed_before_report_id = ?,
+                       closed_before_report_date = ?
+                   WHERE id = ?""",
+                (report_id, report_date, current['id']),
+            )
+            closed += 1
+
+        conn.execute(
+            """INSERT INTO sn_check_state_history
+               (wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                check_item, state_hash, raw_value, normalized_value, status,
+                failure_type, fill_color, font_color, first_report_id,
+                first_report_date, last_seen_report_id, last_seen_report_date,
+                first_source_row, first_source_col, last_source_row, last_source_col)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                r['wf_num'],
+                r['config'],
+                r['sn'],
+                r.get('unit_num', ''),
+                r['test_idx'],
+                r['cp_idx'],
+                r['check_item_idx'],
+                r['check_item'],
+                state_hash,
+                r.get('raw_value'),
+                r.get('normalized_value'),
+                r['status'],
+                r.get('failure_type'),
+                r.get('fill_color'),
+                r.get('font_color'),
+                report_id,
+                report_date,
+                report_id,
+                report_date,
+                r.get('source_row'),
+                r.get('source_col'),
+                r.get('source_row'),
+                r.get('source_col'),
+            ),
+        )
+        inserted += 1
+
+    open_rows = conn.execute(
+        """SELECT id, wf_num, config, sn, cp_idx, check_item_idx
+           FROM sn_check_state_history
+           WHERE closed_before_report_id IS NULL
+             AND first_report_id < ?""",
+        (report_id,),
+    ).fetchall()
+
+    for row in open_rows:
+        key = (
+            row['wf_num'],
+            row['config'],
+            row['sn'],
+            int(row['cp_idx']),
+            int(row['check_item_idx']),
+        )
+        if key in observed:
+            continue
+        conn.execute(
+            """UPDATE sn_check_state_history
+               SET closed_before_report_id = ?,
+                   closed_before_report_date = ?
+               WHERE id = ?""",
+            (report_id, report_date, row['id']),
+        )
+        closed += 1
+
+    return {'inserted': inserted, 'updated': updated, 'closed': closed}
 
 
 def get_sn_cp_current_progress(conn, report_id):
@@ -346,6 +489,22 @@ def get_sn_check_details(report_id, wf_num, config, sn, cp_idx):
     conn = get_conn()
     rows = conn.execute(
         """SELECT check_item_idx, check_item, raw_value, normalized_value,
+                  status, failure_type, fill_color, font_color,
+                  last_source_row AS source_row,
+                  last_source_col AS source_col
+           FROM sn_check_state_history
+           WHERE wf_num = ? AND config = ? AND sn = ? AND cp_idx = ?
+             AND first_report_id <= ?
+             AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
+           ORDER BY check_item_idx""",
+        (wf_num, config, sn, cp_idx, report_id, report_id),
+    ).fetchall()
+    if rows:
+        conn.close()
+        return rows
+
+    rows = conn.execute(
+        """SELECT check_item_idx, check_item, raw_value, normalized_value,
                   status, failure_type, fill_color, font_color, source_row, source_col
            FROM sn_check_results
            WHERE report_id = ? AND wf_num = ? AND config = ? AND sn = ? AND cp_idx = ?
@@ -362,6 +521,29 @@ def get_cell_failures(report_id, wf_num, config, test_idx, sns):
         return []
     conn = get_conn()
     placeholders = ','.join(['?' for _ in sns])
+    rows = conn.execute(
+        f"""SELECT sci.sn, sci.cp_idx, rcp.cp_name, sci.check_item_idx,
+                   sci.check_item, sci.raw_value, sci.normalized_value,
+                   sci.status, sci.failure_type
+            FROM sn_check_state_history sci
+            JOIN report_cps rcp
+              ON rcp.report_id = ?
+             AND rcp.wf_num = sci.wf_num
+             AND rcp.cp_idx = sci.cp_idx
+            WHERE sci.wf_num = ?
+              AND sci.config = ?
+              AND sci.test_idx = ?
+              AND sci.sn IN ({placeholders})
+              AND sci.failure_type IS NOT NULL
+              AND sci.first_report_id <= ?
+              AND (sci.closed_before_report_id IS NULL OR sci.closed_before_report_id > ?)
+            ORDER BY sci.sn, sci.cp_idx, sci.check_item_idx""",
+        (report_id, wf_num, config, test_idx, *sns, report_id, report_id),
+    ).fetchall()
+    if rows:
+        conn.close()
+        return rows
+
     rows = conn.execute(
         f"""SELECT sci.sn, sci.cp_idx, rcp.cp_name, sci.check_item_idx,
                    sci.check_item, sci.raw_value, sci.normalized_value,
@@ -654,6 +836,7 @@ def init_db(drop_all=False, conn=None):
         conn = get_conn()
     if drop_all:
         conn.executescript("""
+            DROP TABLE IF EXISTS sn_check_state_history;
             DROP TABLE IF EXISTS sn_check_results;
             DROP TABLE IF EXISTS sn_cp_results;
             DROP TABLE IF EXISTS report_cps;
@@ -843,6 +1026,36 @@ def init_db(drop_all=False, conn=None):
             PRIMARY KEY (report_id, wf_num, config, sn, cp_idx, check_item_idx)
         );
 
+        CREATE TABLE IF NOT EXISTS sn_check_state_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            wf_num TEXT NOT NULL,
+            config TEXT NOT NULL,
+            sn TEXT NOT NULL,
+            unit_num TEXT DEFAULT '',
+            test_idx INTEGER NOT NULL,
+            cp_idx INTEGER NOT NULL,
+            check_item_idx INTEGER NOT NULL,
+            check_item TEXT NOT NULL,
+            state_hash TEXT NOT NULL,
+            raw_value TEXT,
+            normalized_value TEXT,
+            status TEXT NOT NULL,
+            failure_type TEXT,
+            fill_color TEXT,
+            font_color TEXT,
+            first_report_id INTEGER NOT NULL REFERENCES reports(id),
+            first_report_date TEXT NOT NULL,
+            last_seen_report_id INTEGER NOT NULL REFERENCES reports(id),
+            last_seen_report_date TEXT NOT NULL,
+            closed_before_report_id INTEGER REFERENCES reports(id),
+            closed_before_report_date TEXT,
+            first_source_row INTEGER,
+            first_source_col INTEGER,
+            last_source_row INTEGER,
+            last_source_col INTEGER,
+            UNIQUE(wf_num, config, sn, cp_idx, check_item_idx, first_report_id)
+        );
+
         CREATE TABLE IF NOT EXISTS definition_changes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             report_id INTEGER NOT NULL REFERENCES reports(id),
@@ -867,6 +1080,15 @@ def init_db(drop_all=False, conn=None):
         CREATE INDEX IF NOT EXISTS idx_sn_cp_progress ON sn_cp_results(report_id, wf_num, config, sn, cp_idx);
         CREATE INDEX IF NOT EXISTS idx_sn_check_report_wf_cfg ON sn_check_results(report_id, wf_num, config, test_idx, cp_idx);
         CREATE INDEX IF NOT EXISTS idx_sn_check_sn ON sn_check_results(sn, report_id);
+        CREATE INDEX IF NOT EXISTS idx_sn_check_hist_point ON sn_check_state_history(
+            wf_num, config, sn, cp_idx, check_item_idx, first_report_id, closed_before_report_id
+        );
+        CREATE INDEX IF NOT EXISTS idx_sn_check_hist_failures ON sn_check_state_history(
+            wf_num, config, test_idx, sn, first_report_id, closed_before_report_id, failure_type
+        );
+        CREATE INDEX IF NOT EXISTS idx_sn_check_hist_open ON sn_check_state_history(
+            wf_num, config, sn, cp_idx, check_item_idx
+        ) WHERE closed_before_report_id IS NULL;
     """)
     # Migrations for existing databases
     try:
