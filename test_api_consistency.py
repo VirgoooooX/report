@@ -413,6 +413,128 @@ class ApiConsistencyTests(unittest.TestCase):
         self.assertIn('records', data)
         self.assertEqual(data['records'], [])
 
+    def test_fa_list_filters_by_cell_context(self):
+        """FA list should match the clicked Test Summary cell, not only a raw WF string."""
+        original_find = api._find_fa_tracker_by_date
+        original_read = api.read_fa_tracker
+        try:
+            api._find_fa_tracker_by_date = lambda _date: 'fake-fa-tracker.xlsx'
+            api.read_fa_tracker = lambda _path: [
+                {
+                    'FA#': 'FA-001',
+                    'SN': 'SN001',
+                    'WF': 10,
+                    'Config': 'R3',
+                    'Failed Test': 'Drop Test',
+                    'Failure Type  (Spec. or Strife)': 'Spec.',
+                },
+                {
+                    'FA#': 'FA-002',
+                    'SN': 'SN002',
+                    'WF': 'WF10',
+                    'Config': 'R3',
+                    'Failed Test': 'Drop Test',
+                    'Failure Type  (Spec. or Strife)': 'Strife',
+                },
+                {
+                    'FA#': 'FA-003',
+                    'SN': 'SN003',
+                    'WF': 'WF11',
+                    'Config': 'R3',
+                    'Failed Test': 'Drop Test',
+                    'Failure Type  (Spec. or Strife)': 'Spec.',
+                },
+                {
+                    'FA#': 'FA-004',
+                    'SN': 'SN004',
+                    'WF': '10',
+                    'Config': 'R4',
+                    'Failed Test': 'Drop Test',
+                    'Failure Type  (Spec. or Strife)': 'Spec.',
+                },
+            ]
+
+            client = api.app.test_client()
+            resp = client.get('/api/fa/list?wf=WF10&config=R3&failed_test=Drop%20Test&sns=SN001,SN002')
+
+            self.assertEqual(resp.status_code, 200)
+            data = resp.get_json()
+            self.assertEqual(data['count'], 2)
+            self.assertEqual([record['FA#'] for record in data['records']], ['FA-001', 'FA-002'])
+        finally:
+            api._find_fa_tracker_by_date = original_find
+            api.read_fa_tracker = original_read
+
+    def test_cell_failures_returns_check_item_details(self):
+        """Clicking a cell should return per-SN, per-CP check-item failure details."""
+        rid = self._seed_report()
+
+        # report_cps: map cp_idx to test_idx
+        self.conn.execute(
+            "INSERT INTO report_cps (report_id, wf_num, cp_idx, cp_name, test_idx) VALUES (?, '37', 0, 'CP1', 0)",
+            (rid,),
+        )
+        self.conn.execute(
+            "INSERT INTO report_cps (report_id, wf_num, cp_idx, cp_name, test_idx) VALUES (?, '37', 1, 'CP2', 0)",
+            (rid,),
+        )
+
+        # sn_cp_results for two SNs
+        for sn, cp_idx, is_current in [('SN001', 0, 1), ('SN001', 1, 0), ('SN002', 1, 1)]:
+            self.conn.execute(
+                """INSERT INTO sn_cp_results
+                   (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, status, failure_type, has_data, is_current_cp)
+                   VALUES (?, '2025-01-01', '37', 'R3', ?, '', 0, ?, 'spec_fail', 'spec', 1, ?)""",
+                (rid, sn, cp_idx, is_current),
+            )
+
+        # sn_check_results: one spec fail on SN001 CP1, one strife fail on SN002 CP2
+        self.conn.execute(
+            """INSERT INTO sn_check_results
+               (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                check_item, raw_value, normalized_value, status, failure_type)
+               VALUES (?, '2025-01-01', '37', 'R3', 'SN001', '', 0, 0, 0,
+                       'FACT', '2.5', 'FAIL', 'fail', 'spec')""",
+            (rid,),
+        )
+        self.conn.execute(
+            """INSERT INTO sn_check_results
+               (report_id, report_date, wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                check_item, raw_value, normalized_value, status, failure_type)
+               VALUES (?, '2025-01-01', '37', 'R3', 'SN002', '', 0, 1, 0,
+                       'DROP', 'FAIL', 'FAIL', 'fail', 'strife')""",
+            (rid,),
+        )
+        self.conn.commit()
+
+        client = api.app.test_client()
+        resp = client.get('/api/cell-failures?wf=37&config=R3&test_idx=0&sns=SN001,SN002')
+        self.assertEqual(resp.status_code, 200)
+
+        data = resp.get_json()
+        failures = data.get('failures', [])
+        self.assertEqual(len(failures), 2)
+
+        # SN001 should have CP1 with FACT spec fail
+        sn1 = next(f for f in failures if f['sn'] == 'SN001')
+        self.assertEqual(len(sn1['cps']), 1)
+        self.assertEqual(sn1['cps'][0]['cp_name'], 'CP1')
+        self.assertEqual(sn1['cps'][0]['check_items'][0]['check_item'], 'FACT')
+        self.assertEqual(sn1['cps'][0]['check_items'][0]['failure_type'], 'spec')
+
+        # SN002 should have CP2 with DROP strife fail
+        sn2 = next(f for f in failures if f['sn'] == 'SN002')
+        self.assertEqual(sn2['cps'][0]['cp_name'], 'CP2')
+        self.assertEqual(sn2['cps'][0]['check_items'][0]['check_item'], 'DROP')
+        self.assertEqual(sn2['cps'][0]['check_items'][0]['failure_type'], 'strife')
+
+        # Also test WF prefix normalization (WF37 → 37)
+        resp2 = client.get('/api/cell-failures?wf=WF37&config=R3&test_idx=0&sns=SN001')
+        self.assertEqual(resp2.status_code, 200)
+        data2 = resp2.get_json()
+        self.assertEqual(len(data2['failures']), 1)
+        self.assertEqual(data2['failures'][0]['sn'], 'SN001')
+
 
 if __name__ == '__main__':
     unittest.main()

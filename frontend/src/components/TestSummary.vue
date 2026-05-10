@@ -120,9 +120,17 @@ function cellText(wf, cfg, slotIdx) {
 function onCellClick(wf, cfg, slotIdx) {
   const r = getResult(wf, cfg, slotIdx)
   if (!r || !r.has_failure) return
+  const test = wfTestName(wf, slotIdx)
   emit('cell-click', {
-    wf: 'WF' + wf.wf, cfg,
-    test: wfTestName(wf, slotIdx),
+    wf: 'WF' + wf.wf,
+    cfg,
+    test,
+    testIdx: slotIdx,
+    result: r.result || '',
+    spec: r.spec || 0,
+    strife: r.strife || 0,
+    total: r.total || 0,
+    status: r.status || '',
     failureSns: r.failure_sns || []
   })
 }

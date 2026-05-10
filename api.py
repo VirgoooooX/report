@@ -22,6 +22,7 @@ from db import (
     get_latest_wf_config_progress, get_failure_rate_stats_from_facts,
     build_failure_rate_stats_from_facts,
     get_latest_active_report_id, get_previous_active_report_id,
+    get_cell_failures,
 )
 
 BASE_DIR = os.path.dirname(__file__)
@@ -1141,6 +1142,23 @@ def api_fa_detail():
 #  API: FA Tracker (for drill-through)
 # ═══════════════════════════════════════════════════════════════════════
 
+def _normalize_fa_wf(value):
+    text = str(value or '').strip().upper().replace(' ', '')
+    if text.startswith('WF'):
+        text = text[2:]
+    if text.endswith('.0'):
+        text = text[:-2]
+    return text
+
+
+def _normalize_fa_text(value):
+    return str(value or '').strip().casefold()
+
+
+def _split_csv_filter(value):
+    return {str(item).strip() for item in str(value or '').split(',') if str(item).strip()}
+
+
 @app.route('/api/fa/list')
 def api_fa_list():
     """Get FA records, optionally filtered by WF or status."""
@@ -1155,12 +1173,91 @@ def api_fa_list():
     fa_records = read_fa_tracker(fa_path)
     
     # Filter
+    config = request.args.get('config', '').strip()
+    failed_test = request.args.get('failed_test', '').strip()
+    sns = _split_csv_filter(request.args.get('sns', ''))
+
     if wf:
-        fa_records = [f for f in fa_records if str(f.get('WF', '')).strip() == wf]
+        target_wf = _normalize_fa_wf(wf)
+        fa_records = [f for f in fa_records if _normalize_fa_wf(f.get('WF', '')) == target_wf]
+    if config:
+        target_config = _normalize_fa_text(config)
+        fa_records = [f for f in fa_records if _normalize_fa_text(f.get('Config', '')) == target_config]
+    if failed_test:
+        target_test = _normalize_fa_text(failed_test)
+        fa_records = [f for f in fa_records if _normalize_fa_text(f.get('Failed Test', '')) == target_test]
+    if sns:
+        fa_records = [f for f in fa_records if str(f.get('SN', '')).strip() in sns]
     if status:
         fa_records = [f for f in fa_records if str(f.get('FA Status', '')).strip() == status]
     
     return jsonify({'records': fa_records, 'count': len(fa_records)})
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  API: Cell Failures (check-item-level drill-down from Test Summary)
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/api/cell-failures')
+def api_cell_failures():
+    """Return per-SN, per-CP check-item failure details for a clicked cell."""
+    conn = get_conn()
+    rid = get_latest_active_report_id(conn)
+    conn.close()
+    if not rid:
+        return jsonify({'failures': []})
+
+    wf = _normalize_fa_wf(request.args.get('wf', ''))
+    config = request.args.get('config', '').strip()
+    test_idx_str = request.args.get('test_idx', '').strip()
+    sns_str = request.args.get('sns', '').strip()
+
+    if not wf or not config or not test_idx_str:
+        return jsonify({'failures': []})
+
+    try:
+        test_idx = int(test_idx_str)
+    except ValueError:
+        return jsonify({'failures': []})
+
+    sns = [s.strip() for s in sns_str.split(',') if s.strip()]
+    if not sns:
+        return jsonify({'failures': []})
+
+    rows = get_cell_failures(rid, wf, config, test_idx, sns)
+
+    # Group: SN → CP → check_item
+    result = []
+    current_sn = None
+    current_cp = None
+    sn_entry = None
+    cp_entry = None
+
+    for row in rows:
+        sn = row['sn']
+        cp_idx = row['cp_idx']
+
+        if sn != current_sn:
+            current_sn = sn
+            current_cp = cp_idx
+            sn_entry = {'sn': sn, 'cps': []}
+            result.append(sn_entry)
+            cp_entry = {'cp_name': row['cp_name'], 'cp_idx': cp_idx, 'check_items': []}
+            sn_entry['cps'].append(cp_entry)
+        elif cp_idx != current_cp:
+            current_cp = cp_idx
+            cp_entry = {'cp_name': row['cp_name'], 'cp_idx': cp_idx, 'check_items': []}
+            sn_entry['cps'].append(cp_entry)
+
+        cp_entry['check_items'].append({
+            'check_item': row['check_item'],
+            'raw_value': row['raw_value'],
+            'normalized_value': row['normalized_value'],
+            'status': row['status'],
+            'failure_type': row['failure_type'],
+        })
+
+    return jsonify({'failures': result})
 
 
 # ═══════════════════════════════════════════════════════════════════════

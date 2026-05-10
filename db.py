@@ -356,6 +356,34 @@ def get_sn_check_details(report_id, wf_num, config, sn, cp_idx):
     return rows
 
 
+def get_cell_failures(report_id, wf_num, config, test_idx, sns):
+    """Return check-item-level failure details for the given SNs in a cell."""
+    if not sns:
+        return []
+    conn = get_conn()
+    placeholders = ','.join(['?' for _ in sns])
+    rows = conn.execute(
+        f"""SELECT sci.sn, sci.cp_idx, rcp.cp_name, sci.check_item_idx,
+                   sci.check_item, sci.raw_value, sci.normalized_value,
+                   sci.status, sci.failure_type
+            FROM sn_check_results sci
+            JOIN report_cps rcp
+              ON rcp.report_id = sci.report_id
+             AND rcp.wf_num = sci.wf_num
+             AND rcp.cp_idx = sci.cp_idx
+            WHERE sci.report_id = ?
+              AND sci.wf_num = ?
+              AND sci.config = ?
+              AND sci.test_idx = ?
+              AND sci.sn IN ({placeholders})
+              AND sci.failure_type IS NOT NULL
+            ORDER BY sci.sn, sci.cp_idx, sci.check_item_idx""",
+        (report_id, wf_num, config, test_idx, *sns),
+    ).fetchall()
+    conn.close()
+    return rows
+
+
 def get_latest_wf_config_progress(conn, report_id):
     return conn.execute(
         """WITH per_sn AS (

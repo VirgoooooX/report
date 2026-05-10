@@ -12,6 +12,8 @@ import os
 import sys
 import re
 import datetime
+import math
+import statistics
 import argparse
 import logging
 
@@ -365,6 +367,235 @@ def process_newest():
 #  compute_auto_predictions — 预测完成时间
 # ═══════════════════════════════════════════════════════════════════════
 
+BULK_PROGRESS_THRESHOLD = 0.75
+
+PREDICTION_MODELS = {
+    'short_cycle': {
+        'name': 'short_cycle',
+        'threshold': 0.75,
+        'history_days': 5,
+        'rate_strategy': 'weighted',
+    },
+    'random_or_drop': {
+        'name': 'random_or_drop',
+        'threshold': 0.80,
+        'history_days': 7,
+        'rate_strategy': 'weighted_conservative',
+    },
+    'long_storage': {
+        'name': 'long_storage',
+        'threshold': 0.75,
+        'history_days': 14,
+        'rate_strategy': 'median_nonzero',
+    },
+    'standard': {
+        'name': 'standard',
+        'threshold': 0.75,
+        'history_days': 14,
+        'rate_strategy': 'mean',
+    },
+}
+
+
+def _bulk_cp(cp_values, threshold=BULK_PROGRESS_THRESHOLD):
+    values = sorted(int(v or 0) for v in cp_values)
+    if not values:
+        return 0
+    required_count = max(1, math.ceil(len(values) * threshold))
+    return values[len(values) - required_count]
+
+
+def _prediction_model_for_test(test_name):
+    text = str(test_name or '').casefold()
+    if any(word in text for word in ('button', 'cycling', 'actuation', 'squeeze', 'pressure')):
+        return PREDICTION_MODELS['short_cycle']
+    if any(word in text for word in ('drop', 'random', 'granite', 'pb', 'sequence')):
+        return PREDICTION_MODELS['random_or_drop']
+    if any(word in text for word in ('storage', 'soak', 'aging', 'thermal', 'humidity', 'temperature', 'environmental')):
+        return PREDICTION_MODELS['long_storage']
+    return PREDICTION_MODELS['standard']
+
+
+def _workdays_between(start_date, end_date):
+    if isinstance(start_date, datetime.datetime):
+        start_date = start_date.date()
+    if isinstance(end_date, datetime.datetime):
+        end_date = end_date.date()
+    if end_date <= start_date:
+        return 0
+
+    days = 0
+    cursor = start_date
+    while cursor < end_date:
+        cursor += datetime.timedelta(days=1)
+        if cursor.weekday() != 6:
+            days += 1
+    return days
+
+
+def _add_workdays(start_date, workdays):
+    if isinstance(start_date, datetime.datetime):
+        cursor = start_date.date()
+    else:
+        cursor = start_date
+
+    remaining = max(0, int(workdays))
+    while remaining > 0:
+        cursor += datetime.timedelta(days=1)
+        if cursor.weekday() != 6:
+            remaining -= 1
+    if cursor.weekday() == 6:
+        cursor += datetime.timedelta(days=1)
+    return cursor
+
+
+def _prediction_daily_bulk_progress(conn, wf_num, config, test_idx, days, threshold=BULK_PROGRESS_THRESHOLD):
+    rows = conn.execute("""
+        SELECT r.report_date,
+               sp.sn,
+               sp.current_cp_idx,
+               sp.total_cps
+        FROM sn_progress sp
+        JOIN reports r ON sp.report_id = r.id
+        WHERE sp.wf_num = ? AND sp.config = ? AND sp.test_idx = ?
+          AND r.is_active = 1
+          AND r.report_date IN (
+              SELECT report_date
+              FROM reports
+              WHERE is_active = 1
+              ORDER BY report_date DESC, version DESC
+              LIMIT ?
+          )
+        ORDER BY r.report_date DESC
+    """, (wf_num, config, test_idx, days)).fetchall()
+
+    by_date = {}
+    for row in rows:
+        entry = by_date.setdefault(row['report_date'], {'cp_values': [], 'total_cps': 0})
+        entry['cp_values'].append(row['current_cp_idx'] or 0)
+        entry['total_cps'] = max(entry['total_cps'], row['total_cps'] or 0)
+
+    daily = []
+    for report_date, entry in by_date.items():
+        daily.append({
+            'report_date': report_date,
+            'bulk_cp': _bulk_cp(entry['cp_values'], threshold),
+            'total_cps': entry['total_cps'],
+            'sn_count': len(entry['cp_values']),
+        })
+
+    return sorted(daily, key=lambda item: item['report_date'])
+
+
+def _prediction_test_name(conn, wf_num, test_idx):
+    row = conn.execute("""
+        SELECT rtn.test_name
+        FROM report_test_names rtn
+        JOIN reports r ON r.id = rtn.report_id
+        WHERE rtn.wf_num = ? AND rtn.test_idx = ? AND r.is_active = 1
+        ORDER BY r.report_date DESC, r.version DESC
+        LIMIT 1
+    """, (wf_num, test_idx)).fetchone()
+    if row and row['test_name']:
+        return row['test_name']
+    return f'Test{test_idx + 1}'
+
+
+def _daily_rate_samples(daily_data):
+    rates = []
+    for i in range(1, len(daily_data)):
+        prev_date = datetime.datetime.strptime(daily_data[i - 1]['report_date'], '%Y-%m-%d').date()
+        curr_date = datetime.datetime.strptime(daily_data[i]['report_date'], '%Y-%m-%d').date()
+        workdays = _workdays_between(prev_date, curr_date)
+        if workdays <= 0:
+            continue
+        delta = (daily_data[i]['bulk_cp'] or 0) - (daily_data[i - 1]['bulk_cp'] or 0)
+        if delta >= 0:
+            rates.append(delta / workdays)
+    return rates
+
+
+def _weighted_daily_rate(rates):
+    if not rates:
+        return 0
+    weights = list(range(1, len(rates) + 1))
+    return sum(rate * weight for rate, weight in zip(rates, weights)) / sum(weights)
+
+
+def _daily_rate_for_model(daily_data, model):
+    rates = _daily_rate_samples(daily_data)
+    if not rates:
+        return 0
+
+    strategy = model.get('rate_strategy')
+    if strategy == 'weighted':
+        return _weighted_daily_rate(rates)
+    if strategy == 'weighted_conservative':
+        weighted = _weighted_daily_rate(rates)
+        mean = sum(rates) / len(rates)
+        return min(weighted, mean)
+    if strategy == 'median_nonzero':
+        nonzero = sorted(rate for rate in rates if rate > 0)
+        if nonzero:
+            return statistics.median(nonzero)
+        return sum(rates) / len(rates)
+    return sum(rates) / len(rates)
+
+
+def _prediction_targets(conn):
+    """Return one representative active test per WF/config from the latest report."""
+    rows = conn.execute("""
+        WITH latest_report AS (
+            SELECT id
+            FROM reports
+            WHERE is_active = 1
+            ORDER BY report_date DESC, version DESC
+            LIMIT 1
+        )
+        SELECT sp.wf_num, sp.config, sp.test_idx, COUNT(*) AS sn_count
+        FROM sn_progress sp
+        JOIN latest_report lr ON sp.report_id = lr.id
+        GROUP BY sp.wf_num, sp.config, sp.test_idx
+    """).fetchall()
+
+    if not rows:
+        return conn.execute("""
+            SELECT DISTINCT wf_num, config, test_idx FROM wf_results
+        """).fetchall()
+
+    targets = {}
+    for row in rows:
+        key = (row['wf_num'], row['config'])
+        current = targets.get(key)
+        if current is None:
+            targets[key] = row
+            continue
+
+        row_count = row['sn_count'] or 0
+        current_count = current['sn_count'] or 0
+        if row_count > current_count:
+            targets[key] = row
+        elif row_count == current_count and (row['test_idx'] or 0) > (current['test_idx'] or 0):
+            targets[key] = row
+
+    return list(targets.values())
+
+
+def _delete_stale_prediction_tests(targets):
+    """Keep only the latest representative test for each WF/config prediction."""
+    conn = get_conn()
+    try:
+        for target in targets:
+            conn.execute(
+                """DELETE FROM predictions
+                   WHERE wf_num = ? AND config = ? AND test_idx <> ?""",
+                (target['wf_num'], target['config'], target['test_idx'])
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def compute_auto_predictions(days=14):
     """自动计算所有 WF/Config/Test 的预测完成时间。
 
@@ -385,15 +616,8 @@ def compute_auto_predictions(days=14):
     """
     conn = get_conn()
 
-    # 获取所有 wf_config_test 组合
-    rows = conn.execute("""
-        SELECT DISTINCT wf_num, config, test_idx FROM sn_progress
-    """).fetchall()
-
-    if not rows:
-        rows = conn.execute("""
-            SELECT DISTINCT wf_num, config, test_idx FROM wf_results
-        """).fetchall()
+    # 获取每个 WF/config 的代表性 active test。个别慢 SN 不应让同一 config 出现多个 test。
+    rows = _prediction_targets(conn)
 
     if not rows:
         print("WARN: No data for prediction")
@@ -407,44 +631,25 @@ def compute_auto_predictions(days=14):
         cfg = row['config']
         ti = row['test_idx']
 
-        # 获取最近 N 天的每日 max_cp
-        daily_data = conn.execute("""
-            SELECT r.report_date,
-                   MAX(sp.current_cp_idx) as max_cp,
-                   MAX(sp.total_cps) as total_cps
-            FROM sn_progress sp
-            JOIN reports r ON sp.report_id = r.id
-            WHERE sp.wf_num = ? AND sp.config = ? AND sp.test_idx = ?
-            GROUP BY r.report_date
-            ORDER BY r.report_date DESC
-            LIMIT ?
-        """, (wfn, cfg, ti, days)).fetchall()
+        test_name = _prediction_test_name(conn, wfn, ti)
+        model = _prediction_model_for_test(test_name)
+        daily_data = _prediction_daily_bulk_progress(
+            conn, wfn, cfg, ti, model['history_days'], model['threshold'],
+        )
 
         if len(daily_data) < 2:
-            continue  # 数据不足
+            continue
 
-        daily_data.reverse()  # 按日期升序
         total_cps = daily_data[-1]['total_cps'] or 0
         if total_cps == 0:
             continue
 
-        # 计算每日 max_cp 增长率
-        rates = []
-        for i in range(1, len(daily_data)):
-            prev_max = daily_data[i - 1]['max_cp'] or 0
-            curr_max = daily_data[i]['max_cp'] or 0
-            rates.append(curr_max - prev_max)
-
-        valid_rates = [r for r in rates if r >= 0]
-        if not valid_rates:
-            continue
-
-        daily_rate = sum(valid_rates) / len(valid_rates)
+        daily_rate = _daily_rate_for_model(daily_data, model)
         if daily_rate <= 0:
             continue
 
-        current_max = daily_data[-1]['max_cp'] or 0
-        completed_cps = current_max + 1
+        current_bulk_cp = daily_data[-1]['bulk_cp'] or 0
+        completed_cps = current_bulk_cp + 1
         remaining = total_cps - completed_cps
         if remaining <= 0:
             continue
@@ -454,9 +659,8 @@ def compute_auto_predictions(days=14):
         last_date = datetime.datetime.strptime(
             daily_data[-1]['report_date'], '%Y-%m-%d'
         )
-        predicted_date = last_date + datetime.timedelta(
-            days=int(remaining_days) + 1
-        )
+        workdays_needed = max(1, math.ceil(remaining_days))
+        predicted_date = _add_workdays(last_date, workdays_needed)
 
         predictions.append({
             'wf_num': wfn,
@@ -466,10 +670,14 @@ def compute_auto_predictions(days=14):
             'remaining_days': round(remaining_days, 1),
             'daily_rate': round(daily_rate, 2),
             'total_cps': total_cps,
-            'current_max_cp': current_max,
+            'current_max_cp': current_bulk_cp,
+            'test_name': test_name,
         })
 
     conn.close()
+
+    if rows:
+        _delete_stale_prediction_tests(rows)
 
     if predictions:
         save_predictions(predictions)

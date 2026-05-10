@@ -13,8 +13,50 @@
           <button class="fa-close-btn" @click="close">&times;</button>
         </div>
         <div class="fa-modal-body">
+          <!-- Cross-checked issue table: Daily Report + FA Tracker -->
+          <div v-if="issueRows.length" class="fa-cell-failures">
+            <div class="fa-cell-detail-title">Cross-checked Failure Table</div>
+            <table class="fa-issue-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th v-for="column in issueColumns" :key="column.key">{{ column.label }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="(row, i) in issueRows"
+                  :key="`${row.source}-${row.sn}-${i}`"
+                  :class="{ 'row-warn': row.source !== 'matched' }"
+                >
+                  <td>{{ i + 1 }}</td>
+                  <td
+                    v-for="column in issueColumns"
+                    :key="column.key"
+                    :class="cellClass(column.key, row)"
+                    :title="cellTitle(column.key, row)"
+                  >
+                    <span
+                      v-if="column.key === 'type'"
+                      :class="row.type === 'spec' ? 'type-spec' : row.type === 'strife' ? 'type-strife' : ''"
+                    >
+                      {{ typeLabel(row.type) }}
+                    </span>
+                    <span
+                      v-else-if="column.key === 'source'"
+                      class="source-badge"
+                      :class="'source-' + row.source"
+                    >
+                      {{ sourceLabel(row.source) }}
+                    </span>
+                    <span v-else>{{ row[column.key] || '—' }}</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
           <!-- Loading -->
-          <div v-if="faLoading" class="fa-loading">
+          <div v-if="isLoading" class="fa-loading">
             <div class="spinner"></div>
             <span>{{ t('common.loading') }}</span>
           </div>
@@ -26,24 +68,8 @@
           </div>
 
           <!-- Empty -->
-          <div v-else-if="faData.length === 0" class="fa-empty">
-            <p>{{ t('common.empty') }}</p>
-            <div v-if="sns.length" class="fa-sns-list">
-              <span v-for="sn in sns" :key="sn" class="fa-sn-tag">{{ sn }}</span>
-            </div>
-          </div>
-
-          <!-- Records -->
-          <div v-else class="fa-records">
-            <div v-for="(rec, i) in faData" :key="i" class="fa-record-card">
-              <div class="fa-record-bar"></div>
-              <div class="fa-record-fields">
-                <div v-for="(val, key) in rec" :key="key" class="fa-field">
-                  <span class="fa-field-label">{{ key }}:</span>
-                  <span class="fa-field-value">{{ val }}</span>
-                </div>
-              </div>
-            </div>
+          <div v-else-if="issueRows.length === 0" class="fa-empty">
+            <p>{{ t('failureAnalysis.noRecordsFound') }}</p>
           </div>
         </div>
       </div>
@@ -52,17 +78,22 @@
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import { useI18n } from '@/i18n/useI18n'
 import { requestJson } from '@/composables/useApi'
+import { CELL_ISSUE_COLUMNS, buildFaListUrl, buildCellFailuresUrl, buildCellIssueRows } from '@/views/testSummaryModal.js'
 
 const { t } = useI18n()
 
 const props = defineProps({
   show: Boolean,
   wf: String,
+  cfg: String,
+  test: String,
+  testIdx: Number,
   title: String,
-  sns: { type: Array, default: () => [] }
+  sns: { type: Array, default: () => [] },
+  cellDetail: { type: Object, default: null }
 })
 const emit = defineEmits(['close'])
 
@@ -70,17 +101,59 @@ const faData = ref([])
 const faLoading = ref(false)
 const faError = ref(null)
 const visible = ref(false)
+const cellFailures = ref([])
+const cellFailuresLoading = ref(false)
+const issueRows = computed(() => buildCellIssueRows({
+  cellFailures: cellFailures.value,
+  faRecords: faData.value,
+  testName: props.test,
+}))
+const issueColumns = CELL_ISSUE_COLUMNS
+const isLoading = computed(() => faLoading.value || cellFailuresLoading.value)
 
 function close() {
   emit('close')
 }
 
+function sourceLabel(s) {
+  const map = {
+    matched: 'Consistent',
+    only_daily_report: 'Daily Report only',
+    only_fa_tracker: 'FA Tracker only',
+  }
+  return map[s] || s
+}
+
+function typeLabel(type) {
+  if (type === 'spec') return 'Spec'
+  if (type === 'strife') return 'Strife'
+  return type || '—'
+}
+
+function cellClass(key, row) {
+  return {
+    mono: key === 'sn',
+    'cell-symptom': key === 'symptom',
+    'cell-cycle': key === 'failed_cycle',
+    'cell-source': key === 'source',
+  }
+}
+
+function cellTitle(key, row) {
+  return ['symptom', 'failed_cycle', 'location'].includes(key) ? row[key] : ''
+}
+
 async function fetchFa() {
-  if (!props.wf) return
   faLoading.value = true
   faError.value = null
   try {
-    const d = await requestJson(`/api/fa/list?wf=${encodeURIComponent(props.wf)}`)
+    const d = await requestJson(buildFaListUrl({
+      wf: props.wf,
+      cfg: props.cfg,
+      test: props.test,
+      sns: props.sns,
+      includeTest: false
+    }))
     faData.value = d.records || []
   } catch (e) {
     faError.value = e.message
@@ -89,13 +162,33 @@ async function fetchFa() {
   }
 }
 
+async function fetchCellFailures() {
+  if (props.testIdx == null || !props.sns.length) return
+  cellFailuresLoading.value = true
+  try {
+    const d = await requestJson(buildCellFailuresUrl({
+      wf: props.wf,
+      cfg: props.cfg,
+      testIdx: props.testIdx,
+      sns: props.sns
+    }))
+    cellFailures.value = d.failures || []
+  } catch (e) {
+    cellFailures.value = []
+  } finally {
+    cellFailuresLoading.value = false
+  }
+}
+
 watch(() => props.show, async (val) => {
   if (val) {
     faData.value = []
     faError.value = null
+    cellFailures.value = []
     await nextTick()
     visible.value = true
     fetchFa()
+    fetchCellFailures()
   } else {
     visible.value = false
   }
@@ -118,9 +211,9 @@ watch(() => props.show, async (val) => {
   background: #fff;
   border-radius: 12px;
   box-shadow: var(--shadow-modal);
-  width: 90%;
-  max-width: 700px;
-  max-height: 80vh;
+  width: min(96vw, 1180px);
+  max-width: 1180px;
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
   opacity: 0;
@@ -172,10 +265,121 @@ watch(() => props.show, async (val) => {
 }
 
 .fa-modal-body {
-  padding: 20px 24px;
+  padding: 16px 18px;
   overflow-y: auto;
   flex: 1;
 }
+
+.fa-cell-detail-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+/* Cell failure check-item details */
+.fa-cell-failures {
+  padding: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--bg-row-hover) 50%, #fff);
+}
+
+.fa-issue-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.fa-issue-table th {
+  background: var(--bg-row-stripe);
+  padding: 7px 8px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-light);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+}
+
+.fa-issue-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.fa-issue-table th:nth-child(1),
+.fa-issue-table td:nth-child(1) {
+  width: 28px;
+}
+
+.fa-issue-table th:nth-child(2),
+.fa-issue-table td:nth-child(2) {
+  width: 104px;
+}
+
+.fa-issue-table th:nth-child(3),
+.fa-issue-table td:nth-child(3) {
+  width: 64px;
+}
+
+.fa-issue-table th:nth-child(4),
+.fa-issue-table td:nth-child(4) {
+  min-width: 150px;
+}
+
+.fa-issue-table th:nth-child(5),
+.fa-issue-table td:nth-child(5) {
+  min-width: 90px;
+}
+
+.cell-symptom {
+  min-width: 180px;
+}
+
+.cell-cycle {
+  min-width: 90px;
+}
+
+.cell-source {
+  width: 120px;
+}
+
+.cell-source,
+.mono,
+.fa-issue-table td:nth-child(1),
+.fa-issue-table td:nth-child(3) {
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+
+.row-warn td { background: #fff9e6; }
+
+.type-spec { color: var(--color-danger); font-weight: 600; }
+.type-strife { color: #d97706; font-weight: 600; }
+
+.source-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.source-matched { background: #d4edda; color: #155724; }
+.source-only_daily_report { background: #fff3cd; color: #856404; }
+.source-only_fa_tracker { background: #f8d7da; color: #721c24; }
 
 /* Loading */
 .fa-loading {

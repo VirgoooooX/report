@@ -7,8 +7,9 @@
     <ErrorState v-else-if="error" :message="error" :retry="load" />
     <TestSummary v-else :summary-data="store.summaryData" @cell-click="onCellClick" />
 
-    <FAModal :show="showFAModal" :wf="faWf" :title="faTitle"
-             :preset-sns="faSns" @close="showFAModal = false" />
+    <FAModal :show="showFAModal" :wf="faWf" :cfg="faCfg" :test="faTest"
+             :test-idx="faTestIdx" :title="faTitle" :sns="faSns" :cell-detail="faCellDetail"
+             @close="showFAModal = false" />
   </div>
 </template>
 
@@ -51,15 +52,29 @@ const tests = computed(() => {
 
 const showFAModal = ref(false)
 const faWf = ref('')
+const faCfg = ref('')
+const faTest = ref('')
+const faTestIdx = ref(null)
 const faTitle = ref('')
 const faSns = ref([])
+const faCellDetail = ref(null)
 
 function onCellClick(payload) {
   if (!payload) return
-  showFAModal.value = true
   faWf.value = payload.wf || ''
+  faCfg.value = payload.cfg || ''
+  faTest.value = payload.test || ''
+  faTestIdx.value = payload.testIdx ?? null
   faTitle.value = `${payload.wf || ''} / ${payload.cfg || ''} / ${payload.test || ''}`
   faSns.value = payload.failureSns || []
+  faCellDetail.value = {
+    result: payload.result || '',
+    spec: payload.spec || 0,
+    strife: payload.strife || 0,
+    total: payload.total || 0,
+    status: payload.status || ''
+  }
+  showFAModal.value = true
 }
 
 async function load() {

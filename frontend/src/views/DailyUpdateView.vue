@@ -13,19 +13,11 @@
     </section>
 
     <section class="section">
-      <div class="section-header">
-        <h2>{{ t('dailyUpdate.cpChanges') }}</h2>
-        <div class="divider"></div>
-      </div>
-      <DailyUpdates :daily-data="store.overviewData?.daily_updates" />
+      <DailyIssues :consistency="store.dailyIssuesConsistency" :issues="store.dailyIssues" />
     </section>
 
     <section class="section">
-      <div class="section-header">
-        <h2>{{ t('dailyUpdate.issues') }}</h2>
-        <div class="divider"></div>
-      </div>
-      <DailyIssues :consistency="store.dailyIssuesConsistency" :issues="store.dailyIssues" />
+      <DailyUpdates :daily-data="store.overviewData?.daily_updates" />
     </section>
 
     <footer class="page-footer">
