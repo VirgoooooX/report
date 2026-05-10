@@ -55,7 +55,7 @@
           <div v-if="loading" class="loading-wrap"><a-spin /></div>
           <div v-else-if="error" class="error-wrap">{{ error }}</div>
           <div v-else-if="!overviewData?.topSymptom?.length" class="empty-wrap">{{ t('common.noData') }}</div>
-          <div v-else style="height:380px">
+          <div v-else class="chart-frame chart-frame-md">
             <Bar :data="symptomChartData" :options="barOptions" :plugins="[datalabelsPlugin, fixedValueLabelsPlugin]" />
           </div>
         </a-card>
@@ -64,7 +64,7 @@
         <a-card :title="t('failureAnalysis.top10Wf')" :bordered="false" class="section-card">
           <div v-if="loading" class="loading-wrap"><a-spin /></div>
           <div v-else-if="!overviewData?.topWf?.length" class="empty-wrap">{{ t('common.noData') }}</div>
-          <div v-else style="height:380px">
+          <div v-else class="chart-frame chart-frame-md">
             <Bar :data="wfChartData" :options="barOptions" :plugins="[datalabelsPlugin, fixedValueLabelsPlugin]" />
           </div>
         </a-card>
@@ -73,7 +73,7 @@
         <a-card :title="t('failureAnalysis.top10Test')" :bordered="false" class="section-card">
           <div v-if="loading" class="loading-wrap"><a-spin /></div>
           <div v-else-if="!overviewData?.topFailedTest?.length" class="empty-wrap">{{ t('common.noData') }}</div>
-          <div v-else style="height:380px">
+          <div v-else class="chart-frame chart-frame-md">
             <Bar :data="testChartData" :options="barOptions" :plugins="[datalabelsPlugin, fixedValueLabelsPlugin]" />
           </div>
         </a-card>
@@ -100,7 +100,7 @@
           </a-radio-group>
         </div>
       </template>
-      <div v-if="crossLoading" class="loading-wrap" style="min-height:300px"><a-spin size="large" /></div>
+      <div v-if="crossLoading" class="loading-wrap loading-wrap-lg"><a-spin size="large" /></div>
       <div v-else-if="crossError" class="error-wrap">{{ crossError }}</div>
           <div v-else-if="!crossData?.matrix?.length" class="empty-wrap">{{ t('common.noData') }}</div>
       <div v-else class="heatmap-wrap">
@@ -520,12 +520,28 @@ watch([dim1, dim2], loadCross)
 .spec-text { color: var(--color-danger); }
 .strife-text { color: var(--color-warning); }
 .chart-row { margin-bottom: 24px; }
-.section-card { border-radius: 8px; margin-bottom: 24px; border: 1px solid var(--border-card, #e8ecf1); box-shadow: var(--shadow-card, 0 1px 3px rgba(0,0,0,0.06)); }
+.section-card {
+  margin-bottom: 24px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card), var(--ring-card);
+}
 .section-card :deep(.ant-card-head) { border-bottom: 1px solid var(--border-light, #f0f0f0); background: var(--bg-card); color: var(--text-primary); }
 .section-card :deep(.ant-card-head-title) { color: var(--text-primary); }
 .section-card :deep(.ant-card-body),
 .kpi-card :deep(.ant-card-body) { background: var(--bg-card); color: var(--text-primary); }
-.loading-wrap, .error-wrap, .empty-wrap { display: flex; align-items: center; justify-content: center; min-height: 120px; color: var(--text-muted, #8c8c8c); }
+.loading-wrap,
+.error-wrap,
+.empty-wrap {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  padding: var(--space-xl);
+  color: var(--text-muted);
+}
+.loading-wrap-lg {
+  min-height: 300px;
+}
 .control-label { font-weight: 400; font-size: 13px; color: var(--text-muted); }
 
 /* Heatmap */
