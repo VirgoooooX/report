@@ -105,6 +105,13 @@ tr:hover td { background: var(--bg-row-hover); }
 .error-placeholder { text-align: center; padding: 60px 20px; color: var(--color-danger); display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .retry-btn { margin-top: 8px; padding: 8px 20px; background: var(--color-danger); color: #fff; border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 13px; font-family: var(--font-display); }
 
+/* Mobile page shell */
+@media (max-width: 760px) {
+  .page-shell {
+    padding: 16px 12px 28px;
+  }
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   *,

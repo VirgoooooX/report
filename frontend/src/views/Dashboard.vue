@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container page-shell">
     <h1 class="page-title">{{ t('dashboard.title') }}</h1>
 
     <!-- 1. Overview Cards -->
@@ -111,19 +111,8 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped>
 .page-container {
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 24px 32px 40px;
-}
-
-.page-title {
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 24px;
 }
 
 .section {
@@ -173,12 +162,13 @@ onMounted(async () => {
 /* Charts row */
 .chart-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(min(460px, 100%), 1fr));
   gap: 16px;
 }
 
 .chart-col {
-  padding: 18px 20px;
+  min-width: 0;
+  padding: 18px 20px 20px;
 }
 
 .chart-col-header {
@@ -200,12 +190,8 @@ onMounted(async () => {
 }
 
 @media (max-width: 900px) {
-  .chart-row {
-    grid-template-columns: 1fr;
-  }
   .page-footer {
     flex-wrap: wrap;
     gap: 8px;
   }
 }
-</style>

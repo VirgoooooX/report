@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container page-shell">
     <h1 class="page-title">{{ t('failureAnalysis.title') }}</h1>
 
     <div class="kpi-grid">
@@ -493,8 +493,7 @@ watch([dim1, dim2], loadCross)
 </script>
 
 <style scoped>
-.page-container { max-width: 1440px; margin: 0 auto; padding: 24px 32px 40px; color: var(--text-primary); }
-.page-title { font-family: 'Work Sans', sans-serif; font-weight: 700; font-size: 20px; color: var(--text-primary); margin-bottom: 24px; }
+.page-container { color: var(--text-primary); }
 .kpi-grid { display: grid; grid-template-columns: repeat(5, minmax(160px, 1fr)); gap: 16px; margin-bottom: 20px; }
 .kpi-card,
 .section-card { background: var(--bg-card); color: var(--text-primary); }

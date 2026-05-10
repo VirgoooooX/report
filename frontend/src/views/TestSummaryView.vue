@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container">
+  <div class="page-container page-shell page-shell-wide">
     <h1 class="page-title">{{ t('testSummary.title') }}</h1>
     <p class="page-subtitle">{{ summaryList.length }} {{ t('testSummary.labelWaterfalls') }}, {{ configList.length }} {{ t('testSummary.labelConfigs') }}, {{ tests.length }} {{ t('testSummary.labelTests') }}</p>
 
@@ -90,27 +90,12 @@ onMounted(load)
 
 <style scoped>
 .page-container {
-  width: min(100%, 1800px);
-  margin: 0 auto;
-  padding: 24px 20px 40px;
-}
-
-.page-title {
-  font-size: 22px;
-  font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 4px;
 }
 
 .page-subtitle {
   font-size: 14px;
   color: var(--text-muted);
   margin-bottom: 20px;
-}
-
-@media (max-width: 900px) {
-  .page-container {
-    padding: 16px 12px 28px;
-  }
 }
 </style>
