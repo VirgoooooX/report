@@ -1,46 +1,23 @@
 <template>
   <div class="schedule-page">
     <header class="page-heading">
-      <div>
-        <h1 class="page-title">{{ t('schedule.title') }}</h1>
-        <p class="page-subtitle">{{ t('schedule.subtitle') }}</p>
+      <div class="header-tools">
+        <section class="compact-filter">
+          <input
+            v-model="filterWf"
+            class="wf-filter"
+            :aria-label="t('schedule.filterWf')"
+            :placeholder="t('schedule.filterWfPlaceholder')"
+          />
+          <select v-model="filterConfig" class="config-filter" :aria-label="t('schedule.filterConfig')">
+              <option value="">{{ t('schedule.allConfigs') }}</option>
+              <option v-for="config in store.CONFIG_ORDER" :key="config" :value="config">{{ config }}</option>
+          </select>
+          <button class="clear-btn" @click="clearFilters">{{ t('schedule.clear') }}</button>
+          <button class="refresh-btn" @click="loadData">{{ t('common.refresh') }}</button>
+        </section>
       </div>
-      <button class="refresh-btn" @click="loadData">{{ t('common.refresh') }}</button>
     </header>
-
-    <section class="metric-grid">
-      <div class="card metric-card">
-        <span class="metric-label">{{ t('schedule.totalSegments') }}</span>
-        <strong>{{ scheduleLanes.length }}</strong>
-      </div>
-      <div class="card metric-card">
-        <span class="metric-label">{{ t('schedule.totalWfs') }}</span>
-        <strong>{{ groupedRows.length }}</strong>
-      </div>
-      <div class="card metric-card">
-        <span class="metric-label">{{ t('schedule.dateRange') }}</span>
-        <strong>{{ dateRangeLabel }}</strong>
-      </div>
-      <div class="card metric-card">
-        <span class="metric-label">{{ t('schedule.cpLabels') }}</span>
-        <strong>{{ visibleCpCount }}</strong>
-      </div>
-    </section>
-
-    <section class="card filter-card">
-      <label>
-        <span>{{ t('schedule.filterWf') }}</span>
-        <input v-model="filterWf" :placeholder="t('schedule.filterWfPlaceholder')" />
-      </label>
-      <label>
-        <span>{{ t('schedule.filterConfig') }}</span>
-        <select v-model="filterConfig">
-          <option value="">{{ t('schedule.allConfigs') }}</option>
-          <option v-for="config in store.CONFIG_ORDER" :key="config" :value="config">{{ config }}</option>
-        </select>
-      </label>
-      <button class="clear-btn" @click="clearFilters">{{ t('schedule.clear') }}</button>
-    </section>
 
     <LoadingState v-if="loading" />
     <div v-else-if="!scheduleLanes.length" class="card empty-state">{{ t('common.noData') }}</div>
@@ -80,15 +57,6 @@ const scheduleLanes = computed(() => buildScheduleLanes(filteredRows.value))
 const groupedRows = computed(() => groupScheduleByWf(scheduleLanes.value))
 const dateColumns = computed(() => buildScheduleDateColumns(scheduleLanes.value))
 
-const visibleCpCount = computed(() => scheduleLanes.value.reduce((sum, row) => sum + row.visible_cps.length, 0))
-
-const dateRangeLabel = computed(() => {
-  if (!scheduleLanes.value.length) return '—'
-  const starts = scheduleLanes.value.map((row) => row.planned_start_date).sort()
-  const ends = scheduleLanes.value.map((row) => row.planned_end_date).sort()
-  return `${starts[0]} → ${ends[ends.length - 1]}`
-})
-
 function clearFilters() {
   filterWf.value = ''
   filterConfig.value = ''
@@ -112,39 +80,81 @@ onMounted(loadData)
 </script>
 
 <style scoped>
+:global(html:has(.schedule-page)) {
+  overflow: hidden;
+  scrollbar-gutter: auto;
+}
+
+:global(body:has(.schedule-page)) {
+  overflow: hidden;
+  height: 100vh;
+}
+
+:global(.main:has(.schedule-page)) {
+  width: 100%;
+  height: calc(100vh - 56px);
+  max-width: none;
+  padding: 4px 5px 8px;
+  overflow: hidden;
+}
+
 .schedule-page {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 4px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .page-heading {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
+  justify-content: flex-end;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 31px;
 }
 
-.page-title {
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 700;
+.header-tools {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.compact-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.compact-filter input,
+.compact-filter select {
+  width: 118px;
+  height: 27px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
   color: var(--text-primary);
+  padding: 0 8px;
+  font-family: var(--font-display);
+  font-size: 12px;
 }
 
-.page-subtitle {
-  margin-top: 4px;
-  color: var(--text-muted);
-  font-size: 13px;
+.compact-filter select {
+  width: 132px;
 }
 
 .refresh-btn,
 .clear-btn {
-  height: 34px;
-  padding: 0 14px;
+  height: 27px;
+  padding: 0 10px;
   border: 1px solid var(--accent-steel);
   border-radius: var(--radius-sm);
-  background: var(--bg-card);
+  background: transparent;
   color: var(--accent-steel);
   font-family: var(--font-display);
   font-size: 12px;
@@ -156,55 +166,6 @@ onMounted(loadData)
 .clear-btn:hover {
   background: var(--accent-steel);
   color: #fff;
-}
-
-.metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.metric-card {
-  padding: 14px 16px;
-  display: grid;
-  gap: 4px;
-}
-
-.metric-label {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.metric-card strong {
-  font-size: 20px;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.filter-card {
-  padding: 14px;
-  display: flex;
-  align-items: end;
-  gap: 12px;
-}
-
-.filter-card label {
-  display: grid;
-  gap: 6px;
-  min-width: 180px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.filter-card input,
-.filter-card select {
-  height: 34px;
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius-sm);
-  background: var(--bg-input);
-  color: var(--text-primary);
-  padding: 0 10px;
-  font-family: var(--font-display);
 }
 
 .empty-state {
@@ -222,7 +183,8 @@ onMounted(loadData)
 
 @media (max-width: 720px) {
   .page-heading,
-  .filter-card {
+  .header-tools,
+  .compact-filter {
     flex-direction: column;
     align-items: stretch;
   }
@@ -231,8 +193,9 @@ onMounted(loadData)
     grid-template-columns: 1fr;
   }
 
-  .filter-card label {
-    min-width: 0;
+  .compact-filter input,
+  .compact-filter select {
+    width: 100%;
   }
 }
 </style>

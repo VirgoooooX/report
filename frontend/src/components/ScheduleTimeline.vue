@@ -1,15 +1,16 @@
 <template>
-  <section class="card schedule-sheet">
-    <div class="sheet-scroll">
+  <section class="schedule-sheet">
+    <div ref="sheetScroll" class="sheet-scroll">
       <table>
         <thead>
           <tr>
-            <th class="sticky-col test-col">WF / Config / Test</th>
+            <th class="sticky-col test-col">Config</th>
             <th
               v-for="column in dateColumns"
               :key="column.date"
               class="day-head"
-              :class="{ saturday: column.isSaturday }"
+              :class="{ sunday: column.isSunday }"
+              :data-date="column.date"
             >
               <span>{{ column.monthDay }}</span>
               <small>{{ column.weekday }}</small>
@@ -19,14 +20,17 @@
         <tbody>
           <template v-for="group in groups" :key="group.wf_num">
             <tr class="wf-row">
-              <td class="sticky-col wf-cell" :colspan="1 + dateColumns.length">
+              <td class="sticky-col wf-cell">
                 <button type="button" class="wf-toggle" @click="toggleWf(group.wf_num)">
-                  <span class="chevron" :class="{ closed: !isOpen(group.wf_num) }">⌄</span>
+                  <svg class="chevron" :class="{ closed: !isOpen(group.wf_num) }" viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
                   <span class="wf-pill">WF{{ group.wf_num }}</span>
                   <span class="wf-name">{{ group.wf_name }}</span>
                   <span class="wf-count">{{ group.rows.length }} configs</span>
                 </button>
               </td>
+              <td class="wf-fill" :colspan="dateColumns.length"></td>
             </tr>
 
             <tr
@@ -38,8 +42,7 @@
               <td class="sticky-col test-cell">
                 <span class="cfg-badge" :style="badgeStyle(row.config)">{{ row.config }}</span>
                 <div class="test-copy">
-                  <strong>{{ summaryLabel(row) }}</strong>
-                  <small>{{ row.test_count }} tests · {{ row.planned_start_date }} → {{ row.planned_end_date }}</small>
+                  <small>→ {{ row.planned_end_date }}</small>
                 </div>
               </td>
 
@@ -50,24 +53,21 @@
                 :style="cellStyle(row, column)"
                 :class="cellClass(row, column)"
                 :title="cellTitle(row, column)"
+                :data-date="column.date"
               >
-                <span v-if="startCount(row, column.date)" class="edge-flag start-flag">
-                  {{ startCount(row, column.date) }}
-                </span>
-                <span v-if="endCount(row, column.date)" class="edge-flag end-flag">
-                  {{ endCount(row, column.date) }}
-                </span>
                 <span
-                  v-for="(cp, index) in visibleCpMarkers(row, column.date)"
+                  v-if="edgeMarkerOnDate(row, column.date)"
+                  class="edge-marker"
+                  :class="`edge-marker-${edgeMarkerOnDate(row, column.date).type}`"
+                >{{ edgeMarkerOnDate(row, column.date).label }}</span>
+
+                <span
+                  v-for="(cp, index) in displayCpsOnDate(row, column.date)"
                   :key="`${rowKey(row)}-${column.date}-${cp.test_idx}-${cp.cp_idx}`"
-                  class="cp-dot"
-                  :style="cpDotStyle(index)"
-                >
-                  <i></i>
-                </span>
-                <span v-if="hiddenCpCount(row, column.date)" class="cp-more">
-                  +{{ hiddenCpCount(row, column.date) }}
-                </span>
+                  class="cp-text"
+                  :style="cpDotStyle(index, displayCpsOnDate(row, column.date).length)"
+                  :title="cp.cp_title || cp.cp_name"
+                >{{ cp.display_cp_idx ?? cp.cp_idx }}</span>
               </td>
             </tr>
           </template>
@@ -78,7 +78,8 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue'
+import { nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { summarizeDailyCpMarkers } from '@/views/scheduleDisplay'
 
 const props = defineProps({
   groups: { type: Array, default: () => [] },
@@ -87,6 +88,7 @@ const props = defineProps({
 })
 
 const expandedWfs = reactive({})
+const sheetScroll = ref(null)
 
 function rowKey(row) {
   return row.lane_key || `${row.wf_num}-${row.config}-${row.test_idx}`
@@ -106,29 +108,50 @@ function cpsOnDate(row, date) {
     .map((cp) => ({ ...cp, test_idx: test.test_idx, test_name: test.test_name })))
 }
 
+function displayCpsOnDate(row, date) {
+  return summarizeDailyCpMarkers(cpsOnDate(row, date))
+}
+
+function edgeMarkerOnDate(row, date) {
+  return (row.edge_markers || []).find((marker) => marker.date === date) || null
+}
+
+function isDateInRange(row, date) {
+  return laneTests(row).some((test) => {
+    const start = test.planned_start_date || test.days?.[0]
+    const end = test.planned_end_date || test.days?.[test.days.length - 1]
+    return start && end && date >= start && date <= end
+  })
+}
+
 function cellClass(row, column) {
-  const active = testsOnDate(row, column.date).length > 0
+  const onDay = testsOnDate(row, column.date).length > 0
+  const active = onDay || (column.isSunday && isDateInRange(row, column.date))
   return {
-    saturday: column.isSaturday,
+    sunday: column.isSunday,
     active,
+    'actual-progress': isActualProgressDate(row, column.date),
+    hasEdgeMarker: Boolean(edgeMarkerOnDate(row, column.date)),
     start: startCount(row, column.date) > 0,
     end: endCount(row, column.date) > 0
   }
 }
 
 function cellTitle(row, column) {
-  const cps = cpsOnDate(row, column.date).map((cp) => cp.cp_name).join(', ')
   const tests = testsOnDate(row, column.date).map((test) => test.test_name).join(' / ')
-  if (!tests && !cps) return column.date
-  return `${column.date} · ${tests || row.test_name}${cps ? ` · ${cps}` : ''}`
+  if (!tests) return column.date
+  return `${column.date} · ${tests || row.test_name}`
 }
 
 function cellStyle(row, column) {
-  if (!testsOnDate(row, column.date).length) return {}
+  const onDay = testsOnDate(row, column.date).length > 0
+  const inRange = onDay || isActualProgressDate(row, column.date) || (column.isSunday && isDateInRange(row, column.date))
+  if (!inRange) return {}
   const color = barColor(row.config)
   return {
     '--schedule-color': color,
-    '--schedule-soft': `${color}22`
+    '--schedule-soft': `${color}22`,
+    '--actual-progress-soft': `${color}33`
   }
 }
 
@@ -169,37 +192,109 @@ function endCount(row, date) {
   return endsOnDate(row, date).length
 }
 
-function visibleCpMarkers(row, date) {
-  return cpsOnDate(row, date).slice(0, 2)
+function isActualProgressDate(row, date) {
+  const progressEnd = row.actual_progress?.end_date
+  if (!row.planned_start_date || !progressEnd) return false
+  return date >= row.planned_start_date && date <= progressEnd
 }
 
-function hiddenCpCount(row, date) {
-  return Math.max(0, cpsOnDate(row, date).length - 2)
+function localIsoDate(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-function cpDotStyle(index) {
+async function scrollTodayIntoView() {
+  await nextTick()
+  const container = sheetScroll.value
+  if (!container) return
+
+  const today = localIsoDate()
+  const target = container.querySelector(`.day-head[data-date="${today}"]`)
+  if (!target) return
+
+  const targetCenter = target.offsetLeft + target.offsetWidth / 2
+  container.scrollLeft = Math.max(0, targetCenter - container.clientWidth / 2)
+}
+
+function cpDotStyle(index, total) {
+  if (total <= 3) {
+    const textWidth = 18
+    const gap = 4
+    const totalWidth = total * textWidth + (total - 1) * gap
+    const offset = (68 - totalWidth) / 2 + index * (textWidth + gap)
+    return { left: `${Math.max(2, offset)}px` }
+  }
+
+  const columns = Math.min(4, Math.ceil(Math.sqrt(total)))
+  const cellWidth = 16
+  const cellHeight = 15
+  const gapX = 1
+  const gapY = 1
+  const row = Math.floor(index / columns)
+  const column = index % columns
+  const rows = Math.ceil(total / columns)
+  const totalWidth = columns * cellWidth + (columns - 1) * gapX
+  const totalHeight = rows * cellHeight + (rows - 1) * gapY
   return {
-    '--cp-offset': `${8 + index * 11}px`
+    left: `${Math.max(1, (68 - totalWidth) / 2 + column * (cellWidth + gapX))}px`,
+    top: `${Math.max(1, (36 - totalHeight) / 2 + row * (cellHeight + gapY))}px`,
+    transform: 'none'
   }
 }
 
-function summaryLabel(row) {
-  const names = row.test_names || []
-  if (!names.length) return row.test_name
-  if (names.length === 1) return names[0]
-  if (names.length === 2) return `${names[0]} / ${names[1]}`
-  return `${names[0]} / ${names[1]} +${names.length - 2}`
-}
+onMounted(scrollTodayIntoView)
+watch(() => props.dateColumns.map((column) => column.date).join('|'), scrollTodayIntoView)
 </script>
 
 <style scoped>
 .schedule-sheet {
+  min-height: 0;
+  flex: 1;
   overflow: hidden;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
 }
 
 .sheet-scroll {
-  overflow: auto;
-  max-height: calc(100vh - 270px);
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: auto;
+  scrollbar-gutter: stable both-edges;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.sheet-scroll:hover {
+  scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+.sheet-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 0;
+}
+
+.sheet-scroll:hover::-webkit-scrollbar {
+  height: 6px;
+}
+
+.sheet-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sheet-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.sheet-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.sheet-scroll:hover::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
 }
 
 table {
@@ -220,18 +315,19 @@ thead th {
   position: sticky;
   top: 0;
   z-index: 5;
-  height: 48px;
-  padding: 4px 6px;
+  height: 36px;
+  padding: 2px 6px;
   background: var(--bg-card);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   font-size: 11px;
   text-align: center;
   vertical-align: middle;
+  box-shadow: 0 1px 0 var(--border-card);
 }
 
 .day-head {
-  width: 56px;
+  width: 68px;
 }
 
 .day-head span,
@@ -251,45 +347,61 @@ thead th {
   position: sticky;
   left: 0;
   z-index: 4;
+  box-shadow: 1px 0 0 var(--border-card), 8px 0 14px rgba(15, 23, 42, 0.06);
 }
 
 thead .sticky-col {
   z-index: 7;
+  box-shadow: 1px 0 0 var(--border-card), 8px 0 14px rgba(15, 23, 42, 0.06), 0 1px 0 var(--border-card);
 }
 
 .test-col {
-  width: 320px;
-  min-width: 320px;
-  padding: 0 14px;
-  text-align: left;
+  width: 160px;
+  min-width: 160px;
+  padding: 0 10px;
+  text-align: center;
   background: var(--bg-card);
 }
 
 .wf-row td {
-  height: 40px;
-  background: var(--bg-row-stripe);
+  height: 34px;
+  background: color-mix(in srgb, var(--border-card) 40%, var(--bg-card));
 }
 
 .wf-cell {
   padding: 0;
+  overflow: visible;
+}
+
+.wf-fill {
+  padding: 0;
 }
 
 .wf-toggle {
-  width: 320px;
-  height: 40px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 1;
+  width: max-content;
+  min-width: 100%;
+  height: 34px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 12px;
+  gap: 6px;
+  padding: 0 10px;
   border: 0;
-  background: var(--bg-row-stripe);
+  background: color-mix(in srgb, var(--border-card) 40%, var(--bg-card));
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
 }
 
 .chevron {
-  width: 14px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: var(--text-muted);
   transition: transform var(--duration-fast);
 }
@@ -303,51 +415,58 @@ thead .sticky-col {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 23px;
+  height: 20px;
   border-radius: var(--radius-sm);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .wf-pill {
-  min-width: 56px;
-  background: var(--bg-tag);
-  color: var(--text-secondary);
+  min-width: 52px;
+  height: 22px;
+  background: var(--accent-steel);
+  color: #fff;
+  font-size: 11px;
 }
 
 .wf-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .wf-count {
-  color: var(--text-muted);
-  font-size: 12px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 .test-row {
-  height: 58px;
+  height: 36px;
 }
 
 .test-cell {
-  width: 320px;
-  min-width: 320px;
+  width: 160px;
+  min-width: 160px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  height: 58px;
-  padding: 7px 12px;
+  gap: 8px;
+  height: 36px;
+  padding: 2px 8px;
   background: var(--bg-card);
 }
 
 .cfg-badge {
-  min-width: 58px;
+  min-width: 46px;
   border: 1px solid;
 }
 
@@ -377,29 +496,44 @@ thead .sticky-col {
 }
 
 .day-cell {
-  width: 56px;
-  height: 58px;
+  width: 68px;
+  height: 36px;
   padding: 0;
   vertical-align: middle;
   background: var(--bg-card);
   position: relative;
 }
 
-.day-head.saturday,
-.day-cell.saturday {
-  background: color-mix(in srgb, var(--color-warning-bg) 42%, var(--bg-card));
+.day-head.sunday,
+.day-cell.sunday {
+  background: color-mix(in srgb, var(--text-muted) 8%, var(--bg-card));
+  color: var(--text-muted);
 }
 
 .day-cell.active {
   background:
-    linear-gradient(to bottom, transparent 22px, var(--schedule-soft) 22px, var(--schedule-soft) 44px, transparent 44px),
+    linear-gradient(to bottom, transparent 4px, var(--schedule-soft) 4px, var(--schedule-soft) 32px, transparent 32px),
     var(--bg-card);
 }
 
-.day-cell.active.saturday {
+.day-cell.active.sunday {
   background:
-    linear-gradient(to bottom, transparent 22px, var(--schedule-soft) 22px, var(--schedule-soft) 44px, transparent 44px),
-    color-mix(in srgb, var(--color-warning-bg) 42%, var(--bg-card));
+    linear-gradient(to bottom, transparent 4px, var(--schedule-soft) 4px, var(--schedule-soft) 32px, transparent 32px),
+    color-mix(in srgb, var(--text-muted) 8%, var(--bg-card));
+}
+
+.day-cell.actual-progress {
+  background:
+    linear-gradient(to bottom, transparent 8px, var(--actual-progress-soft) 8px, var(--actual-progress-soft) 28px, transparent 28px),
+    linear-gradient(to bottom, transparent 4px, var(--schedule-soft) 4px, var(--schedule-soft) 32px, transparent 32px),
+    var(--bg-card);
+}
+
+.day-cell.actual-progress.sunday {
+  background:
+    linear-gradient(to bottom, transparent 8px, var(--actual-progress-soft) 8px, var(--actual-progress-soft) 28px, transparent 28px),
+    linear-gradient(to bottom, transparent 4px, var(--schedule-soft) 4px, var(--schedule-soft) 32px, transparent 32px),
+    color-mix(in srgb, var(--text-muted) 8%, var(--bg-card));
 }
 
 .day-cell.start {
@@ -410,63 +544,63 @@ thead .sticky-col {
   box-shadow: inset -3px 0 0 var(--schedule-color);
 }
 
-.edge-flag {
+.edge-marker {
   position: absolute;
-  top: 24px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   z-index: 2;
-  min-width: 14px;
-  height: 14px;
+  min-width: 36px;
+  height: 20px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  padding: 0 6px;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--schedule-color) 30%, transparent);
-  background: var(--bg-card);
+  background: color-mix(in srgb, var(--schedule-color) 16%, var(--bg-card));
   color: var(--schedule-color);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
   pointer-events: none;
 }
 
-.start-flag {
-  left: 3px;
+.edge-marker-start {
+  background: #ede9fe;
+  color: #5b21b6;
 }
 
-.end-flag {
-  right: 3px;
+.edge-marker-end {
+  background: #dcfce7;
+  color: #166534;
 }
 
-.cp-dot,
-.cp-more {
+.cp-text {
   position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
   z-index: 3;
-  pointer-events: none;
-}
-
-.cp-dot {
-  left: 50%;
-  top: var(--cp-offset);
-  transform: translateX(-50%);
-}
-
-.cp-dot i {
-  display: block;
-  width: 8px;
-  height: 8px;
-  border: 1px solid var(--bg-card);
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
-  background: var(--schedule-color);
-  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.16);
-}
-
-.cp-more {
-  right: 3px;
-  top: 5px;
-  color: var(--text-muted);
+  background: color-mix(in srgb, var(--schedule-color) 24%, var(--bg-card));
+  color: var(--schedule-color);
   font-family: var(--font-mono);
   font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+.cp-text:hover {
+  transform: translateY(-50%) scale(1.16);
+}
+
+.cp-text[style*="transform: none"]:hover {
+  transform: scale(1.16) !important;
 }
 
 @media (max-width: 720px) {
@@ -475,10 +609,9 @@ thead .sticky-col {
   }
 
   .test-col,
-  .test-cell,
-  .wf-toggle {
-    width: 260px;
-    min-width: 260px;
+  .test-cell {
+    width: 130px;
+    min-width: 130px;
   }
 }
 </style>

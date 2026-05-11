@@ -28,6 +28,18 @@ export function enumerateScheduleDays(startDate, endDate) {
   return days
 }
 
+export function enumerateCalendarDays(startDate, endDate) {
+  const start = parseIsoDate(startDate)
+  const end = parseIsoDate(endDate)
+  if (!start || !end || start > end) return []
+
+  const days = []
+  for (let cursor = start; cursor <= end; cursor = addDays(cursor, 1)) {
+    days.push(toIsoDate(cursor))
+  }
+  return days
+}
+
 export function distributeCpsAcrossDays(cps = [], startDate, endDate, maxVisible = 6) {
   const days = enumerateScheduleDays(startDate, endDate)
   const placementDays = days.length ? days : [startDate].filter(Boolean)
@@ -48,6 +60,131 @@ export function distributeCpsAcrossDays(cps = [], startDate, endDate, maxVisible
       visible: visibleIndexes.has(index)
     }
   })
+}
+
+export function distributeDailyCpLabels(cps = [], startDate, endDate) {
+  const workDays = enumerateScheduleDays(startDate, endDate)
+  const placementDays = workDays.length > 2 ? workDays.slice(1, -1) : workDays
+  if (!placementDays.length || !cps.length) return []
+
+  const sortedCps = [...cps].sort((a, b) => Number(a.cp_idx) - Number(b.cp_idx))
+  if (sortedCps.length >= placementDays.length) {
+    return placementDays.map((day, index) => {
+      const cpIndex = Math.min(
+        sortedCps.length - 1,
+        Math.ceil(((index + 1) * sortedCps.length) / placementDays.length) - 1
+      )
+      return {
+        ...sortedCps[cpIndex],
+        planned_date: day,
+        display_day_idx: index
+      }
+    })
+  }
+
+  const lastCpIndex = Math.max(0, sortedCps.length - 1)
+  const lastDayIndex = Math.max(0, placementDays.length - 1)
+  return sortedCps.map((cp, index) => {
+    const dayIndex = lastCpIndex === 0
+      ? Math.round(lastDayIndex / 2)
+      : Math.round((index * lastDayIndex) / lastCpIndex)
+    return {
+      ...cp,
+      planned_date: placementDays[dayIndex],
+      display_day_idx: dayIndex
+    }
+  })
+}
+
+function previousScheduleDay(days, targetDate) {
+  if (!days.length) return ''
+  const targetIndex = days.indexOf(targetDate)
+  if (targetIndex > 0) return days[targetIndex - 1]
+  if (targetIndex === 0) return days[0]
+  return days[days.length - 1]
+}
+
+export function distributeTestCpLabels(cps = [], startDate, endDate, maxVisible = 6, options = {}) {
+  const allDays = enumerateScheduleDays(startDate, endDate)
+  if (!allDays.length || !cps.length) return []
+
+  const sortedCps = [...cps].sort((a, b) => Number(a.cp_idx) - Number(b.cp_idx))
+  const targetDate = options.avoidEndDate
+    ? previousScheduleDay(allDays, endDate)
+    : (allDays.includes(endDate) ? endDate : allDays[allDays.length - 1])
+  const targetIndex = Math.max(0, allDays.indexOf(targetDate))
+  const startOffset = options.avoidStartDate && sortedCps.length > 1 && targetIndex > 0 ? 1 : 0
+  const placementDays = allDays.slice(startOffset, targetIndex + 1)
+  if (!placementDays.length) return []
+
+  const lastCpIndex = Math.max(0, sortedCps.length - 1)
+  const lastDayIndex = Math.max(0, placementDays.length - 1)
+
+  return sortedCps.map((cp, index) => {
+    const dayIndex = lastCpIndex === 0
+      ? lastDayIndex
+      : Math.ceil(((index + 1) * placementDays.length) / sortedCps.length) - 1
+    return {
+      ...cp,
+      planned_date: placementDays[Math.min(lastDayIndex, Math.max(0, dayIndex))],
+      display_cp_idx: index + 1,
+      visible: true
+    }
+  })
+}
+
+function cpOrderValue(cp) {
+  return [
+    Number(cp.test_idx ?? 0),
+    Number(cp.display_cp_idx ?? cp.cp_idx ?? 0),
+    Number(cp.cp_idx ?? 0)
+  ]
+}
+
+export function summarizeDailyCpMarkers(cps = []) {
+  if (!cps.length) return []
+
+  const ordered = [...cps].sort((a, b) => {
+    const left = cpOrderValue(a)
+    const right = cpOrderValue(b)
+    for (let index = 0; index < left.length; index += 1) {
+      if (left[index] !== right[index]) return left[index] - right[index]
+    }
+    return 0
+  })
+  const cpNames = ordered.map((cp) => cp.cp_name).filter(Boolean)
+  const lastCp = ordered[ordered.length - 1]
+
+  return [{
+    ...lastCp,
+    daily_cp_names: cpNames,
+    cp_title: cpNames.join('\n')
+  }]
+}
+
+export function buildActualProgress(scheduledCps = [], progress = {}) {
+  if (progress.current_cp_idx === null || progress.current_cp_idx === undefined || progress.current_cp_idx === '') {
+    return null
+  }
+  const currentCpIdx = Number(progress.current_cp_idx)
+  if (!Number.isFinite(currentCpIdx)) return null
+
+  const orderedCps = [...scheduledCps]
+    .filter((cp) => Number.isFinite(Number(cp.cp_idx)) && cp.planned_date)
+    .sort((a, b) => Number(a.cp_idx) - Number(b.cp_idx))
+  const completedCp = orderedCps
+    .filter((cp) => Number(cp.cp_idx) <= currentCpIdx)
+    .at(-1)
+
+  if (!completedCp) return null
+
+  return {
+    current_cp_idx: currentCpIdx,
+    current_cp_name: progress.current_cp_name || completedCp.cp_name || '',
+    total_cps: Number(progress.total_cps) || 0,
+    sn_count: Number(progress.sn_count) || 0,
+    end_date: completedCp.planned_date
+  }
 }
 
 export function sampleIndexes(count, maxVisible = 6) {
@@ -71,12 +208,18 @@ export function buildScheduleRows(segments = [], maxVisibleCps = 6) {
       segment.planned_end_date,
       maxVisibleCps
     )
+    const dailyCps = distributeDailyCpLabels(
+      segment.cps || [],
+      segment.planned_start_date,
+      segment.planned_end_date
+    )
     return {
       ...segment,
       days,
       duration_days: days.length,
       scheduled_cps: scheduledCps,
-      visible_cps: scheduledCps.filter((cp) => cp.visible)
+      daily_cps: dailyCps,
+      visible_cps: dailyCps
     }
   })
 }
@@ -122,24 +265,48 @@ export function buildScheduleLanes(rows = []) {
       const plannedStart = minDate(tests.map((test) => test.planned_start_date))
       const plannedEnd = maxDate(tests.map((test) => test.planned_end_date))
       const days = enumerateScheduleDays(plannedStart, plannedEnd)
-      const scheduledCps = tests.flatMap((test) => test.scheduled_cps || [])
-      const visibleCps = tests.flatMap((test) => test.visible_cps || [])
+      const testsWithLaneLabels = tests.map((test) => {
+        const visibleCps = distributeTestCpLabels(
+          test.cps || [],
+          test.planned_start_date,
+          test.planned_end_date,
+          6,
+          {
+            avoidStartDate: test.planned_start_date === plannedStart,
+            avoidEndDate: test.planned_end_date === plannedEnd
+          }
+        )
+        return {
+          ...test,
+          visible_cps: visibleCps,
+          scheduled_cps: visibleCps
+        }
+      })
+      const scheduledCps = testsWithLaneLabels.flatMap((test) => test.scheduled_cps || [])
+      const visibleCps = testsWithLaneLabels.flatMap((test) => test.visible_cps || [])
+      const progressSource = tests.find((test) => test.current_cp_idx !== undefined) || {}
+      const actualProgress = buildActualProgress(scheduledCps, progressSource)
       const testNames = [...new Set(tests.map((test) => test.test_name).filter(Boolean))]
       const scheduleItems = [...new Set(tests.map((test) => test.schedule_test_item).filter(Boolean))]
 
       return {
         ...lane,
-        tests,
+        tests: testsWithLaneLabels,
         test_count: tests.length,
         test_name: lane.wf_name || scheduleItems[0] || lane.test_name,
         test_names: testNames,
         schedule_items: scheduleItems,
         planned_start_date: plannedStart,
         planned_end_date: plannedEnd,
+        edge_markers: [
+          plannedStart ? { date: plannedStart, label: 'T0', type: 'start' } : null,
+          plannedEnd ? { date: plannedEnd, label: 'END', type: 'end' } : null
+        ].filter(Boolean),
         days,
         duration_days: days.length,
         scheduled_cps: scheduledCps,
-        visible_cps: visibleCps
+        visible_cps: visibleCps,
+        actual_progress: actualProgress
       }
     })
     .sort((a, b) => {
@@ -158,7 +325,7 @@ export function buildScheduleDateColumns(rows = []) {
   const ends = rows.map((row) => row.planned_end_date).filter(Boolean).sort()
   if (!starts.length || !ends.length) return []
 
-  return enumerateScheduleDays(starts[0], ends[ends.length - 1]).map((date) => {
+  return enumerateCalendarDays(starts[0], ends[ends.length - 1]).map((date) => {
     const parsed = parseIsoDate(date)
     return {
       date,
@@ -166,6 +333,7 @@ export function buildScheduleDateColumns(rows = []) {
       weekday: parsed
         ? ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][parsed.getUTCDay()]
         : '',
+      isSunday: parsed ? parsed.getUTCDay() === 0 : false,
       isSaturday: parsed ? parsed.getUTCDay() === 6 : false
     }
   })
@@ -179,6 +347,12 @@ export function groupScheduleByWf(rows = []) {
       groups.set(wf, { wf_num: wf, wf_name: row.wf_name || '', rows: [] })
     }
     groups.get(wf).rows.push(row)
+  }
+  for (const group of groups.values()) {
+    const starts = group.rows.map(r => r.planned_start_date).filter(Boolean).sort()
+    const ends = group.rows.map(r => r.planned_end_date).filter(Boolean).sort()
+    group.planned_start_date = starts[0]
+    group.planned_end_date = ends[ends.length - 1]
   }
   return [...groups.values()].sort((a, b) => Number(a.wf_num) - Number(b.wf_num))
 }

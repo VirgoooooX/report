@@ -26,6 +26,7 @@ class ApiConsistencyTests(unittest.TestCase):
         self.conn.execute("DELETE FROM sn_check_state_history")
         self.conn.execute("DELETE FROM sn_check_results")
         self.conn.execute("DELETE FROM report_cps")
+        self.conn.execute("DELETE FROM report_schedule_segments")
         self.conn.execute("DELETE FROM report_test_names")
         self.conn.execute("DELETE FROM wf_results")
         self.conn.execute("DELETE FROM report_stats")
@@ -201,6 +202,44 @@ class ApiConsistencyTests(unittest.TestCase):
         self.assertEqual(wf['test_names'], ['Random Drop', 'Battery Swap', 'Random Drop'])
         self.assertEqual(wf['config_results']['R1FNF'][0]['result'], '0F/4T')
         self.assertEqual(wf['config_results']['R1FNF'][2]['result'], '0F/0T')
+
+    def test_schedule_includes_wf_config_current_progress(self):
+        """/api/schedule should include latest WF+config current CP progress per segment."""
+        rid = self._seed_report()
+        self.conn.execute(
+            """INSERT INTO report_schedule_segments
+               (report_id, wf_num, config, test_idx, test_name, schedule_test_item,
+                planned_start_date, planned_end_date, confidence, inference_reason, marker_labels)
+               VALUES (?, '16.1', 'R3', 0, 'Thermal', 'Thermal',
+                       '2026-05-01', '2026-05-03', 'high', 'seed', '[]')""",
+            (rid,),
+        )
+        for cp_idx in range(3):
+            self.conn.execute(
+                "INSERT INTO report_cps (report_id, wf_num, cp_idx, cp_name, test_idx) VALUES (?, '16.1', ?, ?, 0)",
+                (rid, cp_idx, f'CP{cp_idx + 1}'),
+            )
+        self.conn.execute(
+            """INSERT INTO sn_progress
+               (report_id, wf_num, config, sn, current_cp_idx, current_cp_name, total_cps)
+               VALUES (?, '16.1', 'R3', 'SN001', 1, 'CP2', 3)""",
+            (rid,),
+        )
+        self.conn.execute(
+            """INSERT INTO sn_progress
+               (report_id, wf_num, config, sn, current_cp_idx, current_cp_name, total_cps)
+               VALUES (?, '16.1', 'R3', 'SN002', 2, 'CP3', 3)""",
+            (rid,),
+        )
+        self.conn.commit()
+
+        data = api.app.test_client().get('/api/schedule').get_json()
+        segment = data['segments'][0]
+
+        self.assertEqual(segment['current_cp_idx'], 2)
+        self.assertEqual(segment['current_cp_name'], 'CP3')
+        self.assertEqual(segment['total_cps'], 3)
+        self.assertEqual(segment['sn_count'], 2)
 
     def test_summary_in_progress(self):
         """WF 16.1, config R3, Test1 CP range 0..1, latest current CP 0 → status 'in_progress'."""

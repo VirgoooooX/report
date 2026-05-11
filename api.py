@@ -802,12 +802,23 @@ def api_schedule():
                 'cp_idx': row['cp_idx'],
                 'cp_name': row['cp_name'],
             })
+        progress_by_key = {}
+        for row in get_wf_config_progress_rows(conn, report['id']):
+            if row['wf_num'] in {'43', '44'}:
+                continue
+            progress_by_key[(row['wf_num'], row['config'])] = {
+                'current_cp_idx': row['max_cp_idx'],
+                'current_cp_name': row['cp_name'] or '',
+                'total_cps': row['total_cps'] or 0,
+                'sn_count': row['sn_count'] or 0,
+            }
 
         payload_segments = []
         for segment in segments:
             wf_meta_value = wf_meta.get(segment['wf_num'], '')
             if isinstance(wf_meta_value, dict):
                 wf_meta_value = wf_meta_value.get('name', '')
+            progress = progress_by_key.get((segment['wf_num'], segment['config']), {})
             payload_segments.append({
                 'wf_num': segment['wf_num'],
                 'wf_name': wf_meta_value,
@@ -821,6 +832,10 @@ def api_schedule():
                 'inference_reason': segment.get('inference_reason', ''),
                 'marker_labels': segment.get('marker_labels', []),
                 'cps': cps_by_key.get((segment['wf_num'], segment['test_idx']), []),
+                'current_cp_idx': progress.get('current_cp_idx'),
+                'current_cp_name': progress.get('current_cp_name', ''),
+                'total_cps': progress.get('total_cps', 0),
+                'sn_count': progress.get('sn_count', 0),
             })
 
         payload_segments.sort(key=lambda row: (
