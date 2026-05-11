@@ -25,6 +25,7 @@ from db import (
     get_cell_failures, get_report_schedule_segments, save_report_schedule_segments,
     get_report_test_names,
 )
+from processor import process_newest, REPORT_PATTERN, FA_PATTERN
 
 BASE_DIR = os.path.dirname(__file__)
 VUE_STATIC = os.path.join(BASE_DIR, 'static')
@@ -1604,6 +1605,73 @@ def api_daily_issues():
         },
         'issues': sorted(issues, key=lambda x: (x['wf'], x['config'], x['sn'])),
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Upload
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/api/upload', methods=['POST'])
+def upload_report():
+    daily_file = request.files.get('daily_report')
+    if not daily_file or not daily_file.filename:
+        return jsonify({'success': False, 'error': 'Missing daily_report file'}), 400
+
+    daily_name = daily_file.filename
+    fa_file = request.files.get('fa_tracker')
+
+    # Validate Daily Report filename
+    dm = REPORT_PATTERN.match(daily_name)
+    if not dm:
+        return jsonify({'success': False, 'error': f'Invalid Daily Report filename: {daily_name}'}), 400
+    report_date = dm.group(1)
+
+    # Validate FA Tracker filename (optional)
+    if fa_file and fa_file.filename:
+        fm = FA_PATTERN.match(fa_file.filename)
+        if not fm:
+            return jsonify({'success': False, 'error': f'Invalid FA Tracker filename: {fa_file.filename}'}), 400
+
+    # Save files to data/
+    daily_path = os.path.join(DATA_DIR, daily_name)
+    daily_file.save(daily_path)
+
+    if fa_file and fa_file.filename:
+        fa_path = os.path.join(DATA_DIR, fa_file.filename)
+        fa_file.save(fa_path)
+
+    # Overwrite old data for this date
+    conn = get_conn()
+    old = conn.execute("SELECT id FROM reports WHERE report_date = ?", (report_date,)).fetchall()
+    old_ids = [r['id'] for r in old]
+    if old_ids:
+        p = ','.join('?' * len(old_ids))
+        for table in ['wf_results', 'report_stats', 'daily_changes', 'sn_progress',
+                      'report_wf_meta', 'report_test_names', 'report_cps',
+                      'report_schedule_segments', 'definition_changes']:
+            conn.execute(f"DELETE FROM {table} WHERE report_id IN ({p})", old_ids)
+        for table in ['sn_cp_results', 'sn_check_results']:
+            conn.execute(f"DELETE FROM {table} WHERE report_date = ?", (report_date,))
+        conn.execute(f"DELETE FROM sn_check_state_history WHERE report_id IN ({p})", old_ids)
+        conn.execute(f"DELETE FROM reports WHERE id IN ({p})", old_ids)
+        conn.commit()
+    conn.close()
+
+    # Parse
+    try:
+        result = process_newest()
+        if not result:
+            return jsonify({'success': False, 'error': 'No report file found to process'}), 500
+
+        return jsonify({
+            'success': True,
+            'report_date': result.get('date', report_date),
+            'wf_count': result.get('wfs', 0),
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 # ═══════════════════════════════════════════════════════════════════════

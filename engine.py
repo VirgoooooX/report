@@ -12,6 +12,13 @@ CHECK_NAMES = {'Cosmetic','ISB','FACT','BT-OTA','Touch-CAL-Post','Charging','But
 logger = logging.getLogger(__name__)
 
 NON_CP_HEADERS = {'Comments', 'Overall Result', 'Return to Summary'}
+CONFIGS = ('R1FNF', 'R2CNM', 'R3', 'R4')
+ER_UNIT_CONFIG_MAP = {
+    '1': 'R1FNF',
+    '2': 'R2CNM',
+    '3': 'R3',
+    '4': 'R4',
+}
 
 
 def is_cp_header_label(value):
@@ -26,6 +33,28 @@ def is_cp_header_label(value):
     if re.sub(r'[^a-z0-9]+', '', label.lower()) == 't0':
         return False
     return True
+
+
+def infer_config_from_unit_num(unit_num):
+    """Infer config for cleaning-style sheets whose Config column is blank."""
+    match = re.match(r'^ER([1-4])(?:\D|$)', str(unit_num or '').strip(), re.I)
+    return ER_UNIT_CONFIG_MAP.get(match.group(1)) if match else None
+
+
+def resolve_row_config(explicit_config, default_config=None, unit_num=None):
+    cfg = str(explicit_config).strip() if explicit_config is not None else ''
+    if cfg in CONFIGS:
+        return cfg
+    return default_config or infer_config_from_unit_num(unit_num)
+
+
+def has_pre_cp_data(ws, row_idx, first_cp_col):
+    """Return True when S/N-adjacent baseline/T0 columns contain real data."""
+    for col_idx in range(6, max(6, first_cp_col)):
+        value = ws.cell(row_idx, col_idx).value
+        if value is not None and str(value).strip() != '/':
+            return True
+    return False
 
 def wf_sort_key(wfn):
     """自然排序键：WF1, WF2, ..., WF10, WF11, WF14.1, WF14.2"""
@@ -813,12 +842,11 @@ def _parse_wf_sheet(ws, wfn, ts_names):
             config = None
             while dr <= ws.max_row:
                 cv = ws.cell(dr, 3).value
-                if cv in ('R1FNF', 'R2CNM', 'R3', 'R4'): config = cv; break
+                if cv in CONFIGS: config = cv; break
                 dr += 1
-            if not config: r += 1; continue
             
             # Init results
-            if config not in results:
+            if config and config not in results:
                 results[config] = {
                     ti: {'total': 0, 'spec_fails': [], 'strife_fails': [], 'failure_details': []}
                     for ti in range(num_tests)
@@ -835,11 +863,14 @@ def _parse_wf_sheet(ws, wfn, ts_names):
                     else: dr += 1; continue
                 
                 sn = ws.cell(dr, 5).value
-                t0 = ws.cell(dr, 6).value
+                unit_num = ws.cell(dr, 4).value
                 if dcfg == 'Config' or (sn and str(sn).strip() == 'S/N'): dr += 1; continue
-                if not sn or not t0: dr += 1; continue
+                if not sn or not has_pre_cp_data(ws, dr, cp_list[0][0]): dr += 1; continue
                 
-                row_cfg = str(dcfg).strip() if dcfg and str(dcfg).strip() in ('R1FNF','R2CNM','R3','R4') else config
+                row_cfg = resolve_row_config(dcfg, config, unit_num)
+                if not row_cfg:
+                    dr += 1
+                    continue
                 if row_cfg not in results:
                     results[row_cfg] = {}
                     for ti in range(num_tests):
@@ -1152,13 +1183,10 @@ def _extract_wf_progress(ws, ts_names):
             config = None
             while dr <= ws.max_row:
                 cv = ws.cell(dr, 3).value
-                if cv in ('R1FNF', 'R2CNM', 'R3', 'R4'):
+                if cv in CONFIGS:
                     config = cv
                     break
                 dr += 1
-            if not config:
-                r += 1
-                continue
 
             # ── 遍历数据行 ──
             dr = r + 2
@@ -1174,16 +1202,18 @@ def _extract_wf_progress(ws, ts_names):
                         continue
 
                 sn = ws.cell(dr, 5).value
-                t0 = ws.cell(dr, 6).value
+                unit_num = ws.cell(dr, 4).value
                 if dcfg == 'Config' or (sn and str(sn).strip() == 'S/N'):
                     dr += 1
                     continue
-                if not sn or not t0:
+                if not sn or not has_pre_cp_data(ws, dr, cp_list[0][0]):
                     dr += 1
                     continue
 
-                row_cfg = str(dcfg).strip() if dcfg and str(dcfg).strip() in ('R1FNF', 'R2CNM', 'R3', 'R4') else config
-                unit_num = ws.cell(dr, 4).value
+                row_cfg = resolve_row_config(dcfg, config, unit_num)
+                if not row_cfg:
+                    dr += 1
+                    continue
                 unit_num_str = str(unit_num).strip() if unit_num is not None else ''
 
                 # ── 找到 last_real CP（当前所在 CP） ──
@@ -1310,13 +1340,10 @@ def extract_wf_fact_rows(ws, wf_num, report_id, report_date, ts_names):
             default_config = None
             while dr <= ws.max_row:
                 cv = ws.cell(dr, 3).value
-                if cv in ('R1FNF', 'R2CNM', 'R3', 'R4'):
+                if cv in CONFIGS:
                     default_config = cv
                     break
                 dr += 1
-            if not default_config:
-                r += 1
-                continue
 
             dr = r + 2
             while dr <= ws.max_row:
@@ -1326,13 +1353,15 @@ def extract_wf_fact_rows(ws, wf_num, report_id, report_date, ts_names):
                     break
 
                 sn = ws.cell(dr, 5).value
-                t0 = ws.cell(dr, 6).value
-                if dcfg == 'Config' or (sn and str(sn).strip() == 'S/N') or not sn or not t0:
+                unit_num = ws.cell(dr, 4).value
+                if dcfg == 'Config' or (sn and str(sn).strip() == 'S/N') or not sn or not has_pre_cp_data(ws, dr, cp_list[0][0]):
                     dr += 1
                     continue
 
-                row_cfg = str(dcfg).strip() if dcfg and str(dcfg).strip() in ('R1FNF', 'R2CNM', 'R3', 'R4') else default_config
-                unit_num = ws.cell(dr, 4).value
+                row_cfg = resolve_row_config(dcfg, default_config, unit_num)
+                if not row_cfg:
+                    dr += 1
+                    continue
                 unit_num_str = str(unit_num).strip() if unit_num is not None else ''
                 sn_str = str(sn).strip()
 

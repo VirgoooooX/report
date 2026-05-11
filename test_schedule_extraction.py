@@ -168,6 +168,83 @@ class SchedulePersistenceTests(unittest.TestCase):
             conn.close()
             os.remove(path)
 
+    def test_save_report_schedule_segments_replaces_previous_report_snapshot(self):
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        conn = sqlite3.connect(path)
+        conn.row_factory = db._dict_factory
+        try:
+            db.init_db(conn=conn)
+            first_report_id = db.create_report_version(conn, '2026-05-08', 'first.xlsx')
+            db.save_report_schedule_segments(conn, first_report_id, [
+                {
+                    'wf_num': '4',
+                    'config': 'R1FNF',
+                    'test_idx': 0,
+                    'test_name': 'Altitude',
+                    'schedule_test_item': 'Altitude',
+                    'planned_start_date': '2026-04-17',
+                    'planned_end_date': '2026-04-27',
+                    'marker_labels': ['T0', 'End'],
+                }
+            ])
+
+            second_report_id = db.create_report_version(conn, '2026-05-09', 'second.xlsx')
+            db.save_report_schedule_segments(conn, second_report_id, [
+                {
+                    'wf_num': '5',
+                    'config': 'R3',
+                    'test_idx': 1,
+                    'test_name': 'Thermal',
+                    'schedule_test_item': 'Thermal',
+                    'planned_start_date': '2026-05-01',
+                    'planned_end_date': '2026-05-03',
+                    'marker_labels': ['T0', 'End'],
+                }
+            ])
+
+            self.assertEqual(db.get_report_schedule_segments(conn, first_report_id), [])
+            latest_rows = db.get_report_schedule_segments(conn, second_report_id)
+            self.assertEqual(len(latest_rows), 1)
+            self.assertEqual(latest_rows[0]['wf_num'], '5')
+            count = conn.execute("SELECT COUNT(*) AS c FROM report_schedule_segments").fetchone()['c']
+            self.assertEqual(count, 1)
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_init_db_prunes_historical_schedule_snapshots(self):
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        conn = sqlite3.connect(path)
+        conn.row_factory = db._dict_factory
+        try:
+            db.init_db(conn=conn)
+            old_report_id = db.create_report_version(conn, '2026-05-08', 'old.xlsx')
+            new_report_id = db.create_report_version(conn, '2026-05-09', 'new.xlsx')
+            conn.execute(
+                """INSERT INTO report_schedule_segments
+                   (report_id, wf_num, config, test_idx, test_name, schedule_test_item,
+                    planned_start_date, planned_end_date, confidence, inference_reason, marker_labels)
+                   VALUES
+                   (?, '4', 'R1FNF', 0, 'Altitude', 'Altitude', '2026-04-17', '2026-04-27', 'high', '', '[]'),
+                   (?, '5', 'R3', 1, 'Thermal', 'Thermal', '2026-05-01', '2026-05-03', 'high', '', '[]')""",
+                (old_report_id, new_report_id),
+            )
+            conn.commit()
+
+            db.init_db(conn=conn)
+
+            rows = conn.execute(
+                "SELECT report_id, wf_num FROM report_schedule_segments ORDER BY wf_num"
+            ).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]['report_id'], new_report_id)
+            self.assertEqual(rows[0]['wf_num'], '5')
+        finally:
+            conn.close()
+            os.remove(path)
+
 
 if __name__ == '__main__':
     unittest.main()

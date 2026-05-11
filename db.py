@@ -213,6 +213,7 @@ def save_report_cps(conn, report_id, cps_by_wf):
 
 
 def save_report_schedule_segments(conn, report_id, segments):
+    conn.execute("DELETE FROM report_schedule_segments")
     rows = []
     for segment in segments:
         rows.append((
@@ -257,6 +258,23 @@ def get_report_schedule_segments(conn, report_id, wf_num=None):
             item['marker_labels'] = []
         result.append(item)
     return result
+
+
+def prune_historical_schedule_snapshots(conn):
+    latest_report = conn.execute(
+        """SELECT id FROM reports
+           WHERE is_active = 1
+           ORDER BY report_date DESC, version DESC
+           LIMIT 1"""
+    ).fetchone()
+    if not latest_report:
+        conn.execute("DELETE FROM report_schedule_segments")
+        return
+
+    conn.execute(
+        "DELETE FROM report_schedule_segments WHERE report_id <> ?",
+        (latest_report['id'],),
+    )
 
 
 def get_report_wf_meta(conn, report_id):
@@ -1194,6 +1212,7 @@ def init_db(drop_all=False, conn=None):
         conn.execute("ALTER TABLE wf_results ADD COLUMN failure_details TEXT DEFAULT '[]'")
     except sqlite3.OperationalError:
         pass  # Column already exists
+    prune_historical_schedule_snapshots(conn)
     conn.commit()
     if owns_conn:
         conn.close()

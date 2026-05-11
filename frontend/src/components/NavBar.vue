@@ -12,6 +12,17 @@
         <router-link to="/predictions">{{ t('nav.predictions') }}</router-link>
         <router-link to="/schedule">{{ t('nav.schedule') }}</router-link>
         <router-link to="/export">{{ t('nav.export') }}</router-link>
+        <button
+          class="nav-upload-btn"
+          :class="{ uploading: uploadState === 'uploading', done: uploadState === 'done' }"
+          :disabled="uploadState === 'uploading'"
+          @click="showUploadDialog = true"
+        >
+          <span v-if="uploadState === 'uploading'" class="upload-spinner"></span>
+          <template v-if="uploadState === 'done'">&#10003; {{ t('upload.done') }}</template>
+          <template v-else-if="uploadState === 'uploading'">{{ t('upload.uploading') }}</template>
+          <template v-else>{{ t('upload.idle') }}</template>
+        </button>
       </div>
       <div class="nav-controls">
         <button
@@ -54,17 +65,39 @@
       </router-link>
     </div>
   </nav>
+  <UploadDialog :visible="showUploadDialog" @close="showUploadDialog = false" @done="onUploadDone" />
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n/useI18n'
 import { MenuOutlined } from '@ant-design/icons-vue'
+import UploadDialog from '@/components/UploadDialog.vue'
 
 const store = useAppStore()
 const { t } = useI18n()
 const mobileOpen = ref(false)
+
+// Upload
+const uploadState = ref('idle')
+const showUploadDialog = ref(false)
+let doneTimer = null
+
+async function onUploadDone(formData) {
+  showUploadDialog.value = false
+  uploadState.value = 'uploading'
+  try {
+    await store.uploadReport(formData)
+    uploadState.value = 'done'
+    doneTimer = setTimeout(() => { uploadState.value = 'idle' }, 3000)
+  } catch (e) {
+    uploadState.value = 'idle'
+    alert(e.message)
+  }
+}
+
+onUnmounted(() => { if (doneTimer) clearTimeout(doneTimer) })
 
 const navLinks = [
   { to: '/', label: t('nav.dashboard') },
@@ -116,6 +149,36 @@ function toggleLanguage() {
 .nav-links a.router-link-active {
   background: var(--text-primary); color: var(--text-inverse);
 }
+.nav-upload-btn {
+  height: 32px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.82rem; font-weight: 500;
+  cursor: pointer;
+  transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
+  margin-left: 8px;
+}
+.nav-upload-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
+}
+.nav-upload-btn.uploading {
+  color: var(--text-muted); cursor: default;
+}
+.nav-upload-btn.done {
+  color: #059669; border-color: #059669;
+}
+.upload-spinner {
+  display: inline-block; width: 12px; height: 12px;
+  border: 2px solid var(--border-input);
+  border-top-color: var(--text-secondary); border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 .nav-controls {
   display: flex; align-items: center; gap: 8px;
 }

@@ -148,6 +148,13 @@ export const useAppStore = defineStore('app', () => {
     return await requestJson(`/api/sn/search?q=${encodeURIComponent(q)}`)
   }
 
+  async function uploadReport(formData) {
+    const resp = await fetch('/api/upload', { method: 'POST', body: formData })
+    const data = await resp.json()
+    if (!resp.ok || !data.success) throw new Error(data.error || 'Upload failed')
+    return data
+  }
+
   async function fetchExportData(filters) {
     const p = new URLSearchParams()
     if (filters.wf) p.set('wf', filters.wf)
@@ -193,7 +200,7 @@ export const useAppStore = defineStore('app', () => {
     categories, categoryDetail, predictions, scheduleData, snResult, exportData,
     configColors, catColors, CONFIG_ORDER, CAT_ORDER,
     fetchOverview, fetchDailyIssues, fetchSummary, fetchCategories, fetchPredictions, fetchSchedule,
-    fetchCategoryDetail, fetchSnResult, searchSn, fetchExportData, fetchFaCross,
+    fetchCategoryDetail, fetchSnResult, searchSn, fetchExportData, uploadReport, fetchFaCross,
     crossData,
     wfSortKey, sortedWfKeys
   }

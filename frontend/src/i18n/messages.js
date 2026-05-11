@@ -224,6 +224,22 @@ export const messages = {
       issueCount: '个问题',
       expand: '展开',
       collapse: '收起'
+    },
+    upload: {
+      title: '上传报告',
+      dailyReport: 'Daily Report',
+      dailyReportRequired: '必填',
+      dailyReportHint: '选择或拖入 .xlsx 文件',
+      faTracker: 'FA Tracker',
+      faTrackerOptional: '可选',
+      faTrackerHint: '选择或拖入 .xlsx 文件',
+      confirm: '确认上传',
+      cancel: '取消',
+      idle: '上传 Rawdata',
+      uploading: '解析中...',
+      done: '解析完成',
+      uploadFailed: '上传失败',
+      parseFailed: '解析失败'
     }
   },
   'en-US': {
@@ -451,6 +467,22 @@ export const messages = {
       issueCount: 'issue(s)',
       expand: 'Expand',
       collapse: 'Collapse'
+    },
+    upload: {
+      title: 'Upload Report',
+      dailyReport: 'Daily Report',
+      dailyReportRequired: 'Required',
+      dailyReportHint: 'Select or drag .xlsx file',
+      faTracker: 'FA Tracker',
+      faTrackerOptional: 'Optional',
+      faTrackerHint: 'Select or drag .xlsx file',
+      confirm: 'Upload',
+      cancel: 'Cancel',
+      idle: 'Upload Rawdata',
+      uploading: 'Parsing...',
+      done: 'Parse complete',
+      uploadFailed: 'Upload failed',
+      parseFailed: 'Parse failed'
     }
   }
 }
