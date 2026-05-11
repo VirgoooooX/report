@@ -18,16 +18,33 @@ import argparse
 import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
-from engine import analyze, extract_sn_progress, extract_sn_fact_rows, build_failure_detail, read_test_schedule, read_test_summary, extract_all_cp_structures, attach_test_idx_to_cps, extract_test_schedule_segments
+from engine import analyze, extract_sn_progress, extract_sn_fact_rows, build_failure_detail, read_test_schedule, read_test_summary, extract_all_cp_structures, attach_test_idx_to_cps, extract_test_schedule_segments, DailyReportParseResult, parse_daily_report
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
 from db import (
-    init_db, save_report, save_sn_progress, save_wf_names, save_wf_cps, get_completion_stats,
+    init_db, save_report, save_wf_names, save_wf_cps, get_completion_stats,
     get_failure_rate_stats, get_daily_changes_by_cp,
     save_predictions, init_categories, get_conn,
     create_report_version, save_report_wf_meta, save_report_test_names,
-    save_report_cps, save_report_schedule_segments, save_sn_cp_results, save_sn_check_state_history,
-    detect_definition_changes, save_definition_changes
+    save_report_cps, save_report_schedule_segments, save_current_schedule_segments,
+    save_current_wf_definitions, save_current_test_definitions, save_current_cp_definitions,
+    save_sn_check_state_history,
+    detect_definition_changes, save_definition_changes,
+    vacuum_db
 )
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Final Write Set (Phase 5+):
+#    - reports (via save_report + create_report_version)
+#    - sn_check_state_history (lifecycle — via save_sn_check_state_history)
+#    - current_wf_definitions (via save_current_wf_definitions)
+#    - current_test_definitions (via save_current_test_definitions)
+#    - current_cp_definitions (via save_current_cp_definitions)
+#    - current_schedule_segments (via save_current_schedule_segments)
+#    - wf_names, wf_cps (global caches — retained for compatibility)
+#    - report_wf_meta, report_test_names, report_cps (report-scoped — retained for compatibility)
+#    - wf_results, report_stats, daily_changes (derived — computed by save_report)
+#  Retired writes: sn_progress, sn_cp_results, sn_check_results
+# ═══════════════════════════════════════════════════════════════════════
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 REPORT_PATTERN = re.compile(r'M60 EVT Rel Daily Report_(\d{8})\.xlsx$')
@@ -89,6 +106,12 @@ def save_report_definitions(conn, report_id, daily_path):
     save_report_test_names(conn, report_id, ts_test_names)
     save_report_cps(conn, report_id, mapped_cps)
     save_report_schedule_segments(conn, report_id, schedule_segments)
+    save_current_schedule_segments(conn, report_id, schedule_segments)
+
+    # Also write to current-only definition tables
+    save_current_wf_definitions(conn, report_id, wf_names)
+    save_current_test_definitions(conn, report_id, ts_test_names)
+    save_current_cp_definitions(conn, report_id, mapped_cps)
 
     # Keep latest/global caches for existing category and compatibility views.
     if wf_names:
@@ -160,26 +183,23 @@ def process_all(rebuild=False):
         print(f"\n[{i + 1}/{len(reports)}] 处理: {fname}  (日期: {date_str})")
 
         try:
-            # a. engine.analyze()
-            print("   [+] engine.analyze() ...", end=' ')
-            results = analyze(filepath)
-            if not results:
-                print("无 WF 结果，跳过")
-                continue
-            wf_count = len(results)
-            print(f"{wf_count} 个 WF")
+            # Parse workbook once (Phase 6: consolidated workbook open)
+            parsed = parse_daily_report(filepath, report_date=date_str, source_file_name=fname)
 
-            # b. engine.extract_sn_progress()
-            print("   [+] engine.extract_sn_progress() ...", end=' ')
-            progress_data = extract_sn_progress(filepath)
+            # Stats from parsed data
+            results = parsed.summary_results
+            wf_count = len(results) if results else 0
+            print(f"   [+] parse_daily_report: {wf_count} WFs")
+
+            # SN count from progress data (for stats)
+            progress_data = parsed.progress_data
             sn_count = sum(
                 len(entries)
                 for cfgs in progress_data.values()
                 for entries in cfgs.values()
             )
-            print(f"{sn_count} 条 SN 记录")
 
-            # c. FA Tracker
+            # c. FA Tracker (unchanged)
             fa_stats = {'total': 0, 'matched': 0}
             fa_path, fa_date = _find_fa_tracker(date_str)
             if fa_path:
@@ -195,10 +215,25 @@ def process_all(rebuild=False):
                 print("   [+] FA Tracker: not found")
 
             # d. 保存到 DB
-            _, _, ts_test_names, _ = read_test_summary(filepath)
             conn = get_conn()
-            report_id = create_report_version(conn, date_str, filepath, source_file_name=fname, ts_test_names=ts_test_names)
-            save_report_definitions(conn, report_id, filepath)
+            report_id = create_report_version(conn, date_str, filepath, source_file_name=fname, ts_test_names=parsed.ts_test_names)
+
+            # Save definitions using already-parsed data
+            save_report_wf_meta(conn, report_id, parsed.wf_names)
+            save_report_test_names(conn, report_id, parsed.test_names_by_wf)
+            save_report_cps(conn, report_id, parsed.mapped_cps)
+            save_report_schedule_segments(conn, report_id, parsed.schedule_segments)
+            # Current-only tables
+            save_current_schedule_segments(conn, report_id, parsed.schedule_segments)
+            save_current_wf_definitions(conn, report_id, parsed.wf_names)
+            save_current_test_definitions(conn, report_id, parsed.test_names_by_wf)
+            save_current_cp_definitions(conn, report_id, parsed.mapped_cps)
+            # Global caches
+            if parsed.wf_names:
+                save_wf_names(parsed.wf_names, parsed.ts_test_names, conn=conn)
+            for wfn, cp_list in parsed.cp_structures.items():
+                save_wf_cps(wfn, cp_list, conn=conn)
+
             previous = conn.execute(
                 """SELECT id FROM reports
                    WHERE is_active = 1 AND report_date < ?
@@ -213,12 +248,15 @@ def process_all(rebuild=False):
             conn.commit()
             conn.close()
 
-            report_id = save_report(date_str, results, fa_stats, filepath, ts_test_names, report_id=report_id)
-            save_sn_progress(report_id, progress_data)
+            report_id = save_report(date_str, results, fa_stats, filepath, parsed.ts_test_names, report_id=report_id)
 
+            # Phase 5: Stop writing snapshot tables — lifecycle is the source of truth.
+            # save_sn_progress(report_id, progress_data)  # retired
+
+            # Extract fact rows (still path-based — needs report_id generated above)
             cp_fact_rows, check_fact_rows = extract_sn_fact_rows(filepath, report_id, date_str)
             conn = get_conn()
-            save_sn_cp_results(conn, cp_fact_rows)
+            # save_sn_cp_results(conn, cp_fact_rows)  # retired — API now reads from lifecycle
             save_sn_check_state_history(conn, report_id, date_str, check_fact_rows)
             conn.commit()
             conn.close()
@@ -250,7 +288,16 @@ def process_all(rebuild=False):
         except Exception as e:
             print(f"[WARN] Prediction failed: {e}")
 
-    # 5. 最终统计
+    # 5. VACUUM after rebuild to reclaim space from retired tables
+    if rebuild:
+        print("\n[OK] Vacuuming database...")
+        try:
+            vacuum_db()
+            print("[OK] Vacuum complete")
+        except Exception as e:
+            print(f"[WARN] Vacuum failed: {e}")
+
+    # 6. 最终统计
     stats['total_wfs'] = len(stats['total_wf_set'])
     del stats['total_wf_set']
 
@@ -306,9 +353,10 @@ def process_newest():
 
     print("   [+] Starting process...")
     try:
-        results = analyze(latest_path)
-        progress_data = extract_sn_progress(latest_path)
-        _, _, ts_test_names, _ = read_test_summary(latest_path)
+        # Parse workbook once (Phase 6: consolidated workbook open)
+        parsed = parse_daily_report(latest_path, report_date=latest_date, source_file_name=os.path.basename(latest_path))
+        results = parsed.summary_results
+        progress_data = parsed.progress_data
 
         # FA Tracker
         fa_stats = {'total': 0, 'matched': 0}
@@ -323,8 +371,22 @@ def process_newest():
                 print(f"   FA Tracker process failed: {e}")
 
         conn = get_conn()
-        report_id = create_report_version(conn, latest_date, latest_path, source_file_name=fname, ts_test_names=ts_test_names)
-        save_report_definitions(conn, report_id, latest_path)
+        report_id = create_report_version(conn, latest_date, latest_path, source_file_name=fname, ts_test_names=parsed.ts_test_names)
+
+        # Save definitions using already-parsed data
+        save_report_wf_meta(conn, report_id, parsed.wf_names)
+        save_report_test_names(conn, report_id, parsed.test_names_by_wf)
+        save_report_cps(conn, report_id, parsed.mapped_cps)
+        save_report_schedule_segments(conn, report_id, parsed.schedule_segments)
+        save_current_schedule_segments(conn, report_id, parsed.schedule_segments)
+        save_current_wf_definitions(conn, report_id, parsed.wf_names)
+        save_current_test_definitions(conn, report_id, parsed.test_names_by_wf)
+        save_current_cp_definitions(conn, report_id, parsed.mapped_cps)
+        if parsed.wf_names:
+            save_wf_names(parsed.wf_names, parsed.ts_test_names, conn=conn)
+        for wfn, cp_list in parsed.cp_structures.items():
+            save_wf_cps(wfn, cp_list, conn=conn)
+
         previous = conn.execute(
             """SELECT id FROM reports
                WHERE is_active = 1 AND report_date < ?
@@ -339,12 +401,14 @@ def process_newest():
         conn.commit()
         conn.close()
 
-        report_id = save_report(latest_date, results, fa_stats, latest_path, ts_test_names, report_id=report_id)
-        save_sn_progress(report_id, progress_data)
+        report_id = save_report(latest_date, results, fa_stats, latest_path, parsed.ts_test_names, report_id=report_id)
+
+        # Phase 5: Stop writing snapshot tables — lifecycle is the source of truth.
+        # save_sn_progress(report_id, progress_data)  # retired
 
         cp_fact_rows, check_fact_rows = extract_sn_fact_rows(latest_path, report_id, latest_date)
         conn = get_conn()
-        save_sn_cp_results(conn, cp_fact_rows)
+        # save_sn_cp_results(conn, cp_fact_rows)  # retired — API now reads from lifecycle
         save_sn_check_state_history(conn, report_id, latest_date, check_fact_rows)
         conn.commit()
         conn.close()

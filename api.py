@@ -15,14 +15,18 @@ from db import (
     init_db, save_report, save_sn_progress, get_changes, get_trend,
     get_all_reports, get_latest_report, get_report_stats, get_conn,
     get_sn_history, get_daily_changes_by_cp, get_completion_stats,
-    get_failure_rate_stats, get_predictions, update_prediction,
+    get_completion_stats_from_lifecycle,
+    get_failure_rate_stats, get_failure_rate_stats_from_lifecycle,
+    get_predictions, update_prediction,
     init_categories, get_category_wfs, export_sn_records,
     wf_sort_key, get_wf_names, get_wf_cps, get_wf_config_progress_rows,
-    get_sn_fact_history, get_sn_check_details,
+    get_wf_config_progress_from_lifecycle,
+    get_sn_fact_history, get_sn_lifecycle_history, get_sn_check_details,
     get_latest_wf_config_progress, get_failure_rate_stats_from_facts,
     build_failure_rate_stats_from_facts,
     get_latest_active_report_id, get_previous_active_report_id,
     get_cell_failures, get_report_schedule_segments, save_report_schedule_segments,
+    get_current_schedule_segments, save_current_schedule_segments,
     get_report_test_names,
 )
 from processor import process_newest, REPORT_PATTERN, FA_PATTERN
@@ -168,8 +172,10 @@ def api_overview():
         conn.close()
         return jsonify({'error': 'No data'}), 404
     
-    # Completion stats
-    completion = get_completion_stats(rid)
+    # Completion stats (lifecycle first)
+    completion = get_completion_stats_from_lifecycle(rid)
+    if not completion.get('by_config'):
+        completion = get_completion_stats(rid)
     
     # Daily CP changes — 比较前后两天的 max(current_cp_idx) per WF+Config
     prev_rid = get_previous_active_report_id(conn, rid)
@@ -229,9 +235,11 @@ def api_overview():
         if configs_list:
             wf_updates_list.append({'wf': wfn, 'configs': configs_list})
     
-    # Failure stats (fact tables first)
-    fail_stats = build_failure_rate_stats_from_facts(rid)
-    if not fail_stats:
+    # Failure stats (lifecycle first)
+    fail_stats = get_failure_rate_stats_from_lifecycle(rid)
+    if not fail_stats.get('by_config'):
+        fail_stats = build_failure_rate_stats_from_facts(rid)
+    if not fail_stats.get('by_config'):
         fail_stats = get_failure_rate_stats(rid)
     
     # Latest report date and source_file_name for project name extraction
@@ -284,7 +292,9 @@ def api_overview():
 def api_completion_config():
     conn = get_conn()
     rid = get_latest_active_report_id(conn)
-    stats = get_completion_stats(rid)
+    stats = get_completion_stats_from_lifecycle(rid)
+    if not stats.get('by_config'):
+        stats = get_completion_stats(rid)
     conn.close()
     return jsonify(stats.get('by_config', {}))
 
@@ -293,7 +303,9 @@ def api_completion_config():
 def api_completion_category():
     conn = get_conn()
     rid = get_latest_active_report_id(conn)
-    stats = get_completion_stats(rid)
+    stats = get_completion_stats_from_lifecycle(rid)
+    if not stats.get('by_category'):
+        stats = get_completion_stats(rid)
     conn.close()
     return jsonify(stats.get('by_category', {}))
 
@@ -569,8 +581,12 @@ def api_failure_stats():
     if not rid:
         return jsonify({'by_config': {}, 'by_test': {}, 'by_wf': {}, 'top_failures': []})
 
-    stats = build_failure_rate_stats_from_facts(rid)
-    return jsonify(stats if stats else get_failure_rate_stats(rid))
+    stats = get_failure_rate_stats_from_lifecycle(rid)
+    if not stats.get('by_config'):
+        stats = build_failure_rate_stats_from_facts(rid)
+    if not stats.get('by_config'):
+        stats = get_failure_rate_stats(rid)
+    return jsonify(stats)
 
 
 @app.route('/api/failures/top')
@@ -581,8 +597,10 @@ def api_failure_top():
     
     conn = get_conn()
     rid = get_latest_active_report_id(conn)
-    stats = build_failure_rate_stats_from_facts(rid)
-    if not stats:
+    stats = get_failure_rate_stats_from_lifecycle(rid)
+    if not stats.get('by_config'):
+        stats = build_failure_rate_stats_from_facts(rid)
+    if not stats.get('by_config'):
         stats = get_failure_rate_stats(rid)
     conn.close()
     
@@ -733,6 +751,12 @@ def _find_report_excel_path(report):
 
 
 def _load_or_build_schedule_segments(conn, report):
+    # Try current schedule first
+    segments = get_current_schedule_segments(conn)
+    if segments:
+        return segments
+
+    # Fall back to old report_schedule_segments lazy-load logic
     report_id = report['id']
     segments = get_report_schedule_segments(conn, report_id)
     if segments:
@@ -765,6 +789,8 @@ def _load_or_build_schedule_segments(conn, report):
 
     segments = extract_test_schedule_segments(excel_path, test_names, cps_by_wf)
     save_report_schedule_segments(conn, report_id, segments)
+    # Also save to current schedule on first build
+    save_current_schedule_segments(conn, report_id, segments)
     conn.commit()
     return get_report_schedule_segments(conn, report_id)
 
@@ -804,7 +830,10 @@ def api_schedule():
                 'cp_name': row['cp_name'],
             })
         progress_by_key = {}
-        for row in get_wf_config_progress_rows(conn, report['id']):
+        progress_rows = get_wf_config_progress_from_lifecycle(conn, report['id'])
+        if not progress_rows:
+            progress_rows = get_wf_config_progress_rows(conn, report['id'])
+        for row in progress_rows:
             normalized_wf = _normalize_wf(row['wf_num'])
             if normalized_wf in {'43', '44'}:
                 continue
@@ -861,8 +890,10 @@ def api_schedule():
 @app.route('/api/sn/<sn>')
 def api_sn_lookup(sn):
     """Get all test records for an SN across all dates."""
-    # Load from fact tables (sn_cp_results) via new helper
-    history_rows = get_sn_fact_history(sn)
+    # Load from lifecycle table first, fall back to fact tables
+    history_rows = get_sn_lifecycle_history(sn)
+    if not history_rows:
+        history_rows = get_sn_fact_history(sn)
     history = []
     for row in history_rows:
         if row['is_current_cp']:
@@ -942,13 +973,18 @@ def api_sn_search():
         return jsonify([])
     
     conn = get_conn()
-    # 优先从事实表查询
+    # Try lifecycle table first
     rows = conn.execute(
-        "SELECT DISTINCT sn FROM sn_cp_results WHERE sn LIKE ? ORDER BY sn LIMIT 30",
+        "SELECT DISTINCT sn FROM sn_check_state_history WHERE sn LIKE ? ORDER BY sn LIMIT 30",
         (f'%{q}%',)
     ).fetchall()
     if not rows:
-        # 回退到 sn_progress
+        # Fall back to old tables
+        rows = conn.execute(
+            "SELECT DISTINCT sn FROM sn_cp_results WHERE sn LIKE ? ORDER BY sn LIMIT 30",
+            (f'%{q}%',)
+        ).fetchall()
+    if not rows:
         rows = conn.execute(
             "SELECT DISTINCT sn FROM sn_progress WHERE sn LIKE ? LIMIT 30",
             (f'%{q}%',)
@@ -1652,7 +1688,6 @@ def upload_report():
             conn.execute(f"DELETE FROM {table} WHERE report_id IN ({p})", old_ids)
         for table in ['sn_cp_results', 'sn_check_results']:
             conn.execute(f"DELETE FROM {table} WHERE report_date = ?", (report_date,))
-        conn.execute(f"DELETE FROM sn_check_state_history WHERE report_id IN ({p})", old_ids)
         conn.execute(f"DELETE FROM reports WHERE id IN ({p})", old_ids)
         conn.commit()
     conn.close()

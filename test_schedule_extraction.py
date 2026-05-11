@@ -246,5 +246,109 @@ class SchedulePersistenceTests(unittest.TestCase):
             os.remove(path)
 
 
+class CurrentScheduleTests(unittest.TestCase):
+    """Tests for current_schedule_segments (latest-only schedule table)."""
+
+    def test_save_and_get_current_schedule(self):
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        conn = sqlite3.connect(path)
+        conn.row_factory = db._dict_factory
+        try:
+            db.init_db(conn=conn)
+            report_id = db.create_report_version(conn, '2026-05-09', 'test.xlsx')
+
+            db.save_current_schedule_segments(conn, report_id, [
+                {
+                    'wf_num': '4',
+                    'config': 'R1FNF',
+                    'test_idx': 0,
+                    'test_name': 'Altitude',
+                    'schedule_test_item': 'Altitude',
+                    'planned_start_date': '2026-04-17',
+                    'planned_end_date': '2026-04-27',
+                    'marker_labels': ['T0', 'End'],
+                },
+                {
+                    'wf_num': '6',
+                    'config': 'R1FNF',
+                    'test_idx': 1,
+                    'test_name': 'Rock Tumble',
+                    'schedule_test_item': 'Rock Tumble',
+                    'planned_start_date': '2026-05-01',
+                    'planned_end_date': '2026-05-05',
+                    'marker_labels': ['T0', 'End'],
+                },
+            ])
+
+            segments = db.get_current_schedule_segments(conn)
+            self.assertEqual(len(segments), 2)
+            self.assertEqual(segments[0]['wf_num'], '4')
+            self.assertEqual(segments[1]['wf_num'], '6')
+
+            filtered = db.get_current_schedule_segments(conn, wf_num='4')
+            self.assertEqual(len(filtered), 1)
+            self.assertEqual(filtered[0]['test_name'], 'Altitude')
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_save_current_schedule_replaces_previous(self):
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        conn = sqlite3.connect(path)
+        conn.row_factory = db._dict_factory
+        try:
+            db.init_db(conn=conn)
+            report_id = db.create_report_version(conn, '2026-05-08', 'first.xlsx')
+            db.save_current_schedule_segments(conn, report_id, [
+                {
+                    'wf_num': '4',
+                    'config': 'R1FNF',
+                    'test_idx': 0,
+                    'test_name': 'Altitude',
+                    'schedule_test_item': 'Altitude',
+                    'planned_start_date': '2026-04-17',
+                    'planned_end_date': '2026-04-27',
+                    'marker_labels': ['T0', 'End'],
+                }
+            ])
+
+            second_report_id = db.create_report_version(conn, '2026-05-09', 'second.xlsx')
+            db.save_current_schedule_segments(conn, second_report_id, [
+                {
+                    'wf_num': '5',
+                    'config': 'R3',
+                    'test_idx': 1,
+                    'test_name': 'Thermal',
+                    'schedule_test_item': 'Thermal',
+                    'planned_start_date': '2026-05-01',
+                    'planned_end_date': '2026-05-03',
+                    'marker_labels': ['T0', 'End'],
+                }
+            ])
+
+            segments = db.get_current_schedule_segments(conn)
+            self.assertEqual(len(segments), 1)
+            self.assertEqual(segments[0]['wf_num'], '5')
+            self.assertEqual(segments[0]['updated_run_id'], second_report_id)
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_get_current_schedule_empty(self):
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        conn = sqlite3.connect(path)
+        conn.row_factory = db._dict_factory
+        try:
+            db.init_db(conn=conn)
+            segments = db.get_current_schedule_segments(conn)
+            self.assertEqual(segments, [])
+        finally:
+            conn.close()
+            os.remove(path)
+
+
 if __name__ == '__main__':
     unittest.main()

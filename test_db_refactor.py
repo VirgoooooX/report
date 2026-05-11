@@ -361,5 +361,152 @@ class FactAggregateTests(unittest.TestCase):
             os.remove(path)
 
 
+class CurrentDefinitionTests(unittest.TestCase):
+    """Tests for current-only definition tables (wf, test, cp)."""
+
+    def _setup_db(self):
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        conn = sqlite3.connect(path)
+        conn.row_factory = db._dict_factory
+        db.init_db(conn=conn)
+        return conn, path
+
+    def test_save_and_get_current_wf_definitions(self):
+        conn, path = self._setup_db()
+        try:
+            report_id = db.create_report_version(conn, '2026-05-09', 'test.xlsx')
+            db.save_current_wf_definitions(conn, report_id, {'4': 'Altitude', '6': 'Rock Tumble'})
+
+            result = db.get_current_wf_definitions(conn)
+            self.assertEqual(len(result), 2)
+            self.assertEqual(result['4'], 'Altitude')
+            self.assertEqual(result['6'], 'Rock Tumble')
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_save_current_wf_definitions_replaces_previous(self):
+        conn, path = self._setup_db()
+        try:
+            report_id = db.create_report_version(conn, '2026-05-08', 'old.xlsx')
+            db.save_current_wf_definitions(conn, report_id, {'4': 'Altitude'})
+
+            report_id2 = db.create_report_version(conn, '2026-05-09', 'new.xlsx')
+            db.save_current_wf_definitions(conn, report_id2, {'5': 'Thermal'})
+
+            result = db.get_current_wf_definitions(conn)
+            self.assertEqual(len(result), 1)
+            self.assertNotIn('4', result)
+            self.assertEqual(result['5'], 'Thermal')
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_save_and_get_current_test_definitions(self):
+        conn, path = self._setup_db()
+        try:
+            report_id = db.create_report_version(conn, '2026-05-09', 'test.xlsx')
+            db.save_current_test_definitions(conn, report_id, {
+                '4': ['Altitude', 'Rock Tumble'],
+                '6': ['Full Scale'],
+            })
+
+            result = db.get_current_test_definitions(conn)
+            self.assertEqual(len(result), 2)
+            self.assertEqual(result['4'], ['Altitude', 'Rock Tumble'])
+            self.assertEqual(result['6'], ['Full Scale'])
+
+            filtered = db.get_current_test_definitions(conn, wf_num='4')
+            self.assertEqual(len(filtered), 1)
+            self.assertEqual(filtered['4'], ['Altitude', 'Rock Tumble'])
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_save_and_get_current_cp_definitions(self):
+        conn, path = self._setup_db()
+        try:
+            report_id = db.create_report_version(conn, '2026-05-09', 'test.xlsx')
+            db.save_current_cp_definitions(conn, report_id, {
+                '4': [
+                    {'cp_idx': 0, 'cp_name': 'HSD', 'test_idx': 0, 'check_items': ['A', 'B']},
+                    {'cp_idx': 1, 'cp_name': 'THC', 'test_idx': 0, 'check_items': ['C']},
+                ],
+                '6': [
+                    {'cp_idx': 0, 'cp_name': 'Full Scale', 'test_idx': 0, 'check_items': ['D', 'E']},
+                ],
+            })
+
+            result = db.get_current_cp_definitions(conn)
+            self.assertEqual(len(result), 2)
+            self.assertEqual(result['4'][0]['cp_name'], 'HSD')
+            self.assertEqual(result['4'][0]['test_idx'], 0)
+            self.assertEqual(result['4'][0]['check_items'], ['A', 'B'])
+            self.assertEqual(result['4'][1]['cp_name'], 'THC')
+            self.assertEqual(result['4'][1]['test_idx'], 0)
+            self.assertEqual(result['4'][1]['check_items'], ['C'])
+
+            filtered = db.get_current_cp_definitions(conn, wf_num='6')
+            self.assertEqual(len(filtered), 1)
+            self.assertEqual(filtered['6'][0]['cp_name'], 'Full Scale')
+            self.assertEqual(filtered['6'][0]['check_items'], ['D', 'E'])
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_current_cp_definitions_replaces_previous(self):
+        conn, path = self._setup_db()
+        try:
+            report_id = db.create_report_version(conn, '2026-05-08', 'old.xlsx')
+            db.save_current_cp_definitions(conn, report_id, {
+                '4': [{'cp_idx': 0, 'cp_name': 'Old HS', 'test_idx': 0, 'check_items': []}],
+            })
+
+            report_id2 = db.create_report_version(conn, '2026-05-09', 'new.xlsx')
+            db.save_current_cp_definitions(conn, report_id2, {
+                '5': [{'cp_idx': 1, 'cp_name': 'New CP', 'test_idx': 1, 'check_items': ['X']}],
+            })
+
+            result = db.get_current_cp_definitions(conn)
+            self.assertEqual(len(result), 1)
+            self.assertNotIn('4', result)
+            self.assertEqual(result['5'][0]['cp_name'], 'New CP')
+        finally:
+            conn.close()
+            os.remove(path)
+
+
+class VacuumTests(unittest.TestCase):
+    def test_vacuum_runs_without_error(self):
+        fd, path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        conn = None
+        try:
+            conn = sqlite3.connect(path)
+            conn.row_factory = db._dict_factory
+            db.init_db(conn=conn)
+            report_id = db.create_report_version(conn, '2026-05-09', 'test.xlsx')
+            conn.commit()
+            conn.close()
+            conn = None
+            # Switch to the module's connection for vacuum
+            import db as dbmod
+            dbmod.DB_PATH = path
+            dbmod.vacuum_db()
+            # Verify file still exists and is valid
+            conn2 = sqlite3.connect(path)
+            tables = conn2.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            self.assertTrue(len(tables) > 0)
+            conn2.close()
+        finally:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            os.remove(path)
+
+
 if __name__ == '__main__':
     unittest.main()

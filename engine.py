@@ -258,25 +258,32 @@ def read_test_summary(daily_path):
       ts_num_tests: {wf: n}
     """
     wb = load_workbook(daily_path, data_only=True)
+    result = read_test_summary_from_workbook(wb)
+    wb.close()
+    return result
+
+
+def read_test_summary_from_workbook(wb):
+    """Same as read_test_summary() but operates on an already-opened workbook."""
     ws = wb['Test Summary']
-    
+
     sys_row = None
     for r in range(1, ws.max_row + 1):
         if ws.cell(r, 2).value == 'System': sys_row = r; break
     if not sys_row:
         return {}, {}, {}, {}
-    
+
     config_col_map = {}
     for ps in [3, 8, 13, 18]:
         for o, c in enumerate(['R1FNF', 'R2CNM', 'R3', 'R4']):
             config_col_map[ps + o] = c
-    
+
     test_cols = [7, 12, 17, 22]
     ts_data = {}
     ts_qty = {}
     ts_test_names = {}
     ts_num_tests = {}
-    
+
     for r in range(14, 75):
         wf_val = ws.cell(r, 2).value
         if wf_val is None: continue
@@ -285,12 +292,12 @@ def read_test_summary(daily_path):
             continue
         if not isinstance(wf_val, (int, float)): continue
         wf_str = str(int(wf_val)) if isinstance(wf_val, float) and wf_val == int(wf_val) else str(wf_val)
-        
+
         ts_qty[wf_str] = {}
         for offset, cfg in enumerate(['R1FNF', 'R2CNM', 'R3', 'R4']):
             qv = ws.cell(r, 3 + offset).value
             if qv is not None: ts_qty[wf_str][cfg] = int(qv) if isinstance(qv, (int, float)) else 0
-        
+
         tests_for_wf = []
         for ti, tc in enumerate(test_cols):
             tname = ws.cell(r, tc).value
@@ -302,12 +309,11 @@ def read_test_summary(daily_path):
                 val = ws.cell(r, rc).value
                 if val is not None:
                     ts_data.setdefault(wf_str, {}).setdefault(cfg, {})[ti] = {'name': tname, 'result': val}
-        
+
         if tests_for_wf:
             ts_test_names[wf_str] = tests_for_wf
             ts_num_tests[wf_str] = len(tests_for_wf)
-    
-    wb.close()
+
     return ts_data, ts_qty, ts_test_names, ts_num_tests
 
 
@@ -359,6 +365,13 @@ def extract_cp_structure(ws, header_row=1, cp_range_start=7):
 def read_test_schedule(daily_path):
     """Reads Test Schedule sheet B/C columns and returns {wf_num: wf_name} mapping."""
     wb = load_workbook(daily_path, data_only=True)
+    result = read_test_schedule_from_workbook(wb)
+    wb.close()
+    return result
+
+
+def read_test_schedule_from_workbook(wb):
+    """Same as read_test_schedule() but operates on an already-opened workbook."""
     ws = wb['Test Schedule']
     names = {}
     for r in range(1, ws.max_row + 1):
@@ -368,7 +381,6 @@ def read_test_schedule(daily_path):
             wfn = str(int(b)) if isinstance(b, float) and b == int(b) else str(b)
             if c and isinstance(c, str) and c.strip():
                 names[wfn] = c.strip()
-    wb.close()
     return names
 
 
@@ -573,8 +585,14 @@ def _schedule_marker_candidates(label, cp_list, test_names=None):
 def extract_test_schedule_segments(daily_path, ts_test_names, cps_by_wf):
     """Extract planned WF/Test/Config schedule segments from the Test Schedule sheet."""
     wb = load_workbook(daily_path, data_only=True)
+    result = extract_test_schedule_segments_from_workbook(wb, ts_test_names, cps_by_wf)
+    wb.close()
+    return result
+
+
+def extract_test_schedule_segments_from_workbook(wb, ts_test_names, cps_by_wf):
+    """Same as extract_test_schedule_segments() but operates on an already-opened workbook."""
     if 'Test Schedule' not in wb.sheetnames:
-        wb.close()
         return []
 
     ws = wb['Test Schedule']
@@ -584,7 +602,6 @@ def extract_test_schedule_segments(daily_path, ts_test_names, cps_by_wf):
             header_row = row_idx
             break
     if header_row is None:
-        wb.close()
         return []
 
     date_columns = []
@@ -644,8 +661,6 @@ def extract_test_schedule_segments(daily_path, ts_test_names, cps_by_wf):
             'source_row': row_idx,
             'markers': markers,
         })
-
-    wb.close()
 
     segments = []
     for row in schedule_rows:
@@ -953,25 +968,31 @@ def analyze(daily_path):
     """
     _, _, ts_test_names, _ = read_test_summary(daily_path)
     wb = load_workbook(daily_path)  # no data_only — need fill colors
-    
+    result = analyze_from_workbook(wb, ts_test_names)
+    wb.close()
+    return result
+
+
+def analyze_from_workbook(wb, ts_test_names):
+    """Same as analyze() but operates on an already-opened workbook and takes ts_test_names directly."""
     all_results = {}
     for name in wb.sheetnames:
         if name in SKIP_SHEETS or name.startswith('MLB'): continue
         wfn = wf_num(name)
         if not wfn: continue
-        
+
         ts_names = ts_test_names.get(wfn, [''])
         if ts_names == ['']: ts_names = ['(unnamed)']
-        
+
         try:
             wf_data = _parse_wf_sheet(wb[name], wfn, ts_names)
             if wf_data:
                 all_results[wfn] = wf_data
         except Exception:
             logger.exception("Failed to parse WF sheet %s", name)
-    
-    wb.close()
+
     return all_results
+
 
 # ── Export helpers ──────────────────────────────────────────────────────
 
@@ -1035,6 +1056,13 @@ def extract_all_cp_structures(daily_path):
     Returns: {wf_num: [{'cp_idx': int, 'cp_name': str, 'check_items': [str]}, ...]}
     """
     wb = load_workbook(daily_path, data_only=True)
+    result = extract_all_cp_structures_from_workbook(wb)
+    wb.close()
+    return result
+
+
+def extract_all_cp_structures_from_workbook(wb):
+    """Same as extract_all_cp_structures() but operates on an already-opened workbook."""
     all_cps = {}
     for name in wb.sheetnames:
         if name in SKIP_SHEETS or name.startswith('MLB'):
@@ -1042,7 +1070,6 @@ def extract_all_cp_structures(daily_path):
         wfn = wf_num(name)
         if not wfn:
             continue
-        # Find the header row (col 3 = 'Config', col 4 = 'Unit #')
         ws = wb[name]
         header_row = 1
         for r in range(1, ws.max_row + 1):
@@ -1057,7 +1084,6 @@ def extract_all_cp_structures(daily_path):
                 all_cps[wfn] = cps
         except Exception:
             logger.exception("Failed to extract CP structure for sheet %s", name)
-    wb.close()
     return all_cps
 
 
@@ -1080,7 +1106,13 @@ def extract_sn_progress(daily_path):
     """
     _, _, ts_test_names, _ = read_test_summary(daily_path)
     wb = load_workbook(daily_path)  # no data_only — need fill colors
+    result = extract_sn_progress_from_workbook(wb, ts_test_names)
+    wb.close()
+    return result
 
+
+def extract_sn_progress_from_workbook(wb, ts_test_names):
+    """Same as extract_sn_progress() but operates on an already-opened workbook and takes ts_test_names directly."""
     all_progress = {}
 
     for name in wb.sheetnames:
@@ -1101,14 +1133,24 @@ def extract_sn_progress(daily_path):
         except Exception:
             logger.exception("Failed to extract SN progress for sheet %s", name)
 
-    wb.close()
     return all_progress
 
 
 def extract_sn_fact_rows(daily_path, report_id, report_date):
     """Extract all CP/check-item fact rows from a Daily Report workbook."""
-    _, _, ts_test_names, _ = read_test_summary(daily_path)
     wb = load_workbook(daily_path)
+    result = extract_sn_fact_rows_from_workbook(wb, report_id, report_date)
+    wb.close()
+    return result
+
+
+def extract_sn_fact_rows_from_workbook(wb, report_id, report_date, ts_test_names=None):
+    """Same as extract_sn_fact_rows() but operates on an already-opened workbook.
+
+    If ts_test_names is None, it will be read from the workbook.
+    """
+    if ts_test_names is None:
+        _, _, ts_test_names, _ = read_test_summary_from_workbook(wb)
     all_cp_rows = []
     all_check_rows = []
 
@@ -1129,7 +1171,6 @@ def extract_sn_fact_rows(daily_path, report_id, report_date):
         all_cp_rows.extend(cp_rows)
         all_check_rows.extend(check_rows)
 
-    wb.close()
     return all_cp_rows, all_check_rows
 
 
@@ -1433,7 +1474,100 @@ def extract_wf_fact_rows(ws, wf_num, report_id, report_date, ts_names):
     return cp_fact_rows, check_fact_rows
 
 
-# ── CLI self-test ───────────────────────────────────────────────────────
+# ── Consolidated single-open-workbook parsing ────────────────────────────
+
+class DailyReportParseResult:
+    """Result of parsing a Daily Report workbook once."""
+    __slots__ = (
+        'path', 'report_date', 'source_file_name',
+        'ts_data', 'ts_qty', 'ts_test_names', 'ts_num_tests',
+        'wf_names', 'cp_structures', 'mapped_cps',
+        'schedule_segments', 'summary_results',
+        'check_rows', 'cp_rows',
+        'progress_data',
+        'test_names_by_wf',
+    )
+
+    def __init__(self):
+        self.path = ''
+        self.report_date = ''
+        self.source_file_name = ''
+        self.ts_data = {}
+        self.ts_qty = {}
+        self.ts_test_names = {}
+        self.ts_num_tests = {}
+        self.wf_names = {}
+        self.cp_structures = {}
+        self.mapped_cps = {}
+        self.schedule_segments = []
+        self.summary_results = {}
+        self.check_rows = []
+        self.cp_rows = []
+        self.progress_data = {}
+        self.test_names_by_wf = {}
+
+
+def parse_daily_report(path, report_date=None, source_file_name=None):
+    """Parse a Daily Report excel file, opening the workbook only once.
+
+    Returns a DailyReportParseResult with all extracted data.
+    """
+    import os as _os
+
+    result = DailyReportParseResult()
+    result.path = path
+    result.source_file_name = source_file_name or _os.path.basename(path)
+
+    wb = load_workbook(path, data_only=True)
+    try:
+        # 1. Read Test Summary (needed early for ts_test_names)
+        result.ts_data, result.ts_qty, result.ts_test_names, result.ts_num_tests = \
+            read_test_summary_from_workbook(wb)
+
+        # 2. Extract report date from TS data if not provided
+        if not result.report_date:
+            for wf_data in result.ts_data.values():
+                for cfg_data in wf_data.values():
+                    if cfg_data and isinstance(cfg_data, dict):
+                        first_val = next(iter(cfg_data.values()), None)
+                        if isinstance(first_val, dict) and first_val.get('date_raw'):
+                            result.report_date = str(first_val['date_raw'])
+                            break
+                    if result.report_date:
+                        break
+                if result.report_date:
+                    break
+
+        # 3. Read Test Schedule → WF names
+        result.wf_names = read_test_schedule_from_workbook(wb)
+
+        # 4. Extract CP structures
+        result.cp_structures = extract_all_cp_structures_from_workbook(wb)
+
+        # 5. Map CPs to tests
+        result.mapped_cps = attach_test_idx_to_cps(result.cp_structures, result.ts_test_names)
+
+        # 6. Extract schedule segments
+        result.schedule_segments = extract_test_schedule_segments_from_workbook(
+            wb, result.ts_test_names, result.mapped_cps
+        )
+
+        # 7. Build test names dict for current definitions
+        result.test_names_by_wf = result.ts_test_names.copy()
+
+        # 8. Analyze (summary results for WF failure counts)
+        result.summary_results = analyze_from_workbook(wb, result.ts_test_names)
+
+        # 9. Extract SN progress (for stats, not DB writes)
+        result.progress_data = extract_sn_progress_from_workbook(wb, result.ts_test_names)
+
+    finally:
+        wb.close()
+
+    return result
+
+
+# ── CLI self-test ──────────────────────────────────────────────────────────
 if __name__ == '__main__':
     import sys, time
     path = sys.argv[1] if len(sys.argv) > 1 else None

@@ -277,6 +277,154 @@ def prune_historical_schedule_snapshots(conn):
     )
 
 
+def save_current_schedule_segments(conn, run_id, segments):
+    """Replace all current schedule segments (latest-only table)."""
+    conn.execute("DELETE FROM current_schedule_segments")
+    rows = []
+    for segment in segments:
+        rows.append((
+            str(segment['wf_num']),
+            str(segment['config']),
+            int(segment['test_idx']),
+            str(segment.get('test_name') or f"Test{segment['test_idx'] + 1}"),
+            str(segment.get('schedule_test_item') or ''),
+            str(segment['planned_start_date']),
+            str(segment['planned_end_date']),
+            int(segment.get('source_row') or 0),
+            str(segment.get('confidence') or 'medium'),
+            str(segment.get('inference_reason') or ''),
+            json.dumps(segment.get('marker_labels', [])),
+            run_id,
+        ))
+    conn.executemany(
+        """INSERT INTO current_schedule_segments
+           (wf_num, config, test_idx, test_name, schedule_test_item,
+            planned_start_date, planned_end_date, source_row, confidence,
+            inference_reason, marker_labels, updated_run_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        rows,
+    )
+
+
+def get_current_schedule_segments(conn, wf_num=None):
+    """Get current schedule segments, optionally filtered by wf_num."""
+    sql = """SELECT * FROM current_schedule_segments"""
+    params = []
+    if wf_num is not None:
+        sql += " WHERE wf_num = ?"
+        params.append(str(wf_num))
+    sql += " ORDER BY CAST(wf_num AS REAL), config, test_idx"
+    rows = conn.execute(sql, params).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item['marker_labels'] = json.loads(item.get('marker_labels') or '[]')
+        except (TypeError, json.JSONDecodeError):
+            item['marker_labels'] = []
+        result.append(item)
+    return result
+
+
+def save_current_wf_definitions(conn, run_id, wf_names):
+    """Replace all current WF definitions (latest-only table)."""
+    conn.execute("DELETE FROM current_wf_definitions")
+    rows = [(str(wfn), str(name), run_id) for wfn, name in wf_names.items()]
+    conn.executemany(
+        """INSERT INTO current_wf_definitions (wf_num, wf_name, updated_run_id)
+           VALUES (?, ?, ?)""",
+        rows,
+    )
+
+
+def get_current_wf_definitions(conn):
+    """Return {wf_num: wf_name} dict from current definitions."""
+    rows = conn.execute(
+        "SELECT wf_num, wf_name FROM current_wf_definitions ORDER BY CAST(wf_num AS REAL)"
+    ).fetchall()
+    return {r['wf_num']: r['wf_name'] for r in rows}
+
+
+def save_current_test_definitions(conn, run_id, test_names_by_wf):
+    """Replace all current test definitions (latest-only table).
+
+    test_names_by_wf: {wf_num: [test_name, ...]}
+    """
+    conn.execute("DELETE FROM current_test_definitions")
+    rows = []
+    for wf_num, names in test_names_by_wf.items():
+        for test_idx, test_name in enumerate(names):
+            rows.append((str(wf_num), test_idx, str(test_name), run_id))
+    conn.executemany(
+        """INSERT INTO current_test_definitions (wf_num, test_idx, test_name, updated_run_id)
+           VALUES (?, ?, ?, ?)""",
+        rows,
+    )
+
+
+def get_current_test_definitions(conn, wf_num=None):
+    """Return {wf_num: [test_name, ...]} dict from current definitions."""
+    sql = "SELECT wf_num, test_idx, test_name FROM current_test_definitions"
+    params = []
+    if wf_num is not None:
+        sql += " WHERE wf_num = ?"
+        params.append(str(wf_num))
+    sql += " ORDER BY CAST(wf_num AS REAL), test_idx"
+    rows = conn.execute(sql, params).fetchall()
+    result = {}
+    for r in rows:
+        result.setdefault(r['wf_num'], []).append(r['test_name'])
+    return result
+
+
+def save_current_cp_definitions(conn, run_id, cps_by_wf):
+    """Replace all current CP definitions (latest-only table).
+
+    cps_by_wf: {wf_num: [{'cp_idx': int, 'cp_name': str, 'test_idx': int, 'check_items': list}, ...]}
+    """
+    conn.execute("DELETE FROM current_cp_definitions")
+    rows = []
+    for wf_num, cp_list in cps_by_wf.items():
+        for cp in cp_list:
+            rows.append((
+                str(wf_num),
+                int(cp['cp_idx']),
+                str(cp['cp_name']),
+                cp.get('test_idx'),
+                json.dumps(cp.get('check_items', [])),
+                run_id,
+            ))
+    conn.executemany(
+        """INSERT INTO current_cp_definitions (wf_num, cp_idx, cp_name, test_idx, check_items, updated_run_id)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        rows,
+    )
+
+
+def get_current_cp_definitions(conn, wf_num=None):
+    """Return {wf_num: [{cp_idx, cp_name, test_idx, check_items}, ...]} dict."""
+    sql = "SELECT wf_num, cp_idx, cp_name, test_idx, check_items FROM current_cp_definitions"
+    params = []
+    if wf_num is not None:
+        sql += " WHERE wf_num = ?"
+        params.append(str(wf_num))
+    sql += " ORDER BY CAST(wf_num AS REAL), cp_idx"
+    rows = conn.execute(sql, params).fetchall()
+    result = {}
+    for r in rows:
+        try:
+            check_items = json.loads(r.get('check_items') or '[]')
+        except (TypeError, json.JSONDecodeError):
+            check_items = []
+        result.setdefault(r['wf_num'], []).append({
+            'cp_idx': r['cp_idx'],
+            'cp_name': r['cp_name'],
+            'test_idx': r['test_idx'],
+            'check_items': check_items,
+        })
+    return result
+
+
 def get_report_wf_meta(conn, report_id):
     rows = conn.execute(
         "SELECT wf_num, wf_name FROM report_wf_meta WHERE report_id = ?",
@@ -393,65 +541,67 @@ def _check_identity_tuple(row):
 
 
 def save_sn_check_state_history(conn, report_id, report_date, rows):
+    """Write lifecycle state for check-item observations.
+    
+    Lifecycle semantics:
+    - New observation with no open row → INSERT new lifecycle row
+    - Same state_hash as open row → UPDATE last_seen fields only
+    - Different state_hash → CLOSE old row, INSERT new lifecycle row
+    - Previously open row not observed → CLOSE (disappeared)
+    
+    Uses batch queries (single open-row SELECT, batched writes).
+    """
+    # 1. Query all currently open lifecycle rows once
+    open_rows = conn.execute(
+        """SELECT id, wf_num, config, sn, cp_idx, check_item_idx, state_hash, first_report_id
+           FROM sn_check_state_history
+           WHERE closed_before_report_id IS NULL"""
+    ).fetchall()
+    
+    open_by_identity = {}
+    for row in open_rows:
+        key = (
+            row['wf_num'],
+            row['config'],
+            row['sn'],
+            int(row['cp_idx']),
+            int(row['check_item_idx']),
+        )
+        open_by_identity[key] = row
+    
+    # 2. Build observation set and prepare batches
     observed = set()
-    inserted = 0
-    updated = 0
-    closed = 0
-
+    unchanged_updates = []      # (last_seen_report_id, last_seen_report_date, last_source_row, last_source_col, id)
+    state_closures = []         # (closed_before_report_id, closed_before_report_date, id)
+    inserts = []                # full row tuples
+    
     for r in rows:
         identity = _check_identity_tuple(r)
         observed.add(identity)
         state_hash = _check_state_hash(r)
-
-        current = conn.execute(
-            """SELECT id, state_hash
-               FROM sn_check_state_history
-               WHERE wf_num = ? AND config = ? AND sn = ?
-                 AND cp_idx = ? AND check_item_idx = ?
-                 AND closed_before_report_id IS NULL
-               ORDER BY first_report_id DESC
-               LIMIT 1""",
-            identity,
-        ).fetchone()
-
+        
+        current = open_by_identity.get(identity)
+        
         if current and current['state_hash'] == state_hash:
-            conn.execute(
-                """UPDATE sn_check_state_history
-                   SET last_seen_report_id = ?,
-                       last_seen_report_date = ?,
-                       last_source_row = ?,
-                       last_source_col = ?
-                   WHERE id = ?""",
-                (
+            # Unchanged: update last_seen
+            unchanged_updates.append((
+                report_id,
+                report_date,
+                r.get('source_row'),
+                r.get('source_col'),
+                current['id'],
+            ))
+        else:
+            if current:
+                # State changed: close old row
+                state_closures.append((
                     report_id,
                     report_date,
-                    r.get('source_row'),
-                    r.get('source_col'),
                     current['id'],
-                ),
-            )
-            updated += 1
-            continue
-
-        if current:
-            conn.execute(
-                """UPDATE sn_check_state_history
-                   SET closed_before_report_id = ?,
-                       closed_before_report_date = ?
-                   WHERE id = ?""",
-                (report_id, report_date, current['id']),
-            )
-            closed += 1
-
-        conn.execute(
-            """INSERT INTO sn_check_state_history
-               (wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
-                check_item, state_hash, raw_value, normalized_value, status,
-                failure_type, fill_color, font_color, first_report_id,
-                first_report_date, last_seen_report_id, last_seen_report_date,
-                first_source_row, first_source_col, last_source_row, last_source_col)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
+                ))
+            
+            # Insert new lifecycle row
+            inserts.append((
                 r['wf_num'],
                 r['config'],
                 r['sn'],
@@ -475,38 +625,60 @@ def save_sn_check_state_history(conn, report_id, report_date, rows):
                 r.get('source_col'),
                 r.get('source_row'),
                 r.get('source_col'),
-            ),
+            ))
+    
+    # 3. Close rows not observed in this import (disappeared from report)
+    missing_closures = []
+    for identity, row in open_by_identity.items():
+        if identity not in observed and row.get('first_report_id', 0) < report_id:
+            missing_closures.append((
+                report_id,
+                report_date,
+                row['id'],
+            ))
+    
+    # 4. Execute batched writes
+    # 4a. Update last_seen for unchanged rows
+    if unchanged_updates:
+        conn.executemany(
+            """UPDATE sn_check_state_history
+               SET last_seen_report_id = ?,
+                   last_seen_report_date = ?,
+                   last_source_row = ?,
+                   last_source_col = ?
+               WHERE id = ?""",
+            unchanged_updates,
         )
-        inserted += 1
-
-    open_rows = conn.execute(
-        """SELECT id, wf_num, config, sn, cp_idx, check_item_idx
-           FROM sn_check_state_history
-           WHERE closed_before_report_id IS NULL
-             AND first_report_id < ?""",
-        (report_id,),
-    ).fetchall()
-
-    for row in open_rows:
-        key = (
-            row['wf_num'],
-            row['config'],
-            row['sn'],
-            int(row['cp_idx']),
-            int(row['check_item_idx']),
-        )
-        if key in observed:
-            continue
-        conn.execute(
+    
+    # 4b. Close rows with state change
+    all_closures = state_closures + missing_closures
+    if all_closures:
+        conn.executemany(
             """UPDATE sn_check_state_history
                SET closed_before_report_id = ?,
                    closed_before_report_date = ?
                WHERE id = ?""",
-            (report_id, report_date, row['id']),
+            all_closures,
         )
-        closed += 1
-
-    return {'inserted': inserted, 'updated': updated, 'closed': closed}
+    
+    # 4c. Insert new rows
+    if inserts:
+        conn.executemany(
+            """INSERT INTO sn_check_state_history
+               (wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                check_item, state_hash, raw_value, normalized_value, status,
+                failure_type, fill_color, font_color, first_report_id,
+                first_report_date, last_seen_report_id, last_seen_report_date,
+                first_source_row, first_source_col, last_source_row, last_source_col)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            inserts,
+        )
+    
+    return {
+        'inserted': len(inserts),
+        'updated': len(unchanged_updates),
+        'closed': len(all_closures),
+    }
 
 
 def get_sn_cp_current_progress(conn, report_id):
@@ -548,6 +720,82 @@ def get_sn_fact_history(sn):
     ).fetchall()
     conn.close()
     return rows
+
+
+def get_sn_lifecycle_history(sn):
+    """Get SN history from lifecycle table with current CP definitions for names.
+
+    Returns rows similar to get_sn_fact_history but from lifecycle source:
+    {report_date, report_id, wf_num, config, sn, unit_num, test_idx, test_name,
+     cp_idx, cp_name, status, failure_type, is_current_cp, total_cps}
+    """
+    conn = get_conn()
+    # First get the lifecycle rows grouped by report
+    rows = conn.execute(
+        """SELECT DISTINCT l.wf_num, l.config, l.sn, l.unit_num, l.test_idx,
+               l.cp_idx, l.status, l.failure_type,
+               l.first_report_id as report_id, r.report_date,
+               ccp.cp_name, ccp.test_idx as cp_test_idx,
+               ct.test_name
+        FROM sn_check_state_history l
+        JOIN reports r ON r.id = l.first_report_id AND r.is_active = 1
+        LEFT JOIN current_cp_definitions ccp
+          ON ccp.wf_num = l.wf_num AND ccp.cp_idx = l.cp_idx
+        LEFT JOIN current_test_definitions ct
+          ON ct.wf_num = l.wf_num AND ct.test_idx = l.test_idx
+        WHERE l.sn = ?
+        ORDER BY r.report_date, l.wf_num, l.config, l.cp_idx""",
+        (sn,),
+    ).fetchall()
+
+    # Also get total CPs per WF from current definitions
+    cp_counts = {}
+    if rows:
+        wf_set = set(r['wf_num'] for r in rows)
+        for wf in wf_set:
+            count = conn.execute(
+                "SELECT COUNT(*) as c FROM current_cp_definitions WHERE wf_num = ?",
+                (wf,),
+            ).fetchone()['c']
+            cp_counts[wf] = count
+
+    # Determine is_current_cp: the last CP with data for this SN in each WF+config+date
+    # Use a per-WF+config+date calculation
+    result = []
+    for row in rows:
+        wf = row['wf_num']
+        cfg = row['config']
+        # Find max cp_idx for this SN in this WF+config combination at this report's time
+        max_cp = conn.execute(
+            """SELECT MAX(l2.cp_idx) as max_cp
+               FROM sn_check_state_history l2
+               WHERE l2.sn = ? AND l2.wf_num = ? AND l2.config = ?
+                 AND l2.first_report_id <= ?
+                 AND (l2.closed_before_report_id IS NULL OR l2.closed_before_report_id > ?)""",
+            (sn, wf, cfg, row['report_id'], row['report_id']),
+        ).fetchone()
+
+        is_current = (max_cp and max_cp['max_cp'] is not None and row['cp_idx'] == max_cp['max_cp'])
+
+        result.append({
+            'report_date': row['report_date'],
+            'report_id': row['report_id'],
+            'wf_num': row['wf_num'],
+            'config': row['config'],
+            'sn': row['sn'],
+            'unit_num': row['unit_num'],
+            'test_idx': row['test_idx'],
+            'test_name': row['test_name'] or (f"Test{row['test_idx'] + 1}" if row['test_idx'] is not None else ''),
+            'cp_idx': row['cp_idx'],
+            'cp_name': row['cp_name'] or '',
+            'status': row['status'],
+            'failure_type': row['failure_type'],
+            'is_current_cp': 1 if is_current else 0,
+            'total_cps': cp_counts.get(wf, 0),
+        })
+
+    conn.close()
+    return result
 
 
 def get_sn_check_details(report_id, wf_num, config, sn, cp_idx):
@@ -904,6 +1152,10 @@ def init_db(drop_all=False, conn=None):
             DROP TABLE IF EXISTS sn_check_state_history;
             DROP TABLE IF EXISTS sn_check_results;
             DROP TABLE IF EXISTS sn_cp_results;
+            DROP TABLE IF EXISTS current_cp_definitions;
+            DROP TABLE IF EXISTS current_test_definitions;
+            DROP TABLE IF EXISTS current_wf_definitions;
+            DROP TABLE IF EXISTS current_schedule_segments;
             DROP TABLE IF EXISTS report_schedule_segments;
             DROP TABLE IF EXISTS report_cps;
             DROP TABLE IF EXISTS report_test_names;
@@ -975,6 +1227,7 @@ def init_db(drop_all=False, conn=None):
             detail TEXT
         );
 
+        -- [RETIRED: Phase 5+] Retained for backward compat; no longer written.
         CREATE TABLE IF NOT EXISTS sn_progress (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             report_id INTEGER NOT NULL REFERENCES reports(id),
@@ -1070,6 +1323,51 @@ def init_db(drop_all=False, conn=None):
             PRIMARY KEY (report_id, wf_num, config, test_idx)
         );
 
+        CREATE TABLE IF NOT EXISTS current_schedule_segments (
+            wf_num TEXT NOT NULL,
+            config TEXT NOT NULL,
+            test_idx INTEGER NOT NULL,
+            test_name TEXT NOT NULL,
+            schedule_test_item TEXT DEFAULT '',
+            planned_start_date TEXT NOT NULL,
+            planned_end_date TEXT NOT NULL,
+            source_row INTEGER DEFAULT 0,
+            confidence TEXT DEFAULT 'medium',
+            inference_reason TEXT DEFAULT '',
+            marker_labels TEXT DEFAULT '[]',
+            updated_run_id INTEGER REFERENCES reports(id),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (wf_num, config, test_idx)
+        );
+
+        CREATE TABLE IF NOT EXISTS current_wf_definitions (
+            wf_num TEXT PRIMARY KEY,
+            wf_name TEXT NOT NULL DEFAULT '',
+            updated_run_id INTEGER REFERENCES reports(id),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS current_test_definitions (
+            wf_num TEXT NOT NULL,
+            test_idx INTEGER NOT NULL,
+            test_name TEXT NOT NULL,
+            updated_run_id INTEGER REFERENCES reports(id),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (wf_num, test_idx)
+        );
+
+        CREATE TABLE IF NOT EXISTS current_cp_definitions (
+            wf_num TEXT NOT NULL,
+            cp_idx INTEGER NOT NULL,
+            cp_name TEXT NOT NULL,
+            test_idx INTEGER,
+            check_items TEXT DEFAULT '[]',
+            updated_run_id INTEGER REFERENCES reports(id),
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (wf_num, cp_idx)
+        );
+
+        -- [RETIRED: Phase 5+] Retained for backward compat; no longer written.
         CREATE TABLE IF NOT EXISTS sn_cp_results (
             report_id INTEGER NOT NULL REFERENCES reports(id),
             report_date TEXT NOT NULL,
@@ -1086,6 +1384,7 @@ def init_db(drop_all=False, conn=None):
             PRIMARY KEY (report_id, wf_num, config, sn, cp_idx)
         );
 
+        -- [RETIRED: Phase 5+] Retained for backward compat; no longer written.
         CREATE TABLE IF NOT EXISTS sn_check_results (
             report_id INTEGER NOT NULL REFERENCES reports(id),
             report_date TEXT NOT NULL,
@@ -1154,12 +1453,9 @@ def init_db(drop_all=False, conn=None):
         CREATE INDEX IF NOT EXISTS idx_sn_progress_report ON sn_progress(report_id);
         CREATE INDEX IF NOT EXISTS idx_sn_progress_sn ON sn_progress(sn);
         CREATE INDEX IF NOT EXISTS idx_sn_progress_wf ON sn_progress(wf_num, config);
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_sn_progress_unique ON sn_progress(report_id, wf_num, config, sn);
-
         CREATE INDEX IF NOT EXISTS idx_reports_active_date ON reports(report_date, is_active);
         CREATE INDEX IF NOT EXISTS idx_sn_cp_report_wf_cfg ON sn_cp_results(report_id, wf_num, config, test_idx);
         CREATE INDEX IF NOT EXISTS idx_sn_cp_sn ON sn_cp_results(sn, report_id);
-        CREATE INDEX IF NOT EXISTS idx_sn_cp_progress ON sn_cp_results(report_id, wf_num, config, sn, cp_idx);
         CREATE INDEX IF NOT EXISTS idx_sn_check_report_wf_cfg ON sn_check_results(report_id, wf_num, config, test_idx, cp_idx);
         CREATE INDEX IF NOT EXISTS idx_sn_check_sn ON sn_check_results(sn, report_id);
         CREATE INDEX IF NOT EXISTS idx_sn_check_hist_point ON sn_check_state_history(
@@ -1171,7 +1467,35 @@ def init_db(drop_all=False, conn=None):
         CREATE INDEX IF NOT EXISTS idx_sn_check_hist_open ON sn_check_state_history(
             wf_num, config, sn, cp_idx, check_item_idx
         ) WHERE closed_before_report_id IS NULL;
+        
+        CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_open_point
+        ON sn_check_state_history(wf_num, config, sn, cp_idx, check_item_idx)
+        WHERE closed_before_report_id IS NULL;
+        
+        CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_sn
+        ON sn_check_state_history(sn, wf_num, config, first_report_id, closed_before_report_id);
+        
+        CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_window
+        ON sn_check_state_history(first_report_id, closed_before_report_id);
+        
+        CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_current_failure
+        ON sn_check_state_history(wf_num, config, test_idx, failure_type)
+        WHERE closed_before_report_id IS NULL AND failure_type IS NOT NULL;
+        
+        CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_current_progress
+        ON sn_check_state_history(wf_num, config, sn, cp_idx)
+        WHERE closed_before_report_id IS NULL;
     """)
+    # ── Cache table policy (Phase 7) ──────────────────────────────────
+    # These tables are derived caches, rebuilt during full --rebuild:
+    #   - wf_results: failure counts per WF/config/test per report
+    #   - report_stats: per-report summary (WF counts, FA stats)
+    #   - daily_changes: change detection between adjacent reports
+    #   - predictions: auto-computed completion predictions
+    #
+    # They are populated by save_report() and compute_auto_predictions().
+    # Rebuild rule: full --rebuild regenerates them from Excel sources.
+    # Do NOT delete these tables — API endpoints depend on them.
     # Migrations for existing databases
     try:
         conn.execute("ALTER TABLE reports ADD COLUMN ts_test_names TEXT DEFAULT '{}'")
@@ -1216,6 +1540,13 @@ def init_db(drop_all=False, conn=None):
     conn.commit()
     if owns_conn:
         conn.close()
+
+
+def vacuum_db():
+    """Reclaim storage after dropping tables. Must be called on a separate connection."""
+    conn = get_conn()
+    conn.execute("VACUUM")
+    conn.close()
 
 
 # ── Save ───────────────────────────────────────────────────────────────
@@ -1564,6 +1895,41 @@ def get_wf_config_progress_rows(conn, report_id):
     ).fetchall()
 
 
+def get_wf_config_progress_from_lifecycle(conn, report_id):
+    """Return one progress row per WF+Config from lifecycle table."""
+    return conn.execute(
+        """WITH sn_current_cp AS (
+            SELECT wf_num, config, sn,
+                   MAX(cp_idx) as max_cp_idx
+            FROM sn_check_state_history
+            WHERE first_report_id <= ?
+              AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
+              AND status NOT IN ('pending', '')
+            GROUP BY wf_num, config, sn
+        ),
+        cfg_progress AS (
+            SELECT wf_num, config,
+                   MAX(max_cp_idx) as max_cp_idx,
+                   COUNT(*) as sn_count
+            FROM sn_current_cp
+            GROUP BY wf_num, config
+        ),
+        cp_totals AS (
+            SELECT wf_num, COUNT(*) as total_cps
+            FROM current_cp_definitions
+            GROUP BY wf_num
+        )
+        SELECT p.wf_num, p.config, p.max_cp_idx,
+               ccp.cp_name, ccp.test_idx, p.sn_count,
+               COALESCE(ct.total_cps, 0) AS total_cps
+        FROM cfg_progress p
+        LEFT JOIN current_cp_definitions ccp
+          ON ccp.wf_num = p.wf_num AND ccp.cp_idx = p.max_cp_idx
+        LEFT JOIN cp_totals ct ON ct.wf_num = p.wf_num""",
+        (report_id, report_id),
+    ).fetchall()
+
+
 # ── Completion & Failure Stats ──────────────────────────────────────────
 
 def get_completion_stats(report_id):
@@ -1636,6 +2002,94 @@ def get_completion_stats(report_id):
             'completed_cps': d['completed_cps'],
             'pct': round(d['completed_cps'] / d['total_cps'] * 100, 1)
                    if d['total_cps'] else 0,
+        }
+
+    return result
+
+
+def get_completion_stats_from_lifecycle(report_id=None):
+    """Get completion stats from lifecycle table (replaces sn_progress query)."""
+    conn = get_conn()
+    if report_id is None:
+        report_id = get_latest_active_report_id(conn)
+    if not report_id:
+        conn.close()
+        return {}
+
+    report = conn.execute("SELECT report_date FROM reports WHERE id = ?", (report_id,)).fetchone()
+    if not report:
+        conn.close()
+        return {}
+
+    # Get current CP for each SN from lifecycle (open rows at the report's point in time)
+    rows = conn.execute(
+        """SELECT l.wf_num, l.config,
+               MAX(l.cp_idx) as max_cp,
+               COUNT(DISTINCT l.sn) as sn_count
+        FROM sn_check_state_history l
+        WHERE l.first_report_id <= ?
+          AND (l.closed_before_report_id IS NULL OR l.closed_before_report_id > ?)
+          AND l.status NOT IN ('pending', '')
+        GROUP BY l.wf_num, l.config""",
+        (report_id, report_id),
+    ).fetchall()
+
+    # Get total CPs from current definitions
+    cp_total_rows = conn.execute(
+        "SELECT wf_num, COUNT(*) as total_cps FROM current_cp_definitions GROUP BY wf_num"
+    ).fetchall()
+    cp_totals = {r['wf_num']: r['total_cps'] for r in cp_total_rows}
+
+    cat_rows = conn.execute("SELECT * FROM wf_categories").fetchall()
+    conn.close()
+
+    wf_to_cat = {}
+    for cat in cat_rows:
+        wfs = [w.strip() for w in cat['wf_nums'].split(',') if w.strip()]
+        for w in wfs:
+            wf_key = w[2:] if w.upper().startswith('WF') else w
+            wf_to_cat[wf_key] = cat['category_name']
+
+    from collections import defaultdict
+    by_config = defaultdict(lambda: {'total_cps': 0, 'completed_cps': 0})
+    by_category = defaultdict(lambda: {'total_cps': 0, 'completed_cps': 0})
+
+    for row in rows:
+        cfg = row['config']
+        total = cp_totals.get(row['wf_num'], 0)
+        completed = (row['max_cp'] or 0) + 1
+
+        by_config[cfg]['total_cps'] += total
+        by_config[cfg]['completed_cps'] += completed
+
+        cat_name = wf_to_cat.get(row['wf_num'])
+        if cat_name:
+            by_category[cat_name]['total_cps'] += total
+            by_category[cat_name]['completed_cps'] += completed
+
+    overall_total = sum(d['total_cps'] for d in by_config.values())
+    overall_completed = sum(d['completed_cps'] for d in by_config.values())
+
+    result = {
+        'overall': {
+            'total_cps': overall_total,
+            'completed_cps': overall_completed,
+            'pct': round(overall_completed / overall_total * 100, 1) if overall_total else 0,
+        },
+        'by_config': {},
+        'by_category': {},
+    }
+    for cfg, d in by_config.items():
+        result['by_config'][cfg] = {
+            'total_cps': d['total_cps'],
+            'completed_cps': d['completed_cps'],
+            'pct': round(d['completed_cps'] / d['total_cps'] * 100, 1) if d['total_cps'] else 0,
+        }
+    for cat, d in by_category.items():
+        result['by_category'][cat] = {
+            'total_cps': d['total_cps'],
+            'completed_cps': d['completed_cps'],
+            'pct': round(d['completed_cps'] / d['total_cps'] * 100, 1) if d['total_cps'] else 0,
         }
 
     return result
@@ -1716,6 +2170,112 @@ def get_failure_rate_stats(report_id=None):
 
     top.sort(key=lambda x: x['rate'], reverse=True)
     conn.close()
+
+    return {
+        'by_config': by_config,
+        'by_test': by_test,
+        'by_wf': by_wf,
+        'top_failures': top[:50],
+    }
+
+
+def get_failure_rate_stats_from_lifecycle(report_id=None):
+    """Multi-dimension failure stats from lifecycle (replaces wf_results query)."""
+    conn = get_conn()
+    if report_id is None:
+        report_id = get_latest_active_report_id(conn)
+    if not report_id:
+        conn.close()
+        return {}
+
+    # Count unique SNs with failures per WF+config+test_idx
+    # Using lifecycle point-in-time query
+    rows = conn.execute(
+        """SELECT l.wf_num, l.config, l.test_idx,
+               COUNT(DISTINCT CASE WHEN l.failure_type = 'spec' THEN l.sn END) as spec,
+               COUNT(DISTINCT CASE WHEN l.failure_type = 'strife' THEN l.sn END) as strife,
+               COUNT(DISTINCT l.sn) as total_sns
+        FROM sn_check_state_history l
+        WHERE l.first_report_id <= ?
+          AND (l.closed_before_report_id IS NULL OR l.closed_before_report_id > ?)
+          AND l.failure_type IS NOT NULL
+        GROUP BY l.wf_num, l.config, l.test_idx""",
+        (report_id, report_id),
+    ).fetchall()
+
+    # Also get total SN counts by WF+config to match wf_results semantics
+    total_rows = conn.execute(
+        """SELECT wf_num, config, COUNT(DISTINCT sn) as total_units
+           FROM sn_check_state_history l
+           WHERE l.first_report_id <= ?
+             AND (l.closed_before_report_id IS NULL OR l.closed_before_report_id > ?)
+             AND l.test_idx = 0
+           GROUP BY wf_num, config""",
+        (report_id, report_id),
+    ).fetchall()
+    total_by_key = {}
+    for r in total_rows:
+        total_by_key[(r['wf_num'], r['config'])] = r['total_units']
+
+    conn.close()
+
+    # Build result in same format as get_failure_rate_stats
+    by_config = {}
+    by_wf = {}
+    by_test = {}
+    top = []
+
+    for r in rows:
+        wf = r['wf_num']
+        cfg = r['config']
+        spec = r['spec'] or 0
+        strife = r['strife'] or 0
+        total = total_by_key.get((wf, cfg), r['total_sns']) or 0
+
+        # by_config
+        if cfg not in by_config:
+            by_config[cfg] = {'spec_fails': 0, 'strife_fails': 0, 'total_tests': 0}
+        by_config[cfg]['spec_fails'] += spec
+        by_config[cfg]['strife_fails'] += strife
+        by_config[cfg]['total_tests'] += total
+
+        # by_wf
+        if wf not in by_wf:
+            by_wf[wf] = {'spec_fails': 0, 'strife_fails': 0, 'total_tests': 0}
+        by_wf[wf]['spec_fails'] += spec
+        by_wf[wf]['strife_fails'] += strife
+        by_wf[wf]['total_tests'] += total
+
+        # by_test + top_failures
+        key = f"{wf}_{cfg}_Test{r['test_idx'] + 1}"
+        total_fails = spec + strife
+        rate = round(total_fails / total * 100, 1) if total else 0
+        by_test[key] = {
+            'wf': wf, 'config': cfg, 'test_idx': r['test_idx'],
+            'spec': spec, 'strife': strife, 'total': total,
+            'spec_rate': round(spec / total * 100, 1) if total else 0,
+            'strife_rate': round(strife / total * 100, 1) if total else 0,
+            'total_rate': rate,
+        }
+        top.append({
+            'wf': wf, 'cfg': cfg, 'test': f"Test{r['test_idx'] + 1}",
+            'spec': spec, 'strife': strife, 'total': total,
+            'rate': rate,
+        })
+
+    # Finalize rates
+    for cfg, d in by_config.items():
+        t = d['total_tests']
+        d['spec_rate'] = round(d['spec_fails'] / t * 100, 1) if t else 0
+        d['strife_rate'] = round(d['strife_fails'] / t * 100, 1) if t else 0
+        d['total_rate'] = round((d['spec_fails'] + d['strife_fails']) / t * 100, 1) if t else 0
+    for wf, d in by_wf.items():
+        t = d['total_tests']
+        d['spec_rate'] = round(d['spec_fails'] / t * 100, 1) if t else 0
+        d['strife_rate'] = round(d['strife_fails'] / t * 100, 1) if t else 0
+        d['total_rate'] = round((d['spec_fails'] + d['strife_fails']) / t * 100, 1) if t else 0
+
+    top.sort(key=lambda x: x['rate'], reverse=True)
 
     return {
         'by_config': by_config,
