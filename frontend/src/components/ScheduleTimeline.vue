@@ -56,6 +56,27 @@
                 :data-date="column.date"
               >
                 <span
+                  v-for="segment in planSegmentsOnDate(row, column.date)"
+                  :key="`${rowKey(row)}-${column.date}-plan-${segment.test_idx}`"
+                  class="plan-progress-rail"
+                  :class="{
+                    'plan-progress-start': isTestStartDate(segment, column.date),
+                    'plan-progress-end': isTestEndDate(segment, column.date)
+                  }"
+                ></span>
+
+                <span
+                  v-for="segment in actualSegmentsOnDate(row, column.date)"
+                  :key="`${rowKey(row)}-${column.date}-actual-${segment.test_idx}`"
+                  class="actual-progress-rail"
+                  :class="{
+                    'actual-progress-start': isActualSegmentStartDate(segment, column.date),
+                    'actual-progress-end': isActualSegmentEndDate(segment, row, column.date),
+                    'actual-progress-tip': isActualProgressEndDate(row, column.date)
+                  }"
+                ></span>
+
+                <span
                   v-if="edgeMarkerOnDate(row, column.date)"
                   class="edge-marker"
                   :class="`edge-marker-${edgeMarkerOnDate(row, column.date).type}`"
@@ -116,12 +137,67 @@ function edgeMarkerOnDate(row, date) {
   return (row.edge_markers || []).find((marker) => marker.date === date) || null
 }
 
-function isDateInRange(row, date) {
-  return laneTests(row).some((test) => {
-    const start = test.planned_start_date || test.days?.[0]
-    const end = test.planned_end_date || test.days?.[test.days.length - 1]
-    return start && end && date >= start && date <= end
+function testStartDate(test) {
+  return test.planned_start_date || test.days?.[0] || ''
+}
+
+function testEndDate(test) {
+  return test.planned_end_date || test.days?.[test.days.length - 1] || ''
+}
+
+function isTestInRange(test, date) {
+  const start = testStartDate(test)
+  const end = testEndDate(test)
+  return start && end && date >= start && date <= end
+}
+
+function isTestStartDate(test, date) {
+  return testStartDate(test) === date
+}
+
+function isTestEndDate(test, date) {
+  return testEndDate(test) === date
+}
+
+function planSegmentsOnDate(row, date) {
+  return laneTests(row).filter((test) => isTestInRange(test, date))
+}
+
+function actualSegmentEndDate(test, row) {
+  const progressEnd = row.actual_progress?.end_date
+  if (!progressEnd || progressEnd < testStartDate(test)) return ''
+
+  const days = test.days?.length
+    ? test.days.filter((day) => day <= progressEnd)
+    : [testStartDate(test), testEndDate(test)].filter((day) => day && day <= progressEnd)
+  return days[days.length - 1] || ''
+}
+
+function actualSegmentsOnDate(row, date) {
+  return laneTests(row).filter((test) => {
+    const end = actualSegmentEndDate(test, row)
+    return end && isTestInRange(test, date) && date <= end
   })
+}
+
+function actualProgressEndDate(row) {
+  const endDates = laneTests(row)
+    .map((test) => actualSegmentEndDate(test, row))
+    .filter(Boolean)
+    .sort()
+  return endDates[endDates.length - 1] || ''
+}
+
+function isActualSegmentStartDate(test, date) {
+  return testStartDate(test) === date
+}
+
+function isActualSegmentEndDate(test, row, date) {
+  return actualSegmentEndDate(test, row) === date
+}
+
+function isDateInRange(row, date) {
+  return planSegmentsOnDate(row, date).length > 0
 }
 
 function cellClass(row, column) {
@@ -130,7 +206,7 @@ function cellClass(row, column) {
   return {
     sunday: column.isSunday,
     active,
-    'actual-progress': isActualProgressDate(row, column.date),
+    'actual-progress': actualSegmentsOnDate(row, column.date).length > 0,
     hasEdgeMarker: Boolean(edgeMarkerOnDate(row, column.date)),
     start: startCount(row, column.date) > 0,
     end: endCount(row, column.date) > 0
@@ -139,19 +215,25 @@ function cellClass(row, column) {
 
 function cellTitle(row, column) {
   const tests = testsOnDate(row, column.date).map((test) => test.test_name).join(' / ')
-  if (!tests) return column.date
-  return `${column.date} · ${tests || row.test_name}`
+  const details = [column.date]
+  if (tests) details.push(tests || row.test_name)
+  if (isActualProgressEndDate(row, column.date)) {
+    details.push(`Completed: ${row.actual_progress?.current_cp_name || `CP${row.actual_progress?.current_cp_idx ?? ''}`}`)
+  }
+  return details.filter(Boolean).join('\n')
 }
 
 function cellStyle(row, column) {
   const onDay = testsOnDate(row, column.date).length > 0
-  const inRange = onDay || isActualProgressDate(row, column.date) || (column.isSunday && isDateInRange(row, column.date))
+  const inRange = onDay || actualSegmentsOnDate(row, column.date).length > 0 || (column.isSunday && isDateInRange(row, column.date))
   if (!inRange) return {}
   const color = barColor(row.config)
   return {
     '--schedule-color': color,
-    '--schedule-soft': `${color}22`,
-    '--actual-progress-soft': `${color}33`
+    '--schedule-soft': `color-mix(in srgb, ${color} 42%, var(--bg-card))`,
+    '--actual-progress-soft': `color-mix(in srgb, ${color} 10%, var(--bg-card))`,
+    '--actual-progress-fill': `color-mix(in srgb, ${color} 10%, var(--bg-card))`,
+    '--actual-progress-ring': `color-mix(in srgb, ${color} 24%, var(--bg-card))`
   }
 }
 
@@ -173,15 +255,15 @@ function laneTests(row) {
 }
 
 function testsOnDate(row, date) {
-  return laneTests(row).filter((test) => (test.days || []).includes(date))
+  return planSegmentsOnDate(row, date)
 }
 
 function startsOnDate(row, date) {
-  return laneTests(row).filter((test) => (test.days?.[0] || test.planned_start_date) === date)
+  return laneTests(row).filter((test) => isTestStartDate(test, date))
 }
 
 function endsOnDate(row, date) {
-  return laneTests(row).filter((test) => (test.days?.[test.days.length - 1] || test.planned_end_date) === date)
+  return laneTests(row).filter((test) => isTestEndDate(test, date))
 }
 
 function startCount(row, date) {
@@ -192,10 +274,8 @@ function endCount(row, date) {
   return endsOnDate(row, date).length
 }
 
-function isActualProgressDate(row, date) {
-  const progressEnd = row.actual_progress?.end_date
-  if (!row.planned_start_date || !progressEnd) return false
-  return date >= row.planned_start_date && date <= progressEnd
+function isActualProgressEndDate(row, date) {
+  return actualProgressEndDate(row) === date
 }
 
 function localIsoDate(date = new Date()) {
@@ -504,44 +584,101 @@ thead .sticky-col {
   position: relative;
 }
 
-.day-head.sunday,
-.day-cell.sunday {
+.day-head.sunday {
   background: color-mix(in srgb, var(--text-muted) 8%, var(--bg-card));
   color: var(--text-muted);
 }
 
+.day-cell.sunday {
+  background: var(--bg-card);
+  color: var(--text-muted);
+}
+
+.day-cell.sunday::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
+  pointer-events: none;
+}
+
 .day-cell.active {
-  background:
-    linear-gradient(to bottom, transparent 4px, var(--schedule-soft) 4px, var(--schedule-soft) 32px, transparent 32px),
-    var(--bg-card);
+  background: var(--bg-card);
 }
 
 .day-cell.active.sunday {
-  background:
-    linear-gradient(to bottom, transparent 4px, var(--schedule-soft) 4px, var(--schedule-soft) 32px, transparent 32px),
-    color-mix(in srgb, var(--text-muted) 8%, var(--bg-card));
+  background: var(--bg-card);
 }
 
 .day-cell.actual-progress {
-  background:
-    linear-gradient(to bottom, transparent 8px, var(--actual-progress-soft) 8px, var(--actual-progress-soft) 28px, transparent 28px),
-    linear-gradient(to bottom, transparent 4px, var(--schedule-soft) 4px, var(--schedule-soft) 32px, transparent 32px),
-    var(--bg-card);
+  background: var(--bg-card);
 }
 
 .day-cell.actual-progress.sunday {
-  background:
-    linear-gradient(to bottom, transparent 8px, var(--actual-progress-soft) 8px, var(--actual-progress-soft) 28px, transparent 28px),
-    linear-gradient(to bottom, transparent 4px, var(--schedule-soft) 4px, var(--schedule-soft) 32px, transparent 32px),
-    color-mix(in srgb, var(--text-muted) 8%, var(--bg-card));
+  background: var(--bg-card);
 }
 
-.day-cell.start {
-  box-shadow: inset 3px 0 0 var(--schedule-color);
+.plan-progress-rail {
+  position: absolute;
+  top: 4px;
+  left: -1px;
+  right: -1px;
+  z-index: 1;
+  height: 28px;
+  background: var(--schedule-soft);
+  pointer-events: none;
 }
 
-.day-cell.end {
-  box-shadow: inset -3px 0 0 var(--schedule-color);
+.plan-progress-start {
+  left: 7px;
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+
+.plan-progress-end {
+  right: 7px;
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+
+.actual-progress-rail {
+  position: absolute;
+  top: 4px;
+  left: -1px;
+  right: -1px;
+  z-index: 2;
+  height: 28px;
+  background: var(--actual-progress-fill);
+  box-shadow: inset 0 0 0 1px var(--actual-progress-ring);
+  pointer-events: none;
+}
+
+.actual-progress-start {
+  left: 7px;
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+
+.actual-progress-end {
+  right: 7px;
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+
+.actual-progress-tip::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: -4px;
+  z-index: 4;
+  width: 11px;
+  height: 11px;
+  border: 2px solid var(--bg-card);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--schedule-color) 72%, var(--bg-card));
+  box-shadow: 0 0 0 2px var(--actual-progress-ring);
+  transform: translateY(-50%);
 }
 
 .edge-marker {

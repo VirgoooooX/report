@@ -222,13 +222,13 @@ class ApiConsistencyTests(unittest.TestCase):
         self.conn.execute(
             """INSERT INTO sn_progress
                (report_id, wf_num, config, sn, current_cp_idx, current_cp_name, total_cps)
-               VALUES (?, '16.1', 'R3', 'SN001', 1, 'CP2', 3)""",
+               VALUES (?, 'WF16.1', 'R3', 'SN001', 1, 'CP2', 3)""",
             (rid,),
         )
         self.conn.execute(
             """INSERT INTO sn_progress
                (report_id, wf_num, config, sn, current_cp_idx, current_cp_name, total_cps)
-               VALUES (?, '16.1', 'R3', 'SN002', 2, 'CP3', 3)""",
+               VALUES (?, 'WF16.1', 'R3', 'SN002', 2, 'CP3', 3)""",
             (rid,),
         )
         self.conn.commit()

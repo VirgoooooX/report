@@ -804,9 +804,10 @@ def api_schedule():
             })
         progress_by_key = {}
         for row in get_wf_config_progress_rows(conn, report['id']):
-            if row['wf_num'] in {'43', '44'}:
+            normalized_wf = _normalize_wf(row['wf_num'])
+            if normalized_wf in {'43', '44'}:
                 continue
-            progress_by_key[(row['wf_num'], row['config'])] = {
+            progress_by_key[(normalized_wf, row['config'])] = {
                 'current_cp_idx': row['max_cp_idx'],
                 'current_cp_name': row['cp_name'] or '',
                 'total_cps': row['total_cps'] or 0,
@@ -818,7 +819,7 @@ def api_schedule():
             wf_meta_value = wf_meta.get(segment['wf_num'], '')
             if isinstance(wf_meta_value, dict):
                 wf_meta_value = wf_meta_value.get('name', '')
-            progress = progress_by_key.get((segment['wf_num'], segment['config']), {})
+            progress = progress_by_key.get((_normalize_wf(segment['wf_num']), segment['config']), {})
             payload_segments.append({
                 'wf_num': segment['wf_num'],
                 'wf_name': wf_meta_value,

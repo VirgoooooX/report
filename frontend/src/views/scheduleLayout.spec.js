@@ -47,6 +47,56 @@ assert.ok(
   /actual-progress/.test(scheduleTimeline),
   'schedule timeline should render actual completion progress cells'
 )
+assert.ok(
+  /plan-progress-rail/.test(scheduleTimeline),
+  'planned test ranges should render as rail elements with capsule endpoints'
+)
+assert.ok(
+  /in planSegmentsOnDate/.test(scheduleTimeline),
+  'planned rails should be rendered per test segment instead of one merged lane span'
+)
+assert.ok(
+  /plan-progress-start/.test(scheduleTimeline) && /plan-progress-end/.test(scheduleTimeline),
+  'planned rails should have per-test rounded start and end caps'
+)
+assert.ok(
+  /isTestStartDate\(segment, column\.date\)/.test(scheduleTimeline) &&
+    /isTestEndDate\(segment, column\.date\)/.test(scheduleTimeline),
+  'planned rail caps should be based on each test segment boundary'
+)
+assert.ok(
+  /date >= start && date <= end/.test(scheduleTimeline),
+  'planned rails should render across each test calendar range so Sunday columns do not cut progress'
+)
+assert.ok(
+  /actual-progress-rail/.test(scheduleTimeline),
+  'actual completion should use a visible solid rail instead of only tinting the cell background'
+)
+assert.ok(
+  /in actualSegmentsOnDate/.test(scheduleTimeline),
+  'actual completion should render per test segment instead of one merged lane span'
+)
+assert.ok(
+  /actual-progress-start/.test(scheduleTimeline) && /actual-progress-end/.test(scheduleTimeline),
+  'actual completion segments should keep capsule endpoints per test'
+)
+assert.ok(
+  /isActualSegmentStartDate\(segment, column\.date\)/.test(scheduleTimeline) &&
+    /isActualSegmentEndDate\(segment, row, column\.date\)/.test(scheduleTimeline),
+  'actual rail caps should be based on each completed test segment boundary'
+)
+assert.ok(
+  /actual-progress-tip/.test(scheduleTimeline),
+  'actual completion should mark the current completed CP endpoint'
+)
+assert.ok(
+  !/box-shadow\s*:\s*inset 3px 0 0 var\(--schedule-color\)/.test(scheduleTimelineStyles),
+  'test start cells should not render vertical boundary bars'
+)
+assert.ok(
+  !/box-shadow\s*:\s*inset -3px 0 0 var\(--schedule-color\)/.test(scheduleTimelineStyles),
+  'test end cells should not render vertical boundary bars'
+)
 
 const pageRule = ruleBody(scheduleViewStyles, '.schedule-page')
 assert.ok(
@@ -90,6 +140,22 @@ const edgeMarkerRule = ruleBody(scheduleTimelineStyles, '.edge-marker')
 assert.ok(
   hasDeclaration(edgeMarkerRule, 'z-index', '2'),
   'edge markers should stay below the sticky config column while horizontally scrolling'
+)
+
+const sundayCellRule = ruleBody(scheduleTimelineStyles, '.day-cell.sunday')
+assert.ok(
+  hasDeclaration(sundayCellRule, 'background', 'var\\(--bg-card\\)'),
+  'Sunday date cells should keep the normal cell background so progress rails can render continuously'
+)
+
+const sundayOverlayRule = pseudoRuleBody(scheduleTimelineStyles, '.day-cell.sunday::after')
+assert.ok(
+  /background\s*:\s*color-mix\(in srgb, var\(--text-muted\) 14%, transparent\)/.test(sundayOverlayRule),
+  'Sunday date cells should tint the column with a transparent overlay instead of replacing progress backgrounds'
+)
+assert.ok(
+  hasDeclaration(sundayOverlayRule, 'pointer-events', 'none'),
+  'Sunday overlay should not block hover or tooltip interactions'
 )
 
 const hiddenScrollbarRule = pseudoRuleBody(scheduleTimelineStyles, '.sheet-scroll::-webkit-scrollbar')

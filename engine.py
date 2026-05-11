@@ -11,6 +11,22 @@ SKIP_SHEETS = {'Sample Delivery Tracker', 'Test Schedule', 'Test Summary', 'T0 S
 CHECK_NAMES = {'Cosmetic','ISB','FACT','BT-OTA','Touch-CAL-Post','Charging','Button User','User Test','Pull-out force'}
 logger = logging.getLogger(__name__)
 
+NON_CP_HEADERS = {'Comments', 'Overall Result', 'Return to Summary'}
+
+
+def is_cp_header_label(value):
+    """Return True when a header cell is a real CP label, not a boundary/check column."""
+    if not value or not isinstance(value, str):
+        return False
+    label = value.strip()
+    if len(label) <= 1:
+        return False
+    if label in CHECK_NAMES or label in NON_CP_HEADERS:
+        return False
+    if re.sub(r'[^a-z0-9]+', '', label.lower()) == 't0':
+        return False
+    return True
+
 def wf_sort_key(wfn):
     """自然排序键：WF1, WF2, ..., WF10, WF11, WF14.1, WF14.2"""
     try:
@@ -282,7 +298,7 @@ def extract_cp_structure(ws, header_row=1, cp_range_start=7):
         v = ws.cell(header_row, c).value
         if v and isinstance(v, str) and v.strip():
             cv = v.strip()
-            if cv not in CHECK_NAMES and cv not in ('Comments', 'Overall Result', 'Return to Summary') and len(cv) > 1:
+            if is_cp_header_label(cv):
                 if ls is not None:
                     cp_list.append((ls, c - 1, ln))
                 ls = c
@@ -764,7 +780,7 @@ def _parse_wf_sheet(ws, wfn, ts_names):
                 v = ws.cell(r, c).value
                 if v and isinstance(v, str) and v.strip():
                     cv = v.strip()
-                    if cv not in CHECK_NAMES and cv not in ('Comments', 'Overall Result', 'Return to Summary') and len(cv) > 1:
+                    if is_cp_header_label(cv):
                         if ls is not None: cp_list.append((ls, c - 1, ln))
                         ls = c; ln = cv
             if ls is not None:
@@ -1109,7 +1125,7 @@ def _extract_wf_progress(ws, ts_names):
                 v = ws.cell(r, c).value
                 if v and isinstance(v, str) and v.strip():
                     cv = v.strip()
-                    if cv not in CHECK_NAMES and cv not in ('Comments', 'Overall Result', 'Return to Summary') and len(cv) > 1:
+                    if is_cp_header_label(cv):
                         if ls is not None:
                             cp_list.append((ls, c - 1, ln))
                         ls = c
@@ -1269,7 +1285,7 @@ def extract_wf_fact_rows(ws, wf_num, report_id, report_date, ts_names):
                 v = ws.cell(r, c).value
                 if v and isinstance(v, str) and v.strip():
                     cv = v.strip()
-                    if cv not in CHECK_NAMES and cv not in ('Comments', 'Overall Result', 'Return to Summary') and len(cv) > 1:
+                    if is_cp_header_label(cv):
                         if ls is not None:
                             cp_list.append((ls, c - 1, ln))
                         ls = c

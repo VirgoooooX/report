@@ -108,8 +108,24 @@ assert.deepEqual(actualProgress, {
   current_cp_name: 'CP3',
   total_cps: 4,
   sn_count: 3,
+  is_complete: false,
   end_date: '2026-06-03'
 })
+const completedActualProgress = buildActualProgress(
+  [
+    { cp_idx: 0, planned_date: '2026-06-01' },
+    { cp_idx: 1, planned_date: '2026-06-02' },
+    { cp_idx: 2, planned_date: '2026-06-03' }
+  ],
+  {
+    current_cp_idx: 2,
+    current_cp_name: 'CP3',
+    total_cps: 3,
+    sn_count: 3
+  },
+  '2026-06-05'
+)
+assert.equal(completedActualProgress.end_date, '2026-06-05')
 assert.equal(
   buildActualProgress([{ cp_idx: 0, planned_date: '2026-06-01' }], { current_cp_idx: null }),
   null
@@ -199,6 +215,32 @@ assert.equal(singleCpLane.tests[0].visible_cps[0].planned_date, '2026-05-06')
 assert.equal(singleCpLane.tests[0].visible_cps[0].display_cp_idx, 1)
 assert.equal(singleCpLane.tests[1].visible_cps[0].planned_date, '2026-05-08')
 assert.equal(singleCpLane.tests[1].visible_cps[0].display_cp_idx, 1)
+
+const overlappingBoundaryLane = buildScheduleLanes(buildScheduleRows([
+  {
+    wf_num: '6',
+    wf_name: 'Shared Boundary Test',
+    config: 'R4',
+    test_idx: 1,
+    test_name: 'First phase',
+    planned_start_date: '2026-05-04',
+    planned_end_date: '2026-05-06',
+    cps: [{ cp_idx: 1, cp_name: 'First CP' }]
+  },
+  {
+    wf_num: '6',
+    wf_name: 'Shared Boundary Test',
+    config: 'R4',
+    test_idx: 2,
+    test_name: 'Second phase',
+    planned_start_date: '2026-05-06',
+    planned_end_date: '2026-05-09',
+    cps: [{ cp_idx: 2, cp_name: 'Second CP' }]
+  }
+], 2))[0]
+assert.equal(overlappingBoundaryLane.tests[0].planned_end_date, '2026-05-06')
+assert.equal(overlappingBoundaryLane.tests[1].planned_start_date, '2026-05-07')
+assert.ok(!overlappingBoundaryLane.tests[1].days.includes('2026-05-06'))
 
 const columns = buildScheduleDateColumns([
   { planned_start_date: '2026-05-01', planned_end_date: '2026-05-04' },

@@ -162,7 +162,7 @@ export function summarizeDailyCpMarkers(cps = []) {
   }]
 }
 
-export function buildActualProgress(scheduledCps = [], progress = {}) {
+export function buildActualProgress(scheduledCps = [], progress = {}, plannedEndDate = '') {
   if (progress.current_cp_idx === null || progress.current_cp_idx === undefined || progress.current_cp_idx === '') {
     return null
   }
@@ -177,13 +177,16 @@ export function buildActualProgress(scheduledCps = [], progress = {}) {
     .at(-1)
 
   if (!completedCp) return null
+  const lastCpIdx = Number(orderedCps.at(-1)?.cp_idx)
+  const isComplete = Number.isFinite(lastCpIdx) && currentCpIdx >= lastCpIdx
 
   return {
     current_cp_idx: currentCpIdx,
     current_cp_name: progress.current_cp_name || completedCp.cp_name || '',
     total_cps: Number(progress.total_cps) || 0,
     sn_count: Number(progress.sn_count) || 0,
-    end_date: completedCp.planned_date
+    is_complete: isComplete,
+    end_date: isComplete && plannedEndDate ? plannedEndDate : completedCp.planned_date
   }
 }
 
@@ -240,6 +243,43 @@ function maxDate(values) {
   return sorted[sorted.length - 1] || ''
 }
 
+function nextScheduleDateAfter(date) {
+  const parsed = parseIsoDate(date)
+  if (!parsed) return ''
+
+  let next = addDays(parsed, 1)
+  while (next.getUTCDay() === 0) {
+    next = addDays(next, 1)
+  }
+  return toIsoDate(next)
+}
+
+function normalizeLaneTestRanges(tests = []) {
+  let previousEnd = ''
+  return tests.map((test) => {
+    let start = test.planned_start_date || ''
+    let end = test.planned_end_date || ''
+
+    if (previousEnd && start && start <= previousEnd) {
+      start = nextScheduleDateAfter(previousEnd)
+      if (end && end < start) end = start
+    }
+
+    const days = enumerateScheduleDays(start, end)
+    if (end && (!previousEnd || end > previousEnd)) {
+      previousEnd = end
+    }
+
+    return {
+      ...test,
+      planned_start_date: start,
+      planned_end_date: end,
+      days,
+      duration_days: days.length
+    }
+  })
+}
+
 export function buildScheduleLanes(rows = []) {
   const lanes = new Map()
 
@@ -257,11 +297,11 @@ export function buildScheduleLanes(rows = []) {
 
   return [...lanes.values()]
     .map((lane) => {
-      const tests = [...lane.tests].sort((a, b) => {
+      const tests = normalizeLaneTestRanges([...lane.tests].sort((a, b) => {
         const byStart = String(a.planned_start_date || '').localeCompare(String(b.planned_start_date || ''))
         if (byStart) return byStart
         return Number(a.test_idx || 0) - Number(b.test_idx || 0)
-      })
+      }))
       const plannedStart = minDate(tests.map((test) => test.planned_start_date))
       const plannedEnd = maxDate(tests.map((test) => test.planned_end_date))
       const days = enumerateScheduleDays(plannedStart, plannedEnd)
@@ -285,7 +325,7 @@ export function buildScheduleLanes(rows = []) {
       const scheduledCps = testsWithLaneLabels.flatMap((test) => test.scheduled_cps || [])
       const visibleCps = testsWithLaneLabels.flatMap((test) => test.visible_cps || [])
       const progressSource = tests.find((test) => test.current_cp_idx !== undefined) || {}
-      const actualProgress = buildActualProgress(scheduledCps, progressSource)
+      const actualProgress = buildActualProgress(scheduledCps, progressSource, plannedEnd)
       const testNames = [...new Set(tests.map((test) => test.test_name).filter(Boolean))]
       const scheduleItems = [...new Set(tests.map((test) => test.schedule_test_item).filter(Boolean))]
 
