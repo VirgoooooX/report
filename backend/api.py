@@ -1299,6 +1299,45 @@ def api_sn_search():
     return jsonify([{'sn': r['sn'], 'unit_num': r['unit_num']} for r in rows])
 
 
+@app.route('/api/sn/<sn>/checks')
+def api_sn_check_details(sn):
+    """Check-item details for one CP. Query: wf, config, cp_idx."""
+    wf = request.args.get('wf', '').strip()
+    config = request.args.get('config', '').strip()
+    cp_idx_raw = request.args.get('cp_idx', '').strip()
+
+    if not (wf and config and cp_idx_raw):
+        return jsonify({'error': 'wf, config, cp_idx are required'}), 400
+    try:
+        cp_idx = int(cp_idx_raw)
+    except ValueError:
+        return jsonify({'error': 'cp_idx must be an integer'}), 400
+
+    conn = get_conn()
+    report_id = get_latest_active_report_id(conn)
+    conn.close()
+    if not report_id:
+        return jsonify({'check_items': []})
+
+    rows = get_sn_check_details(report_id, wf, config, sn, cp_idx) or []
+    return jsonify({
+        'sn': sn,
+        'wf_num': wf,
+        'config': config,
+        'cp_idx': cp_idx,
+        'check_items': [
+            {
+                'check_item_idx': r['check_item_idx'],
+                'check_item': r['check_item'],
+                'status': r['status'],
+                'failure_type': r.get('failure_type'),
+                'raw_value': r.get('raw_value'),
+            }
+            for r in rows
+        ],
+    })
+
+
 @app.route('/api/sn/resolve-mark')
 def api_resolve_mark():
     """Resolve a unit mark number (e.g. ER1-2-4) to its SN. 1:1 mapping expected."""
