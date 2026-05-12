@@ -1307,13 +1307,13 @@ def api_resolve_mark():
         return jsonify({'error': 'mark parameter required'}), 400
 
     conn = get_conn()
-    row = conn.execute(
-        """SELECT sn FROM sn_check_state_history
-            WHERE unit_num = ?
-            ORDER BY last_seen_report_date DESC
-            LIMIT 1""",
-        (mark,),
-    ).fetchone()
+    row = None
+    for table in ['sn_check_state_history', 'sn_cp_results', 'sn_progress']:
+        row = conn.execute(
+            f"SELECT sn FROM {table} WHERE unit_num = ? LIMIT 1", (mark,)
+        ).fetchone()
+        if row:
+            break
     conn.close()
     if not row:
         return jsonify({'error': 'Mark number not found'}), 404
