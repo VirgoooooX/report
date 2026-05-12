@@ -11,7 +11,7 @@ const routes = [
   {
     path: '/sn',
     name: 'sn',
-    component: () => import('@/views/SnLookup.vue')
+    component: () => import('@/views/QueryCenter.vue')
   },
   {
     path: '/predictions',
