@@ -919,6 +919,264 @@ def api_schedule():
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  API: SN Query (enhanced lifecycle timeline)
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/api/query/sn-timeline')
+def api_sn_timeline():
+    """Get full CP-level timeline with check_item details for one or more SNs."""
+    sns_param = request.args.get('sns', '').strip()
+    if not sns_param:
+        return jsonify({'error': 'Missing sns parameter'}), 400
+    sns = [s.strip() for s in sns_param.split(',') if s.strip()]
+    if not sns or len(sns) > 50:
+        return jsonify({'error': 'Provide 1-50 SNs'}), 400
+
+    conn = get_conn()
+    rid = get_latest_active_report_id(conn)
+
+    results = []
+    for sn in sns:
+        rows = conn.execute(
+            """SELECT wf_num, config, cp_idx, check_item_idx, check_item,
+                      status, failure_type, raw_value, first_report_date
+               FROM sn_check_state_history
+               WHERE sn = ? AND first_report_id <= ?
+                 AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
+               ORDER BY CAST(wf_num AS REAL), cp_idx, check_item_idx""",
+            (sn, rid, rid),
+        ).fetchall()
+
+        by_wf = {}
+        for r in rows:
+            wf = r['wf_num']
+            if wf not in by_wf:
+                by_wf[wf] = {'wf_num': wf, 'config': r['config'], 'cps': {}}
+            cp_idx = r['cp_idx']
+            if cp_idx not in by_wf[wf]['cps']:
+                by_wf[wf]['cps'][cp_idx] = {
+                    'cp_idx': cp_idx,
+                    'date': r['first_report_date'],
+                    'items': [],
+                }
+            by_wf[wf]['cps'][cp_idx]['items'].append({
+                'idx': r['check_item_idx'],
+                'name': r['check_item'],
+                'status': r['status'],
+                'failure_type': r['failure_type'],
+                'value': r['raw_value'],
+            })
+
+        # Flatten and compute CP-level summary
+        sn_wfs = []
+        for wf_key in sorted(by_wf.keys(), key=lambda x: float(x) if x.replace('.', '').isdigit() else 999):
+            wf_data = by_wf[wf_key]
+            cp_list = []
+            for cp_idx in sorted(wf_data['cps'].keys()):
+                cp = wf_data['cps'][cp_idx]
+                items = cp['items']
+                total = len(items)
+                passed = sum(1 for i in items if i['status'] == 'pass')
+                failed = sum(1 for i in items if i['failure_type'])
+                pending = sum(1 for i in items if i['status'] == 'pending')
+                if failed > 0:
+                    cp_status = 'fail'
+                elif pending == total:
+                    cp_status = 'pending'
+                else:
+                    cp_status = 'pass'
+                fail_item = next((i['name'] for i in items if i['failure_type']), None)
+                fail_type = next((i['failure_type'] for i in items if i['failure_type']), None)
+                cp_list.append({
+                    'cp_idx': cp_idx,
+                    'date': cp['date'],
+                    'status': cp_status,
+                    'pass_count': passed,
+                    'total_count': total,
+                    'fail_item': fail_item,
+                    'fail_type': fail_type,
+                    'items': items,
+                })
+            # Get CP names
+            cp_names = {}
+            cp_defs = conn.execute(
+                "SELECT cp_idx, cp_name FROM current_cp_definitions WHERE wf_num = ?",
+                (wf_key,),
+            ).fetchall()
+            for cd in cp_defs:
+                cp_names[cd['cp_idx']] = cd['cp_name']
+            total_cps = len(cp_defs)
+
+            for cp in cp_list:
+                cp['cp_name'] = cp_names.get(cp['cp_idx'], f"CP{cp['cp_idx']}")
+
+            # Determine current CP (last non-pending)
+            current_cp_idx = -1
+            for cp in cp_list:
+                if cp['status'] != 'pending':
+                    current_cp_idx = cp['cp_idx']
+
+            sn_wfs.append({
+                'wf_num': wf_key,
+                'config': wf_data['config'],
+                'total_cps': total_cps,
+                'current_cp_idx': current_cp_idx,
+                'cps': cp_list,
+            })
+
+        results.append({'sn': sn, 'wfs': sn_wfs})
+
+    # Get WF names
+    wf_names = get_wf_names()
+    conn.close()
+
+    return jsonify({'results': results, 'wf_names': {k: v.get('name', '') for k, v in wf_names.items()}})
+
+
+@app.route('/api/query/by-wf')
+def api_query_by_wf():
+    """Query all SNs for a given WF, optionally filtered by config."""
+    wf = request.args.get('wf', '').strip()
+    config = request.args.get('config', '').strip()
+    if not wf:
+        return jsonify({'error': 'Missing wf parameter'}), 400
+
+    conn = get_conn()
+    rid = get_latest_active_report_id(conn)
+
+    # Get all SNs in this WF
+    params = [wf, rid, rid]
+    config_filter = ""
+    if config:
+        config_filter = " AND config = ?"
+        params.append(config)
+
+    sn_rows = conn.execute(
+        f"""SELECT DISTINCT sn, config FROM sn_check_state_history
+            WHERE wf_num = ? AND first_report_id <= ?
+              AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
+              {config_filter}
+            ORDER BY config, sn""",
+        params,
+    ).fetchall()
+
+    # Get CP definitions
+    cp_defs = conn.execute(
+        "SELECT cp_idx, cp_name FROM current_cp_definitions WHERE wf_num = ? ORDER BY cp_idx",
+        (wf,),
+    ).fetchall()
+    cp_names = {cd['cp_idx']: cd['cp_name'] for cd in cp_defs}
+    total_cps = len(cp_defs)
+
+    # Get check items list (from first CP definition)
+    check_items_list = []
+    ci_row = conn.execute(
+        "SELECT check_items FROM current_cp_definitions WHERE wf_num = ? LIMIT 1",
+        (wf,),
+    ).fetchone()
+    if ci_row:
+        check_items_list = json.loads(ci_row['check_items'] or '[]')
+
+    # For each SN, get CP-level summary
+    sns_data = []
+    unique_sns = list({r['sn'] for r in sn_rows})
+
+    for sn_row in sn_rows:
+        sn = sn_row['sn']
+        cfg = sn_row['config']
+        cps = conn.execute(
+            """SELECT cp_idx,
+                      COUNT(*) as item_count,
+                      SUM(CASE WHEN status='pass' THEN 1 ELSE 0 END) as pass_count,
+                      SUM(CASE WHEN failure_type IS NOT NULL THEN 1 ELSE 0 END) as fail_count,
+                      SUM(CASE WHEN status='pending' THEN 1 ELSE 0 END) as pending_count,
+                      MIN(first_report_date) as date,
+                      GROUP_CONCAT(CASE WHEN failure_type IS NOT NULL THEN check_item ELSE NULL END) as fail_items,
+                      GROUP_CONCAT(CASE WHEN failure_type IS NOT NULL THEN failure_type ELSE NULL END) as fail_types
+               FROM sn_check_state_history
+               WHERE sn=? AND wf_num=? AND config=?
+                 AND first_report_id <= ?
+                 AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
+               GROUP BY cp_idx ORDER BY cp_idx""",
+            (sn, wf, cfg, rid, rid),
+        ).fetchall()
+
+        cp_list = []
+        current_cp_idx = -1
+        for cp in cps:
+            if cp['fail_count'] > 0:
+                status = 'fail'
+            elif cp['pending_count'] == cp['item_count']:
+                status = 'pending'
+            else:
+                status = 'pass'
+            if status != 'pending':
+                current_cp_idx = cp['cp_idx']
+            cp_list.append({
+                'cp_idx': cp['cp_idx'],
+                'cp_name': cp_names.get(cp['cp_idx'], f"CP{cp['cp_idx']}"),
+                'status': status,
+                'pass_count': cp['pass_count'],
+                'total_count': cp['item_count'],
+                'date': cp['date'],
+                'fail_item': cp['fail_items'].split(',')[0] if cp['fail_items'] else None,
+                'fail_type': cp['fail_types'].split(',')[0] if cp['fail_types'] else None,
+            })
+
+        sns_data.append({
+            'sn': sn,
+            'config': cfg,
+            'current_cp_idx': current_cp_idx,
+            'total_cps': total_cps,
+            'cps': cp_list,
+        })
+
+    # Summary stats
+    total_sns = len(sns_data)
+    completed = sum(1 for s in sns_data if s['current_cp_idx'] >= total_cps - 1)
+    failed_sns = [s for s in sns_data if any(cp['status'] == 'fail' for cp in s['cps'])]
+    spec_fails = sum(1 for s in sns_data if any(cp.get('fail_type') == 'spec' for cp in s['cps']))
+    strife_fails = sum(1 for s in sns_data if any(cp.get('fail_type') == 'strife' for cp in s['cps']))
+
+    wf_names = get_wf_names()
+    wf_name = wf_names.get(wf, {}).get('name', '')
+    conn.close()
+
+    return jsonify({
+        'wf_num': wf,
+        'wf_name': wf_name,
+        'config_filter': config or 'All',
+        'total_cps': total_cps,
+        'cp_names': cp_names,
+        'check_items': check_items_list,
+        'summary': {
+            'total_sns': total_sns,
+            'completed': completed,
+            'spec_fails': spec_fails,
+            'strife_fails': strife_fails,
+        },
+        'sns': sns_data,
+    })
+
+
+@app.route('/api/query/wf-list')
+def api_query_wf_list():
+    """Get available WFs and configs for the query page dropdowns."""
+    conn = get_conn()
+    wfs = conn.execute(
+        "SELECT wf_num, wf_name FROM current_wf_definitions ORDER BY CAST(wf_num AS REAL)"
+    ).fetchall()
+    configs = conn.execute(
+        "SELECT DISTINCT config FROM sn_check_state_history WHERE closed_before_report_id IS NULL ORDER BY config"
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        'wfs': [{'wf_num': w['wf_num'], 'wf_name': w['wf_name']} for w in wfs],
+        'configs': [c['config'] for c in configs],
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  API: SN Lookup
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -1002,31 +1260,63 @@ def api_sn_lookup(sn):
 
 @app.route('/api/sn/search')
 def api_sn_search():
-    """Search SNs by partial match."""
+    """Search by SN or unit mark number (unit_num). Returns list of {sn, unit_num} pairs."""
     q = request.args.get('q', '').strip()
     if not q or len(q) < 2:
         return jsonify([])
-    
+
+    like = f'%{q}%'
     conn = get_conn()
-    # Try lifecycle table first
+    # Prefer lifecycle table; search both SN and unit_num, return distinct pairs.
     rows = conn.execute(
-        "SELECT DISTINCT sn FROM sn_check_state_history WHERE sn LIKE ? ORDER BY sn LIMIT 30",
-        (f'%{q}%',)
+        """SELECT DISTINCT sn, COALESCE(unit_num, '') AS unit_num
+             FROM sn_check_state_history
+            WHERE sn LIKE ? OR unit_num LIKE ?
+            ORDER BY CASE WHEN sn LIKE ? THEN 0 ELSE 1 END, sn
+            LIMIT 30""",
+        (like, like, like),
     ).fetchall()
     if not rows:
-        # Fall back to old tables
         rows = conn.execute(
-            "SELECT DISTINCT sn FROM sn_cp_results WHERE sn LIKE ? ORDER BY sn LIMIT 30",
-            (f'%{q}%',)
+            """SELECT DISTINCT sn, COALESCE(unit_num, '') AS unit_num
+                 FROM sn_cp_results
+                WHERE sn LIKE ? OR unit_num LIKE ?
+                ORDER BY sn
+                LIMIT 30""",
+            (like, like),
         ).fetchall()
     if not rows:
         rows = conn.execute(
-            "SELECT DISTINCT sn FROM sn_progress WHERE sn LIKE ? LIMIT 30",
-            (f'%{q}%',)
+            """SELECT DISTINCT sn, COALESCE(unit_num, '') AS unit_num
+                 FROM sn_progress
+                WHERE sn LIKE ? OR unit_num LIKE ?
+                LIMIT 30""",
+            (like, like),
         ).fetchall()
     conn.close()
-    
-    return jsonify([r['sn'] for r in rows])
+
+    return jsonify([{'sn': r['sn'], 'unit_num': r['unit_num']} for r in rows])
+
+
+@app.route('/api/sn/resolve-mark')
+def api_resolve_mark():
+    """Resolve a unit mark number (e.g. ER1-2-4) to its SN. 1:1 mapping expected."""
+    mark = request.args.get('mark', '').strip()
+    if not mark:
+        return jsonify({'error': 'mark parameter required'}), 400
+
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT sn FROM sn_check_state_history
+            WHERE unit_num = ?
+            ORDER BY last_seen_report_date DESC
+            LIMIT 1""",
+        (mark,),
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'error': 'Mark number not found'}), 404
+    return jsonify({'sn': row['sn'], 'unit_num': mark})
 
 
 # ═══════════════════════════════════════════════════════════════════════
