@@ -4,9 +4,10 @@ services:
     ports:
       - "5050:5050"
     volumes:
-      - ./data:/app/data
-      - ./runtime:/app/runtime
+      - ./rawdata:/app/rawdata
+      - ./db:/app/db
     environment:
       - FLASK_HOST=0.0.0.0
       - FLASK_PORT=5050
-      - REPORT_DB_PATH=/app/runtime/report.db
+      - REPORT_RAWDATA_DIR=/app/rawdata
+      - REPORT_DB_PATH=/app/db/report.db

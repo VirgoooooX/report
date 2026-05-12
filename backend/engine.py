@@ -1572,7 +1572,7 @@ if __name__ == '__main__':
     import sys, time
     path = sys.argv[1] if len(sys.argv) > 1 else None
     if not path:
-        path = os.path.join(os.path.dirname(__file__), 'data', 'M60 EVT Rel Daily Report_20260508.xlsx')
+        path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'rawdata', 'M60 EVT Rel Daily Report_20260508.xlsx')
     
     print(f"Analyzing: {path}")
     t0 = time.time()

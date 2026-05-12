@@ -8,8 +8,8 @@
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  processor.py │────▶│  SQLite 事实表  │◀────│    api.py     │
-│  (数据导入)   │     │  (report.db)  │     │  (Flask API)  │
+│ backend/processor.py │─▶│  SQLite 事实表  │◀─│ backend/api.py │
+│    (数据导入)        │  │ (db/report.db)│  │  (Flask API)  │
 └──────────────┘     └──────────────┘     └──────┬───────┘
                                                  │
                                           ┌──────▼───────┐
@@ -18,9 +18,9 @@
                                           └──────────────┘
 ```
 
-- **processor.py** — 将 Excel Daily Report 导入 SQLite 事实表
-- **api.py** — Flask REST API，同时提供前端静态文件服务
-- **db.py** — SQLite 封装层，支持快照、趋势和预测
+- **backend/processor.py** — 将 Excel Daily Report 导入 SQLite 事实表
+- **backend/api.py** — Flask REST API，同时提供前端静态文件服务
+- **backend/db.py** — SQLite 封装层，支持快照、趋势和预测
 - **frontend/** — Vue 3 SPA，使用 Ant Design Vue + Chart.js
 
 ---
@@ -29,14 +29,13 @@
 
 | 路径 | 说明 |
 |------|------|
-| `api.py` | Flask API 服务入口 |
-| `processor.py` | Excel 数据批量导入脚本 |
-| `db.py` | SQLite 数据库模块 |
-| `engine.py` | Excel 解析与分析引擎 |
-| `fa_analysis.py` | 故障分析模块 |
-| `fa_matcher.py` | FA Tracker 匹配模块 |
+| `backend/` | Flask API、导入器、数据库封装和 Excel 解析模块 |
+| `tests/` | Python 后端测试 |
+| `tools/` | 一次性校验/排查脚本 |
 | `frontend/` | Vue 3 + Vite 前端 SPA |
-| `data/` | 待导入的 Daily Report Excel 文件 |
+| `rawdata/` | 原始 Excel 文件目录，支持递归扫描 |
+| `rawdata/uploads/YYYY-MM-DD/` | 前端上传的 Daily Report / FA Tracker 原始文件 |
+| `db/` | SQLite 数据库目录，默认文件为 `db/report.db` |
 | `output/` | 导出报告与中间产物 |
 | `templates/` | Flask 遗留模板 |
 | `static/` | Flask 遗留静态资源 |
@@ -58,13 +57,15 @@ npm --prefix frontend ci
 
 ## 数据导入
 
-将 Daily Report Excel 文件放入 `data/` 目录，然后运行：
+将 Daily Report Excel 文件放入 `rawdata/` 目录，然后运行：
 
 ```powershell
-python processor.py --all --rebuild
+python backend/processor.py --all --rebuild
 ```
 
-处理所有报告并重建完整 SQLite 数据库。增量更新请使用 `python processor.py`（不带参数）。
+处理所有报告并重建完整 SQLite 数据库。增量更新请使用 `python backend/processor.py`（不带参数）。
+
+前端上传的文件会保存到 `rawdata/uploads/YYYY-MM-DD/`，批量导入会递归扫描 `rawdata/`，同一报告日期会优先使用修改时间最新的文件。
 
 ---
 
@@ -75,7 +76,7 @@ python processor.py --all --rebuild
 **终端 1 — 后端 API**（默认监听 `http://localhost:5050`）：
 
 ```powershell
-python api.py
+python backend/api.py
 ```
 
 **终端 2 — 前端开发服务器**（默认监听 `http://localhost:5173`，自动代理 API 请求）：
@@ -93,7 +94,7 @@ npm --prefix frontend run dev
 **Python 后端测试（unittest）：**
 
 ```powershell
-python -m unittest discover -v
+python -m unittest discover -s tests -v
 ```
 
 **前端基本验证：**
@@ -131,7 +132,7 @@ docker compose logs -f dashboard
 docker compose down
 ```
 
-> **注意：** 需要先创建 `Dockerfile` 和 `docker-compose.yml`（参考项目模板或根据架构自行编写）。
+Compose 会把本机 `rawdata/` 挂载到容器 `/app/rawdata`，把本机 `db/` 挂载到容器 `/app/db`，数据库默认保存在 `db/report.db`。
 
 ---
 
@@ -149,13 +150,11 @@ docker compose down
 
 ## 版本化推送脚本
 
-`push_version.ps1`（或等效脚本）用于将本地验证通过的数据与代码一并推送到远端，典型流程：
+`scripts/push.ps1` 用于将本地验证通过的数据与代码一并推送到远端，典型流程：
 
-1. 运行 `python processor.py --all --rebuild` 确保数据最新
+1. 运行 `python backend/processor.py --all --rebuild` 确保数据最新
 2. 运行全部测试确认无回归
 3. 提交代码并推送
-
-> **注意：** 该脚本需在项目根目录创建，可根据团队工作流自定义。
 
 ---
 
@@ -165,7 +164,7 @@ docker compose down
 |------|-----------|
 | `pip install` 失败 | 确认已激活虚拟环境（`.\.venv\Scripts\Activate.ps1`） |
 | `npm ci` 报错 | 检查 Node.js 版本 ≥ 18，删除 `node_modules` 后重试 |
-| `processor.py` 找不到 Excel 文件 | 确认 `data/` 目录下存在 `.xlsx` 文件 |
-| 后端端口被占用 | 设置环境变量 `FLASK_RUN_PORT=5060` 或修改 `api.py` |
+| `backend/processor.py` 找不到 Excel 文件 | 确认 `rawdata/` 目录下存在 `.xlsx` 文件 |
+| 后端端口被占用 | 设置环境变量 `FLASK_RUN_PORT=5060` 或修改 `backend/api.py` |
 | 前端无法代理 API | 确认后端已在 `localhost:5050` 运行 |
-| `report.db` 损坏 | 删除后重新运行 `python processor.py --all --rebuild` |
+| `db/report.db` 损坏 | 删除后重新运行 `python backend/processor.py --all --rebuild` |

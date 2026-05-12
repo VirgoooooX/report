@@ -1,7 +1,7 @@
 """
 M60 EVT REL — Dashboard API Server
 Enhanced Flask backend with progress tracking, predictions, and analytics.
-Usage: python api.py
+Usage: python backend/api.py
 Access: http://localhost:5050
 """
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
@@ -32,7 +32,7 @@ from db import (
 )
 from processor import process_newest, compute_auto_predictions, REPORT_PATTERN, FA_PATTERN
 
-BASE_DIR = os.path.dirname(__file__)
+BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 VUE_STATIC = os.path.join(BASE_DIR, 'static')
 VUE_INDEX = os.path.join(VUE_STATIC, 'index.html')
 
@@ -1775,13 +1775,17 @@ def api_daily_issues():
 #  Upload
 # ═══════════════════════════════════════════════════════════════════════
 
+def _upload_basename(filename):
+    return str(filename or '').replace('\\', '/').split('/')[-1].strip()
+
+
 @app.route('/api/upload', methods=['POST'])
 def upload_report():
     daily_file = request.files.get('daily_report')
     if not daily_file or not daily_file.filename:
         return jsonify({'success': False, 'error': 'Missing daily_report file'}), 400
 
-    daily_name = daily_file.filename
+    daily_name = _upload_basename(daily_file.filename)
     fa_file = request.files.get('fa_tracker')
 
     # Validate Daily Report filename
@@ -1792,16 +1796,23 @@ def upload_report():
 
     # Validate FA Tracker filename (optional)
     if fa_file and fa_file.filename:
-        fm = FA_PATTERN.match(fa_file.filename)
+        fa_name = _upload_basename(fa_file.filename)
+        fm = FA_PATTERN.match(fa_name)
         if not fm:
-            return jsonify({'success': False, 'error': f'Invalid FA Tracker filename: {fa_file.filename}'}), 400
+            return jsonify({'success': False, 'error': f'Invalid FA Tracker filename: {fa_name}'}), 400
+    else:
+        fa_name = ''
 
-    # Save files to data/
-    daily_path = os.path.join(DATA_DIR, daily_name)
+    # Save uploaded raw files by report date under rawdata/uploads/.
+    upload_date = f"{report_date[:4]}-{report_date[4:6]}-{report_date[6:]}"
+    upload_dir = os.path.join(UPLOAD_DIR, upload_date)
+    os.makedirs(upload_dir, exist_ok=True)
+
+    daily_path = os.path.join(upload_dir, daily_name)
     daily_file.save(daily_path)
 
-    if fa_file and fa_file.filename:
-        fa_path = os.path.join(DATA_DIR, fa_file.filename)
+    if fa_file and fa_name:
+        fa_path = os.path.join(upload_dir, fa_name)
         fa_file.save(fa_path)
 
     # Overwrite old data for this date

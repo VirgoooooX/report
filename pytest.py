@@ -10,8 +10,11 @@ import sys
 
 _ROOT = os.path.dirname(__file__)
 _VENDORED = os.path.join(_ROOT, ".pydeps")
+_BACKEND = os.path.join(_ROOT, "backend")
 if os.path.isdir(_VENDORED) and _VENDORED not in sys.path:
     sys.path.insert(0, _VENDORED)
+if os.path.isdir(_BACKEND) and _BACKEND not in sys.path:
+    sys.path.insert(0, _BACKEND)
 
 from _pytest.config import main as _main
 

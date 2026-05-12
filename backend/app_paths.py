@@ -2,7 +2,8 @@
 
 import os
 
-BASE_DIR = os.path.dirname(__file__)
+BACKEND_DIR = os.path.dirname(__file__)
+BASE_DIR = os.path.dirname(BACKEND_DIR)
 
 RAWDATA_DIR = os.environ.get('REPORT_RAWDATA_DIR') or os.path.join(BASE_DIR, 'rawdata')
 DB_DIR = os.environ.get('REPORT_DB_DIR') or os.path.join(BASE_DIR, 'db')

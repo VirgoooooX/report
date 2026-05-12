@@ -1,7 +1,7 @@
 """
 M60 EVT REL — Batch Processor
 Processes all Daily Reports, stores data in SQLite.
-Usage: python processor.py [--rebuild]
+Usage: python backend/processor.py [--rebuild]
 
 功能：
   - process_all()     处理所有 Daily Report，重建完整数据库
@@ -60,14 +60,17 @@ logger = logging.getLogger(__name__)
 def _find_daily_reports():
     """扫描 rawdata/ 下所有 Daily Report，返回按日期升序的 (date_str, filepath) 列表。"""
     ensure_runtime_dirs()
-    reports = []
+    reports_by_date = {}
     for fname, path in iter_rawdata_files():
         if fname.startswith('~$'): continue  # skip Office temp files
         m = REPORT_PATTERN.search(fname)
         if m:
             raw = m.group(1)
             date_fmt = f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
-            reports.append((date_fmt, path))
+            current = reports_by_date.get(date_fmt)
+            if not current or os.path.getmtime(path) >= os.path.getmtime(current):
+                reports_by_date[date_fmt] = path
+    reports = [(date_str, path) for date_str, path in reports_by_date.items()]
     reports.sort(key=lambda x: x[0])
     return reports
 
@@ -927,11 +930,11 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 使用示例:
-  python processor.py                    # 增量处理最新文件
-  python processor.py --all              # 处理所有文件（增量追加）
-  python processor.py --all --rebuild    # 重建数据库并处理所有文件
-  python processor.py --predict          # 只重新计算预测
-  python processor.py --stats            # 打印数据库汇总
+  python backend/processor.py                    # 增量处理最新文件
+  python backend/processor.py --all              # 处理所有文件（增量追加）
+  python backend/processor.py --all --rebuild    # 重建数据库并处理所有文件
+  python backend/processor.py --predict          # 只重新计算预测
+  python backend/processor.py --stats            # 打印数据库汇总
         """,
     )
     parser.add_argument('--all', action='store_true',

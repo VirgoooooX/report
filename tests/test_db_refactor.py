@@ -23,7 +23,7 @@ class ReportVersioningTests(unittest.TestCase):
             report_id = db.create_report_version(
                 conn,
                 report_date='2026-05-09',
-                excel_path='data/M60 EVT Rel Daily Report_20260509.xlsx',
+                excel_path='rawdata/M60 EVT Rel Daily Report_20260509.xlsx',
             )
 
             row = conn.execute('SELECT * FROM reports WHERE id = ?', (report_id,)).fetchone()

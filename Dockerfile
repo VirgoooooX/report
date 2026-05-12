@@ -15,7 +15,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy backend code
-COPY *.py ./
+COPY backend/ ./backend/
 
 # Copy built frontend assets
 COPY --from=frontend-builder /app/frontend/dist ./static
@@ -23,8 +23,9 @@ COPY --from=frontend-builder /app/frontend/dist ./static
 # Runtime config
 ENV FLASK_HOST=0.0.0.0
 ENV FLASK_PORT=5050
-ENV REPORT_DB_PATH=/app/runtime/report.db
+ENV REPORT_RAWDATA_DIR=/app/rawdata
+ENV REPORT_DB_PATH=/app/db/report.db
 
 EXPOSE 5050
 
-CMD ["python", "api.py"]
+CMD ["python", "backend/api.py"]

@@ -23,7 +23,8 @@ try {
 # 2. 后端测试
 Write-Host "=== Running backend tests ===" -ForegroundColor Cyan
 Push-Location $RootDir
-python -m unittest discover -v
+$env:PYTHONPATH = "backend"
+python -m unittest discover -s tests -v
 if ($LASTEXITCODE -ne 0) { Write-Error "Backend tests failed"; exit 1 }
 Pop-Location
 

@@ -1,11 +1,13 @@
 /.worktrees/
 /data
+/rawdata
+/db
 /docs/superpowers/
 /docs/cp_to_test_mapping.md
 /report.db
 /report.db.*.bak
-/__pycache__/
-/.pytest_cache/
+__pycache__/
+.pytest_cache/
 /.pydeps/
 /output
 /static

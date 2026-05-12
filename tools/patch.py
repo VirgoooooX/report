@@ -1,5 +1,10 @@
+import os
 import sys, re
-with open('api.py', 'r', encoding='utf-8') as f:
+
+ROOT = os.path.dirname(os.path.dirname(__file__))
+API_PATH = os.path.join(ROOT, 'backend', 'api.py')
+
+with open(API_PATH, 'r', encoding='utf-8') as f:
     content = f.read()
 
 part1 = '    # Latest report date\n    rpt = conn.execute("SELECT report_date FROM reports WHERE id = ?", (rid,)).fetchone()\n    report_date = rpt[\'report_date\'] if rpt else \'\''
@@ -12,7 +17,7 @@ part2_new = '    return jsonify({\n        \'project_name\': project_name,\n    
 
 content = content.replace(part1, part1_new).replace(part2, part2_new)
 
-with open('api.py', 'w', encoding='utf-8') as f:
+with open(API_PATH, 'w', encoding='utf-8') as f:
     f.write(content)
 
-print('Patched api.py')
+print('Patched backend/api.py')
