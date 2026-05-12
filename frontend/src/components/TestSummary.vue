@@ -1,7 +1,8 @@
 <template>
-  <div class="card ts-wrap">
-    <div class="ts-scroll">
-      <table class="ts-table">
+  <div class="ts-scroll">
+    <div class="ts-center">
+      <div class="ts-card">
+        <table class="ts-table">
         <thead>
           <tr>
             <th class="ts-wf-hd" rowspan="2">WF</th>
@@ -34,6 +35,7 @@
           </tr>
         </tbody>
       </table>
+      </div>
     </div>
   </div>
 </template>
@@ -137,34 +139,38 @@ function onCellClick(wf, cfg, slotIdx) {
 </script>
 
 <style scoped>
-.card {
-  background: var(--bg-card);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-card);
-  box-shadow: var(--shadow-card);
-  overflow: hidden;
-}
-
-.ts-wrap {
-  width: 100%;
-}
-
+/* ① 滚动层：内容溢出时提供水平滚动条 */
 .ts-scroll {
   overflow-x: auto;
   scrollbar-color: var(--border-input) transparent;
 }
 
+/* ② 居中基准层：至少 100% 宽（提供居中空间），内容更宽时跟随扩展 */
+.ts-center {
+  min-width: 100%;
+  width: max-content;
+}
+
+/* ③ 卡片层：收缩到表格宽度，在居中基准层内自动居中 */
+.ts-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-card);
+  box-shadow: var(--shadow-card);
+  display: table;
+  margin: 0 auto;
+  overflow: hidden;
+}
+
 .ts-table {
-  width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 12px;
-  min-width: 1080px;
+  font-size: 13px;
 }
 
 .ts-wf-hd {
   padding: 8px 8px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   text-align: left;
   color: var(--text-muted);
@@ -179,40 +185,34 @@ function onCellClick(wf, cfg, slotIdx) {
 }
 .ts-test-hd {
   padding: 8px 10px 6px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   text-align: left;
   color: var(--text-primary);
   background: color-mix(in srgb, var(--bg-row-hover) 70%, var(--bg-card));
   border-bottom: 1px solid var(--border-light);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 120px;
 }
 .ts-test-hd--with-divider {
   box-shadow: inset -1px 0 0 var(--border-light);
 }
 .ts-tn-sub {
-  padding: 6px 6px;
-  font-size: 10px;
+  padding: 6px 8px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--text-muted);
   text-align: left;
   background: color-mix(in srgb, var(--bg-row-stripe) 82%, var(--bg-card));
   border-bottom: 1px solid var(--border-light);
-  min-width: 72px;
-  max-width: 152px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 90px;
   white-space: nowrap;
 }
 .ts-tn-sub--with-divider {
   box-shadow: inset -1px 0 0 var(--border-light);
 }
 .ts-cfg-sub {
-  padding: 6px 6px;
-  font-size: 10px;
+  padding: 6px 8px;
+  font-size: 12px;
   font-weight: 700;
   text-align: center;
   background: color-mix(in srgb, var(--bg-row-stripe) 82%, var(--bg-card));
@@ -232,7 +232,7 @@ function onCellClick(wf, cfg, slotIdx) {
   padding: 7px 8px;
   text-align: left;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-light);
@@ -243,12 +243,11 @@ function onCellClick(wf, cfg, slotIdx) {
 .ts-tn-col {
   padding: 7px 8px;
   text-align: left;
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-light);
   background: var(--bg-card);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  max-width: 156px;
+  white-space: nowrap;
   font-weight: 500;
 }
 .ts-tn-col--with-divider,
@@ -257,10 +256,10 @@ function onCellClick(wf, cfg, slotIdx) {
 }
 
 td {
-  padding: 6px 4px;
+  padding: 6px 5px;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   border-bottom: 1px solid var(--border-light);
   transition: filter var(--duration-fast), background var(--duration-fast), color var(--duration-fast);

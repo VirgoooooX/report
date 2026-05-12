@@ -20,3 +20,5 @@ node_modules/
 report.before-state-history.db
 /docs/
 /DEVELOPMENT_REVIEW.md
+/frontend/dist-check/
+/frontend/dist/

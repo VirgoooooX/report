@@ -1,7 +1,7 @@
 <template>
   <a-config-provider :theme="antTheme">
     <NavBar />
-    <div class="main">
+    <div :class="['main', mainClass]">
       <router-view />
     </div>
   </a-config-provider>
@@ -9,11 +9,17 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { ConfigProvider, theme } from 'ant-design-vue'
 import { useAppStore } from '@/stores/app'
 import NavBar from '@/components/NavBar.vue'
 
 const store = useAppStore()
+const route = useRoute()
+
+const mainClass = computed(() => (
+  route.name === 'test-summary' ? 'main--test-summary' : ''
+))
 
 const antTheme = computed(() => ({
   algorithm: store.theme === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
@@ -31,3 +37,9 @@ const antTheme = computed(() => ({
   }
 }))
 </script>
+
+<style scoped>
+.main--test-summary {
+  max-width: 1680px;
+}
+</style>

@@ -1,8 +1,5 @@
 <template>
-  <div class="page-container page-shell page-shell-wide">
-    <h1 class="page-title">{{ t('testSummary.title') }}</h1>
-    <p class="page-subtitle">{{ summaryList.length }} {{ t('testSummary.labelWaterfalls') }}, {{ configList.length }} {{ t('testSummary.labelConfigs') }}, {{ tests.length }} {{ t('testSummary.labelTests') }}</p>
-
+  <div class="page-container ts-page">
     <LoadingState v-if="loading" />
     <ErrorState v-else-if="error" :message="error" @retry="load" />
     <TestSummary v-else :summary-data="store.summaryData" @cell-click="onCellClick" />
@@ -91,11 +88,5 @@ onMounted(load)
 <style scoped>
 .page-container {
   color: var(--text-primary);
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: var(--text-muted);
-  margin-bottom: 20px;
 }
 </style>

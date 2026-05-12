@@ -1070,6 +1070,21 @@ def _test_progress_state(current_cp_idx, first_cp_idx, last_cp_idx):
     return 'complete'
 
 
+_MONTH_ABBR = ['', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+               'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+def _short_date(date_str):
+    """Convert 'YYYY-MM-DD' to 'd-Mon' format. Returns '' on failure."""
+    if not date_str:
+        return ''
+    try:
+        y, m, d = date_str.split('-')
+        month_name = _MONTH_ABBR[int(m)]
+        return f'{int(d)}-{month_name}'
+    except (ValueError, IndexError):
+        return ''
+
+
 @app.route('/api/test-summary')
 def api_test_summary():
     """Generate a test summary table similar to Daily Report's Test Summary.
@@ -1358,11 +1373,11 @@ def api_test_summary():
             else:
                 res = f'0F/{t}T'
         elif state == 'in_progress':
-            # 进行中：显示 schedule 的 plan end date，标蓝底
-            res = sched.get('planned_end_date', 'Ongoing')
+            # 进行中：显示 schedule 的 plan end date（简短格式），标蓝底
+            res = _short_date(sched.get('planned_end_date', '')) or 'Ongoing'
         else:
-            # 未开始：显示 schedule 的 plan start date，标白底
-            res = sched.get('planned_start_date', '—')
+            # 未开始：显示 schedule 的 plan start date（简短格式），标白底
+            res = _short_date(sched.get('planned_start_date', '')) or '—'
 
         has_fail = (state == 'complete') and (sf > 0 or stf > 0)
 
