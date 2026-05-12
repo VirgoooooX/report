@@ -24,5 +24,4 @@ scripts/
 VERSION
 pytest.ini
 pytest.py
-sitecustomize.py
 package-lock.json

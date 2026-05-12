@@ -42,12 +42,17 @@ npm --prefix frontend run build:check
 if ($LASTEXITCODE -ne 0) { Write-Error "Frontend build check failed"; exit 1 }
 Pop-Location
 
-# 5. Docker 构建（如可用）
+# 5. Docker 构建检查
 Push-Location $RootDir
 $dockerAvailable = Get-Command docker -ErrorAction SilentlyContinue
 if ($dockerAvailable) {
-  Write-Host "=== Running Docker build ===" -ForegroundColor Cyan
-  docker compose build
+  Write-Host "=== Running Docker build check ===" -ForegroundColor Cyan
+  $buildxAvailable = docker buildx version 2>$null
+  if ($LASTEXITCODE -eq 0) {
+    docker buildx build --load -t report:check .
+  } else {
+    docker compose build
+  }
   if ($LASTEXITCODE -ne 0) { Write-Warning "Docker build failed (non-blocking)" }
 } else {
   Write-Host "Docker not available, skipping" -ForegroundColor Yellow
@@ -88,7 +93,34 @@ Push-Location $RootDir
 git push $Remote "v$newVersion"
 Pop-Location
 
-# 12. 打印 Actions URL
+# 12. 多平台镜像构建并推送至 GHCR
+Push-Location $RootDir
+if ($dockerAvailable) {
+  $buildxAvailable = docker buildx version 2>$null
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host "=== Building multi-platform image ===" -ForegroundColor Cyan
+    $imageRepo = $env:DOCKER_REGISTRY ?? "ghcr.io/virgooooox/report"
+    docker buildx build `
+      --platform linux/amd64,linux/arm64 `
+      --push `
+      -t "${imageRepo}:v$newVersion" `
+      -t "${imageRepo}:latest" `
+      .
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "Multi-platform build failed (non-blocking) - ensure you are logged into the registry"
+    } else {
+      Write-Host "Image pushed: ${imageRepo}:v$newVersion" -ForegroundColor Green
+      Write-Host "Image pushed: ${imageRepo}:latest" -ForegroundColor Green
+    }
+  } else {
+    Write-Host "Docker buildx not available, skipping multi-platform build" -ForegroundColor Yellow
+  }
+} else {
+  Write-Host "Docker not available, skipping multi-platform build" -ForegroundColor Yellow
+}
+Pop-Location
+
+# 13. 打印 Actions URL
 Write-Host ""
 Write-Host "=== Push complete ===" -ForegroundColor Green
 Write-Host "Version: v$newVersion" -ForegroundColor Green

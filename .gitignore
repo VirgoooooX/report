@@ -2,8 +2,6 @@
 /data
 /rawdata
 /db
-/docs/superpowers/
-/docs/cp_to_test_mapping.md
 /report.db
 /report.db.*.bak
 __pycache__/
@@ -20,3 +18,5 @@ node_modules/
 *.log
 /runtime/
 report.before-state-history.db
+/docs/
+/DEVELOPMENT_REVIEW.md

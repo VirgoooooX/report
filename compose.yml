@@ -1,8 +1,10 @@
 services:
   dashboard:
     build: .
+    image: ghcr.io/virgooooox/report:latest
     ports:
       - "5050:5050"
+    restart: unless-stopped
     volumes:
       - ./rawdata:/app/rawdata
       - ./db:/app/db
@@ -11,3 +13,9 @@ services:
       - FLASK_PORT=5050
       - REPORT_RAWDATA_DIR=/app/rawdata
       - REPORT_DB_PATH=/app/db/report.db
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/api/dashboard/overview')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
