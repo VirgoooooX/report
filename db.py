@@ -4,8 +4,7 @@ SQLite storage for daily report snapshots, trends, and comparisons.
 """
 import sqlite3, json, os, datetime
 from collections import defaultdict
-
-DB_PATH = os.environ.get('REPORT_DB_PATH') or os.path.join(os.path.dirname(__file__), 'report.db')
+from app_paths import DB_PATH
 
 
 def _dict_factory(cursor, row):
@@ -13,6 +12,7 @@ def _dict_factory(cursor, row):
 
 
 def get_conn():
+    os.makedirs(os.path.dirname(DB_PATH) or '.', exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = _dict_factory
     conn.execute("PRAGMA journal_mode=WAL")

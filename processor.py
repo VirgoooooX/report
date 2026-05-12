@@ -18,6 +18,7 @@ import argparse
 import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
+from app_paths import RAWDATA_DIR, ensure_runtime_dirs, iter_rawdata_files
 from engine import analyze, extract_sn_progress, extract_sn_fact_rows, build_failure_detail, read_test_schedule, read_test_summary, extract_all_cp_structures, attach_test_idx_to_cps, extract_test_schedule_segments, DailyReportParseResult, parse_daily_report
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
 from db import (
@@ -46,7 +47,7 @@ from db import (
 #  Retired writes: sn_progress, sn_cp_results, sn_check_results
 # ═══════════════════════════════════════════════════════════════════════
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+DATA_DIR = RAWDATA_DIR
 REPORT_PATTERN = re.compile(r'M60 EVT Rel Daily Report_(\d{8})\.xlsx$')
 FA_PATTERN = re.compile(r'M60 EVT REL FA Tracker (\d{8})\.xlsx$')
 logger = logging.getLogger(__name__)
@@ -57,15 +58,16 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════════════════════
 
 def _find_daily_reports():
-    """扫描 data/ 下所有 Daily Report，返回按日期升序的 (date_str, filepath) 列表。"""
+    """扫描 rawdata/ 下所有 Daily Report，返回按日期升序的 (date_str, filepath) 列表。"""
+    ensure_runtime_dirs()
     reports = []
-    for fname in os.listdir(DATA_DIR):
+    for fname, path in iter_rawdata_files():
         if fname.startswith('~$'): continue  # skip Office temp files
         m = REPORT_PATTERN.search(fname)
         if m:
             raw = m.group(1)
             date_fmt = f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
-            reports.append((date_fmt, os.path.join(DATA_DIR, fname)))
+            reports.append((date_fmt, path))
     reports.sort(key=lambda x: x[0])
     return reports
 
@@ -76,13 +78,14 @@ def _find_fa_tracker(date_str=None):
     如果指定日期，优先找对应日期的文件；找不到则使用最新的 FA Tracker。
     返回 (filepath, date_str) 或 (None, None)。
     """
+    ensure_runtime_dirs()
     fas = []
-    for fname in os.listdir(DATA_DIR):
+    for fname, path in iter_rawdata_files():
         m = FA_PATTERN.search(fname)
         if m:
             raw = m.group(1)
             df = f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
-            fas.append((df, os.path.join(DATA_DIR, fname)))
+            fas.append((df, path))
     if not fas:
         return None, None
     fas.sort(key=lambda x: x[0])
@@ -517,23 +520,64 @@ def _add_workdays(start_date, workdays):
 
 def _prediction_daily_bulk_progress(conn, wf_num, config, test_idx, days, threshold=BULK_PROGRESS_THRESHOLD):
     rows = conn.execute("""
-        SELECT r.report_date,
-               sp.sn,
-               sp.current_cp_idx,
-               sp.total_cps
-        FROM sn_progress sp
-        JOIN reports r ON sp.report_id = r.id
-        WHERE sp.wf_num = ? AND sp.config = ? AND sp.test_idx = ?
-          AND r.is_active = 1
-          AND r.report_date IN (
-              SELECT report_date
-              FROM reports
-              WHERE is_active = 1
-              ORDER BY report_date DESC, version DESC
-              LIMIT ?
-          )
-        ORDER BY r.report_date DESC
-    """, (wf_num, config, test_idx, days)).fetchall()
+        WITH recent_reports AS (
+            SELECT id, report_date
+            FROM reports
+            WHERE is_active = 1
+            ORDER BY report_date DESC, version DESC
+            LIMIT ?
+        ),
+        sn_current AS (
+            SELECT rr.report_date,
+                   l.sn,
+                   MAX(l.cp_idx) AS current_cp_idx
+            FROM recent_reports rr
+            JOIN sn_check_state_history l
+              ON l.first_report_id <= rr.id
+             AND (l.closed_before_report_id IS NULL OR l.closed_before_report_id > rr.id)
+            JOIN current_cp_definitions ccp
+              ON ccp.wf_num = l.wf_num
+             AND ccp.cp_idx = l.cp_idx
+            WHERE l.wf_num = ?
+              AND l.config = ?
+              AND ccp.test_idx = ?
+              AND l.status NOT IN ('pending', '')
+            GROUP BY rr.id, rr.report_date, l.sn
+        ),
+        cp_totals AS (
+            SELECT wf_num, COUNT(*) AS total_cps
+            FROM current_cp_definitions
+            WHERE wf_num = ?
+            GROUP BY wf_num
+        )
+        SELECT sc.report_date,
+               sc.sn,
+               sc.current_cp_idx,
+               COALESCE(ct.total_cps, 0) AS total_cps
+        FROM sn_current sc
+        LEFT JOIN cp_totals ct ON ct.wf_num = ?
+        ORDER BY sc.report_date DESC
+    """, (days, wf_num, config, test_idx, wf_num, wf_num)).fetchall()
+
+    if not rows:
+        rows = conn.execute("""
+            SELECT r.report_date,
+                   sp.sn,
+                   sp.current_cp_idx,
+                   sp.total_cps
+            FROM sn_progress sp
+            JOIN reports r ON sp.report_id = r.id
+            WHERE sp.wf_num = ? AND sp.config = ? AND sp.test_idx = ?
+              AND r.is_active = 1
+              AND r.report_date IN (
+                  SELECT report_date
+                  FROM reports
+                  WHERE is_active = 1
+                  ORDER BY report_date DESC, version DESC
+                  LIMIT ?
+              )
+            ORDER BY r.report_date DESC
+        """, (wf_num, config, test_idx, days)).fetchall()
 
     by_date = {}
     for row in rows:
@@ -554,6 +598,16 @@ def _prediction_daily_bulk_progress(conn, wf_num, config, test_idx, days, thresh
 
 
 def _prediction_test_name(conn, wf_num, test_idx):
+    row = conn.execute(
+        """SELECT test_name
+           FROM current_test_definitions
+           WHERE wf_num = ? AND test_idx = ?
+           LIMIT 1""",
+        (wf_num, test_idx),
+    ).fetchone()
+    if row and row['test_name']:
+        return row['test_name']
+
     row = conn.execute("""
         SELECT rtn.test_name
         FROM report_test_names rtn
@@ -617,15 +671,41 @@ def _prediction_targets(conn):
             WHERE is_active = 1
             ORDER BY report_date DESC, version DESC
             LIMIT 1
+        ),
+        sn_current AS (
+            SELECT l.wf_num, l.config, l.sn, MAX(l.cp_idx) AS current_cp_idx
+            FROM sn_check_state_history l
+            JOIN latest_report lr
+              ON l.first_report_id <= lr.id
+             AND (l.closed_before_report_id IS NULL OR l.closed_before_report_id > lr.id)
+            WHERE l.status NOT IN ('pending', '')
+            GROUP BY l.wf_num, l.config, l.sn
         )
-        SELECT sp.wf_num, sp.config, sp.test_idx, COUNT(*) AS sn_count
-        FROM sn_progress sp
-        JOIN latest_report lr ON sp.report_id = lr.id
-        GROUP BY sp.wf_num, sp.config, sp.test_idx
+        SELECT sc.wf_num, sc.config, ccp.test_idx, COUNT(*) AS sn_count
+        FROM sn_current sc
+        JOIN current_cp_definitions ccp
+          ON ccp.wf_num = sc.wf_num
+         AND ccp.cp_idx = sc.current_cp_idx
+        GROUP BY sc.wf_num, sc.config, ccp.test_idx
     """).fetchall()
 
     if not rows:
-        return conn.execute("""
+        rows = conn.execute("""
+            SELECT sp.wf_num, sp.config, sp.test_idx, COUNT(*) AS sn_count
+            FROM sn_progress sp
+            JOIN reports r ON sp.report_id = r.id
+            WHERE r.is_active = 1
+              AND r.id = (
+                  SELECT id FROM reports
+                  WHERE is_active = 1
+                  ORDER BY report_date DESC, version DESC
+                  LIMIT 1
+              )
+            GROUP BY sp.wf_num, sp.config, sp.test_idx
+        """).fetchall()
+
+    if not rows:
+        rows = conn.execute("""
             SELECT DISTINCT wf_num, config, test_idx FROM wf_results
         """).fetchall()
 
@@ -637,8 +717,8 @@ def _prediction_targets(conn):
             targets[key] = row
             continue
 
-        row_count = row['sn_count'] or 0
-        current_count = current['sn_count'] or 0
+        row_count = row.get('sn_count') or 0
+        current_count = current.get('sn_count') or 0
         if row_count > current_count:
             targets[key] = row
         elif row_count == current_count and (row['test_idx'] or 0) > (current['test_idx'] or 0):

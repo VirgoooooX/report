@@ -8,6 +8,7 @@ from flask import Flask, render_template, request, jsonify, send_file, send_from
 import os, sys, json, io, csv, datetime, re, logging
 
 sys.path.insert(0, os.path.dirname(__file__))
+from app_paths import RAWDATA_DIR, UPLOAD_DIR, ensure_runtime_dirs, iter_rawdata_files, find_rawdata_file
 from engine import analyze, build_summary_table, build_failure_detail, extract_test_schedule_segments
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
 import fa_analysis
@@ -27,19 +28,20 @@ from db import (
     get_latest_active_report_id, get_previous_active_report_id,
     get_cell_failures, get_report_schedule_segments, save_report_schedule_segments,
     get_current_schedule_segments, save_current_schedule_segments,
-    get_report_test_names,
+    get_report_test_names, get_current_wf_definitions, get_current_test_definitions,
 )
-from processor import process_newest, REPORT_PATTERN, FA_PATTERN
+from processor import process_newest, compute_auto_predictions, REPORT_PATTERN, FA_PATTERN
 
 BASE_DIR = os.path.dirname(__file__)
 VUE_STATIC = os.path.join(BASE_DIR, 'static')
 VUE_INDEX = os.path.join(VUE_STATIC, 'index.html')
 
 app = Flask(__name__, static_folder=VUE_STATIC, static_url_path='')
-DATA_DIR = os.path.join(BASE_DIR, 'data')
+DATA_DIR = RAWDATA_DIR
 logger = logging.getLogger(__name__)
 
 # ── Init ────────────────────────────────────────────────────────────────
+ensure_runtime_dirs()
 init_db()
 init_categories()
 
@@ -103,13 +105,13 @@ def _parse_date_value(val):
 def _find_fa_tracker_by_date(date_str):
     """Find FA Tracker file matching the given date, or the latest available."""
     fas = []
-    for fname in os.listdir(DATA_DIR):
+    for fname, path in iter_rawdata_files():
         if 'FA Tracker' in fname and fname.endswith('.xlsx') and not fname.startswith('~$'):
             m = re.search(r'(\d{8})', fname)
             if m:
                 raw = m.group(1)
                 df = f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
-                fas.append((df, os.path.join(DATA_DIR, fname)))
+                fas.append((df, path))
     if not fas:
         return None
     fas.sort(key=lambda x: x[0])
@@ -179,25 +181,28 @@ def api_overview():
     
     # Daily CP changes — 比较前后两天的 max(current_cp_idx) per WF+Config
     prev_rid = get_previous_active_report_id(conn, rid)
+    today_progress = get_wf_config_progress_from_lifecycle(conn, rid)
+    if not today_progress:
+        today_progress = get_latest_wf_config_progress(conn, rid)
+
     if prev_rid:
-        # 今天每个 WF+Config 的最远 CP
-        today_max = conn.execute(
-            """SELECT wf_num, config, MAX(current_cp_idx) as max_cp_idx
-               FROM sn_progress WHERE report_id = ? GROUP BY wf_num, config""", (rid,)
-        ).fetchall()
-        today_map = {(r['wf_num'], r['config']): r['max_cp_idx'] for r in today_max}
-        # 昨天每个 WF+Config 的最远 CP
-        yesterday_max = conn.execute(
-            """SELECT wf_num, config, MAX(current_cp_idx) as max_cp_idx
-               FROM sn_progress WHERE report_id = ? GROUP BY wf_num, config""", (prev_rid,)
-        ).fetchall()
-        yesterday_map = {(r['wf_num'], r['config']): r['max_cp_idx'] for r in yesterday_max}
+        today_map = {
+            (r['wf_num'], r['config']): r['max_cp_idx']
+            for r in today_progress
+        }
+        previous_progress = get_wf_config_progress_from_lifecycle(conn, prev_rid)
+        if not previous_progress:
+            previous_progress = get_latest_wf_config_progress(conn, prev_rid)
+        yesterday_map = {
+            (r['wf_num'], r['config']): r['max_cp_idx']
+            for r in previous_progress
+        }
     else:
         today_map = {}
         yesterday_map = {}
     
     # 获取今天各 WF+Config 的 latest CP 信息
-    cp_info_rows = get_latest_wf_config_progress(conn, rid)
+    cp_info_rows = today_progress
     
     # 构建每日更新：每个 WF+Config，cp_delta = 今天 max_cp - 昨天 max_cp
     wf_updates = {}
@@ -709,6 +714,12 @@ def api_predictions():
     cfg = request.args.get('config', '')
     
     preds = get_predictions(wf_num=wf if wf else None, config=cfg if cfg else None)
+    if not preds:
+        try:
+            compute_auto_predictions()
+            preds = get_predictions(wf_num=wf if wf else None, config=cfg if cfg else None)
+        except Exception:
+            logger.exception("Failed to generate lifecycle-backed predictions")
     
     return jsonify({'predictions': [dict(p) for p in preds]})
 
@@ -744,6 +755,7 @@ def _find_report_excel_path(report):
         candidates.append(report['excel_path'])
     if report and report.get('source_file_name'):
         candidates.append(os.path.join(DATA_DIR, report['source_file_name']))
+        candidates.append(find_rawdata_file(report['source_file_name']))
     for path in candidates:
         if path and os.path.exists(path):
             return path
@@ -1067,41 +1079,34 @@ def api_test_summary():
         conn.close()
         return jsonify({'summary': []})
 
-    # Load test names from report_test_names table
-    report_test_names = {}
-    for row in conn.execute(
-        """SELECT wf_num, test_idx, test_name
-           FROM report_test_names
-           WHERE report_id = ?
-           ORDER BY wf_num, test_idx""",
-        (rid,),
-    ).fetchall():
-        names = report_test_names.setdefault(row['wf_num'], [])
-        while len(names) <= row['test_idx']:
-            names.append('')
-        names[row['test_idx']] = row['test_name']
+    report_test_names = get_current_test_definitions(conn)
+    if not report_test_names:
+        report_test_names = get_report_test_names(conn, rid)
+    current_wf_names = get_current_wf_definitions(conn)
 
     rows = conn.execute(
         """WITH wf_configs AS (
                SELECT DISTINCT wf_num, config
-               FROM sn_cp_results
-               WHERE report_id = ?
+               FROM sn_check_state_history
+               WHERE first_report_id <= ?
+                 AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
            ),
            test_slots AS (
                SELECT DISTINCT wf_num, test_idx
-               FROM report_cps
-               WHERE report_id = ?
+               FROM current_cp_definitions
            ),
            cp_test_ranges AS (
                SELECT wf_num, test_idx, MIN(cp_idx) AS first_cp, MAX(cp_idx) AS last_cp
-               FROM report_cps
-               WHERE report_id = ?
+               FROM current_cp_definitions
                GROUP BY wf_num, test_idx
            ),
            sn_current AS (
-               SELECT wf_num, config, sn, cp_idx AS current_cp_idx
-               FROM sn_cp_results
-               WHERE report_id = ? AND is_current_cp = 1
+               SELECT wf_num, config, sn, MAX(cp_idx) AS current_cp_idx
+               FROM sn_check_state_history
+               WHERE first_report_id <= ?
+                 AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
+                 AND status NOT IN ('pending', '')
+               GROUP BY wf_num, config, sn
            ),
            test_totals AS (
                SELECT tr.wf_num, sc.config, tr.test_idx,
@@ -1112,31 +1117,15 @@ def api_test_summary():
                 AND sc.current_cp_idx >= tr.first_cp
                GROUP BY tr.wf_num, sc.config, tr.test_idx
            ),
-           sn_test_latest_cp AS (
-               SELECT cp.wf_num, cp.config, cp.sn, rcp.test_idx,
-                      MAX(cp.cp_idx) AS latest_cp_idx
-               FROM sn_cp_results cp
-               JOIN report_cps rcp
-                 ON rcp.report_id = ? AND rcp.wf_num = cp.wf_num AND rcp.cp_idx = cp.cp_idx
-               WHERE cp.report_id = ? AND cp.has_data = 1
-               GROUP BY cp.wf_num, cp.config, cp.sn, rcp.test_idx
-           ),
-           sn_test_failure AS (
-               SELECT stl.wf_num, stl.config, stl.sn, stl.test_idx,
-                      cp.failure_type
-               FROM sn_test_latest_cp stl
-               JOIN sn_cp_results cp
-                 ON cp.report_id = ?
-                AND cp.wf_num = stl.wf_num AND cp.config = stl.config
-                AND cp.sn = stl.sn AND cp.cp_idx = stl.latest_cp_idx
-               WHERE cp.failure_type IS NOT NULL
-           ),
            test_fail_agg AS (
                SELECT wf_num, config, test_idx,
                       COUNT(DISTINCT CASE WHEN failure_type = 'spec' THEN sn END) AS spec_fail_count,
                       COUNT(DISTINCT CASE WHEN failure_type = 'strife' THEN sn END) AS strife_fail_count,
                       GROUP_CONCAT(DISTINCT sn) AS failure_sns_csv
-               FROM sn_test_failure
+               FROM sn_check_state_history
+               WHERE first_report_id <= ?
+                 AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
+                 AND failure_type IS NOT NULL
                GROUP BY wf_num, config, test_idx
            )
            SELECT s.wf_num, c.config, s.test_idx,
@@ -1153,38 +1142,137 @@ def api_test_summary():
              ON fa.wf_num = s.wf_num AND fa.config = c.config AND fa.test_idx = s.test_idx
            GROUP BY s.wf_num, c.config, s.test_idx
            ORDER BY CAST(s.wf_num AS REAL), c.config, s.test_idx""",
-        (rid, rid, rid, rid, rid, rid, rid),
+        (rid, rid, rid, rid, rid, rid),
     ).fetchall()
+
+    if not rows:
+        rows = conn.execute(
+            """WITH wf_configs AS (
+                   SELECT DISTINCT wf_num, config
+                   FROM sn_cp_results
+                   WHERE report_id = ?
+               ),
+               test_slots AS (
+                   SELECT DISTINCT wf_num, test_idx
+                   FROM report_cps
+                   WHERE report_id = ?
+               ),
+               cp_test_ranges AS (
+                   SELECT wf_num, test_idx, MIN(cp_idx) AS first_cp, MAX(cp_idx) AS last_cp
+                   FROM report_cps
+                   WHERE report_id = ?
+                   GROUP BY wf_num, test_idx
+               ),
+               sn_current AS (
+                   SELECT wf_num, config, sn, cp_idx AS current_cp_idx
+                   FROM sn_cp_results
+                   WHERE report_id = ? AND is_current_cp = 1
+               ),
+               test_totals AS (
+                   SELECT tr.wf_num, sc.config, tr.test_idx,
+                          COUNT(DISTINCT sc.sn) AS total_units
+                   FROM cp_test_ranges tr
+                   JOIN sn_current sc
+                     ON sc.wf_num = tr.wf_num
+                    AND sc.current_cp_idx >= tr.first_cp
+                   GROUP BY tr.wf_num, sc.config, tr.test_idx
+               ),
+               sn_test_latest_cp AS (
+                   SELECT cp.wf_num, cp.config, cp.sn, rcp.test_idx,
+                          MAX(cp.cp_idx) AS latest_cp_idx
+                   FROM sn_cp_results cp
+                   JOIN report_cps rcp
+                     ON rcp.report_id = ? AND rcp.wf_num = cp.wf_num AND rcp.cp_idx = cp.cp_idx
+                   WHERE cp.report_id = ? AND cp.has_data = 1
+                   GROUP BY cp.wf_num, cp.config, cp.sn, rcp.test_idx
+               ),
+               sn_test_failure AS (
+                   SELECT stl.wf_num, stl.config, stl.sn, stl.test_idx,
+                          cp.failure_type
+                   FROM sn_test_latest_cp stl
+                   JOIN sn_cp_results cp
+                     ON cp.report_id = ?
+                    AND cp.wf_num = stl.wf_num AND cp.config = stl.config
+                    AND cp.sn = stl.sn AND cp.cp_idx = stl.latest_cp_idx
+                   WHERE cp.failure_type IS NOT NULL
+               ),
+               test_fail_agg AS (
+                   SELECT wf_num, config, test_idx,
+                          COUNT(DISTINCT CASE WHEN failure_type = 'spec' THEN sn END) AS spec_fail_count,
+                          COUNT(DISTINCT CASE WHEN failure_type = 'strife' THEN sn END) AS strife_fail_count,
+                          GROUP_CONCAT(DISTINCT sn) AS failure_sns_csv
+                   FROM sn_test_failure
+                   GROUP BY wf_num, config, test_idx
+               )
+               SELECT s.wf_num, c.config, s.test_idx,
+                      COALESCE(tt.total_units, 0) AS total_units,
+                      COALESCE(fa.spec_fail_count, 0) AS spec_fail_count,
+                      COALESCE(fa.strife_fail_count, 0) AS strife_fail_count,
+                      fa.failure_sns_csv
+               FROM test_slots s
+               JOIN wf_configs c
+                 ON c.wf_num = s.wf_num
+               LEFT JOIN test_totals tt
+                 ON tt.wf_num = s.wf_num AND tt.config = c.config AND tt.test_idx = s.test_idx
+               LEFT JOIN test_fail_agg fa
+                 ON fa.wf_num = s.wf_num AND fa.config = c.config AND fa.test_idx = s.test_idx
+               GROUP BY s.wf_num, c.config, s.test_idx
+               ORDER BY CAST(s.wf_num AS REAL), c.config, s.test_idx""",
+            (rid, rid, rid, rid, rid, rid, rid),
+        ).fetchall()
 
     # 查询每个 WF/Config/test 的 CP 范围
     cp_ranges = {}
     for row in conn.execute(
         """SELECT wf_num, test_idx, MIN(cp_idx) AS first_cp_idx, MAX(cp_idx) AS last_cp_idx
-           FROM report_cps
-           WHERE report_id = ?
+           FROM current_cp_definitions
            GROUP BY wf_num, test_idx""",
-        (rid,),
     ).fetchall():
         cp_ranges[(row['wf_num'], row['test_idx'])] = {
             'first_cp_idx': row['first_cp_idx'],
             'last_cp_idx': row['last_cp_idx'],
         }
+    if not cp_ranges:
+        for row in conn.execute(
+            """SELECT wf_num, test_idx, MIN(cp_idx) AS first_cp_idx, MAX(cp_idx) AS last_cp_idx
+               FROM report_cps
+               WHERE report_id = ?
+               GROUP BY wf_num, test_idx""",
+            (rid,),
+        ).fetchall():
+            cp_ranges[(row['wf_num'], row['test_idx'])] = {
+                'first_cp_idx': row['first_cp_idx'],
+                'last_cp_idx': row['last_cp_idx'],
+            }
 
     # 查询每个 WF/Config 的最新 current CP
     current_cps = {}
     for row in conn.execute(
         """SELECT wf_num, config, MAX(cp_idx) AS current_cp_idx
-           FROM sn_cp_results
-           WHERE report_id = ? AND is_current_cp = 1
+           FROM sn_check_state_history
+           WHERE first_report_id <= ?
+             AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
+             AND status NOT IN ('pending', '')
            GROUP BY wf_num, config""",
-        (rid,),
+        (rid, rid),
     ).fetchall():
         current_cps[(row['wf_num'], row['config'])] = row['current_cp_idx']
+    if not current_cps:
+        for row in conn.execute(
+            """SELECT wf_num, config, MAX(cp_idx) AS current_cp_idx
+               FROM sn_cp_results
+               WHERE report_id = ? AND is_current_cp = 1
+               GROUP BY wf_num, config""",
+            (rid,),
+        ).fetchall():
+            current_cps[(row['wf_num'], row['config'])] = row['current_cp_idx']
 
     conn.close()
 
     # Load real test names from wf_names table for fallback
     wf_names = get_wf_names()
+    for wf_num, wf_name in current_wf_names.items():
+        wf_names.setdefault(wf_num, {})['name'] = wf_name
 
     summary = {}
     for r in rows:
@@ -1474,6 +1562,40 @@ def api_daily_issues():
     # Key function for 5-dimension comparison (cycle is display-only)
     def _key(d):
         return (d['sn'], d['wf'], d['config'], d['type'], d['location'])
+
+    def _lifecycle_failure_issues(target_rid):
+        rows = conn.execute(
+            """SELECT l.sn, l.wf_num, l.config, l.failure_type,
+                      l.check_item, l.test_idx, l.cp_idx,
+                      c.cp_name, t.test_name
+               FROM sn_check_state_history l
+               LEFT JOIN current_cp_definitions c
+                 ON c.wf_num = l.wf_num AND c.cp_idx = l.cp_idx
+               LEFT JOIN current_test_definitions t
+                 ON t.wf_num = l.wf_num AND t.test_idx = l.test_idx
+               WHERE l.first_report_id <= ?
+                 AND (l.closed_before_report_id IS NULL OR l.closed_before_report_id > ?)
+                 AND l.failure_type IS NOT NULL
+               ORDER BY CAST(l.wf_num AS REAL), l.config, l.sn, l.cp_idx, l.check_item_idx""",
+            (target_rid, target_rid),
+        ).fetchall()
+        issues = []
+        seen = set()
+        for row in rows:
+            item = {
+                'sn': str(row['sn'] or '').strip(),
+                'wf': row['wf_num'],
+                'config': row['config'],
+                'type': row['failure_type'] or '',
+                'location': row['check_item'] or row['test_name'] or f"Test{(row['test_idx'] or 0) + 1}",
+                'failed_cycle': row['cp_name'] or f"CP{(row['cp_idx'] or 0) + 1}",
+            }
+            key = _key(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            issues.append(item)
+        return issues
     
     # Get previous report for diff (Daily Report is cumulative)
     prev_rid = get_previous_active_report_id(conn, rid)
@@ -1510,6 +1632,9 @@ def api_daily_issues():
                 'location': d.get('location', '') or fallback_location,
                 'failed_cycle': d.get('failed_cp', ''),
             })
+
+    if not db_issues:
+        db_issues = _lifecycle_failure_issues(rid)
     
     # 2b. Filter to only NEW failures (not present in previous report)
     if prev_rid:
@@ -1541,6 +1666,9 @@ def api_daily_issues():
                     'location': d.get('location', '') or pfallback,
                     'failed_cycle': d.get('failed_cp', ''),
                 }))
+
+        if not yesterday_keys:
+            yesterday_keys = {_key(item) for item in _lifecycle_failure_issues(prev_rid)}
         
         db_issues = [d for d in db_issues if _key(d) not in yesterday_keys]
 

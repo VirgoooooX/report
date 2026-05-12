@@ -6,8 +6,9 @@ import datetime
 import os
 import re
 from openpyxl import load_workbook
+from app_paths import RAWDATA_DIR, ensure_runtime_dirs, iter_rawdata_files
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+DATA_DIR = RAWDATA_DIR
 
 DIMENSION_FIELD = {
     'symptom': 'Failure Symptom / Failure Message',
@@ -35,18 +36,19 @@ def _field_value(issue, field, default=''):
 
 
 def find_fa_tracker():
-    """Find the FA Tracker Excel file in data/ directory."""
+    """Find the FA Tracker Excel file in rawdata/ directory."""
+    ensure_runtime_dirs()
     candidates = []
-    for fname in os.listdir(DATA_DIR):
+    for fname, path in iter_rawdata_files():
         if 'FA Tracker' not in fname or not fname.endswith('.xlsx') or fname.startswith('~$'):
             continue
         m = re.search(r'(\d{8})', fname)
         date_key = m.group(1) if m else ''
-        candidates.append((date_key, fname))
+        candidates.append((date_key, path))
     if not candidates:
         return None
     candidates.sort(key=lambda x: x[0])
-    return os.path.join(DATA_DIR, candidates[-1][1])
+    return candidates[-1][1]
 
 
 def read_fa_tracker(fa_path):
