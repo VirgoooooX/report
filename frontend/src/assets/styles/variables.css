@@ -30,10 +30,13 @@
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
   --color-info: #4f6f8f;
+  --color-pass: var(--color-success);
+  --color-pass-bg: var(--color-success-bg);
   --color-success-bg: #f0fdf4;
   --color-warning-bg: #fffbeb;
   --color-danger-bg: #fef2f2;
   --color-info-bg: #f0f4f8;
+  --bg-muted: #f0f2f5;
 
   /* 品牌 & 图表 */
   --accent-steel: #4f6f8f;
@@ -153,6 +156,7 @@
   --color-warning-bg: #78350f;
   --color-danger-bg: #7f1d1d;
   --color-info-bg: #1e3a5f;
+  --bg-muted: #1e293b;
 
   --color-not-started-bg: #111827;
   --color-in-progress: #93c5fd;
