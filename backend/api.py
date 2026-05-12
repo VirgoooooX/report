@@ -1281,17 +1281,18 @@ def api_sn_search():
             """SELECT DISTINCT sn, COALESCE(unit_num, '') AS unit_num
                  FROM sn_cp_results
                 WHERE sn LIKE ? OR unit_num LIKE ?
-                ORDER BY sn
+                ORDER BY CASE WHEN sn LIKE ? THEN 0 ELSE 1 END, sn
                 LIMIT 30""",
-            (like, like),
+            (like, like, like),
         ).fetchall()
     if not rows:
         rows = conn.execute(
             """SELECT DISTINCT sn, COALESCE(unit_num, '') AS unit_num
                  FROM sn_progress
                 WHERE sn LIKE ? OR unit_num LIKE ?
+                ORDER BY CASE WHEN sn LIKE ? THEN 0 ELSE 1 END, sn
                 LIMIT 30""",
-            (like, like),
+            (like, like, like),
         ).fetchall()
     conn.close()
 
