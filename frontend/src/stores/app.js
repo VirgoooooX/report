@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { requestJson } from '@/composables/useApi'
+import { normalizeByWf, normalizeTimeline } from '@/composables/useLifecycle'
 
 export const useAppStore = defineStore('app', () => {
   // Preferences
@@ -49,6 +50,13 @@ export const useAppStore = defineStore('app', () => {
   const snResult = ref(null)
   const exportData = ref(null)
   const crossData = ref(null)
+  const queryByWfData = ref(null)
+  const queryByWfKey = ref('')
+  const queryMultiSnData = ref(null)
+  const queryMultiSnKey = ref('')
+  const queryWfList = ref(null)
+  const querySingleSnData = ref(null)
+  const querySingleSnKey = ref('')
   const configColors = {
     overall: '#4f6f8f',
     R1FNF: '#4f6f8f',
@@ -168,7 +176,8 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function searchSn(q) {
-    return await requestJson(`/api/sn/search?q=${encodeURIComponent(q)}`)
+    const data = await requestJson(`/api/sn/search?q=${encodeURIComponent(q)}`)
+    return Array.isArray(data) ? data : []
   }
 
   async function uploadReport(formData) {
@@ -217,6 +226,81 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  async function fetchWfList(force = false) {
+    if (!force && queryWfList.value) return queryWfList.value
+    const data = await requestJson('/api/query/wf-list')
+    queryWfList.value = data
+    return data
+  }
+
+  async function fetchQueryByWf(wf, config) {
+    const key = `${wf}|${config || ''}`
+    if (queryByWfKey.value === key && queryByWfData.value) return queryByWfData.value
+    loading.value = true
+    error.value = null
+    try {
+      const params = new URLSearchParams({ wf })
+      if (config) params.set('config', config)
+      const raw = await requestJson(`/api/query/by-wf?${params.toString()}`)
+      const data = normalizeByWf(raw)
+      queryByWfData.value = data
+      queryByWfKey.value = key
+      return data
+    } catch (e) {
+      error.value = e.message
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function fetchSnTimeline(sns) {
+    const list = Array.isArray(sns) ? sns : [sns]
+    const key = list.slice().sort().join(',')
+    const isSingle = list.length === 1
+
+    if (isSingle && querySingleSnKey.value === key && querySingleSnData.value) {
+      return querySingleSnData.value
+    }
+    if (!isSingle && queryMultiSnKey.value === key && queryMultiSnData.value) {
+      return queryMultiSnData.value
+    }
+
+    loading.value = true
+    error.value = null
+    try {
+      const raw = await requestJson(`/api/query/sn-timeline?sns=${encodeURIComponent(list.join(','))}`)
+      const data = normalizeTimeline(raw)
+      if (isSingle) {
+        querySingleSnData.value = data
+        querySingleSnKey.value = key
+      } else {
+        queryMultiSnData.value = data
+        queryMultiSnKey.value = key
+      }
+      return data
+    } catch (e) {
+      error.value = e.message
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function fetchSnCheckDetails(sn, wf, config, cpIdx) {
+    const params = new URLSearchParams({ wf, config, cp_idx: String(cpIdx) })
+    return await requestJson(`/api/sn/${encodeURIComponent(sn)}/checks?${params.toString()}`)
+  }
+
+  async function resolveMark(mark) {
+    try {
+      const data = await requestJson(`/api/sn/resolve-mark?mark=${encodeURIComponent(mark)}`)
+      return data.sn
+    } catch {
+      return null
+    }
+  }
+
   // ── Cache layer ──
 
   function invalidateCache() {
@@ -237,6 +321,13 @@ export const useAppStore = defineStore('app', () => {
     exportDataKey.value = ''
     crossData.value = null
     faCrossDims.value = ''
+    queryByWfData.value = null
+    queryByWfKey.value = ''
+    queryMultiSnData.value = null
+    queryMultiSnKey.value = ''
+    querySingleSnData.value = null
+    querySingleSnKey.value = ''
+    queryWfList.value = null
     lastOverviewFetch.value = 0
     lastSummaryFetch.value = 0
   }
@@ -286,6 +377,8 @@ export const useAppStore = defineStore('app', () => {
     fetchOverview, fetchDailyIssues, fetchSummary, fetchCategories, fetchPredictions, fetchSchedule,
     fetchCategoryDetail, fetchSnResult, searchSn, fetchExportData, uploadReport, fetchFaCross,
     crossData,
+    fetchWfList, fetchQueryByWf, fetchSnTimeline, fetchSnCheckDetails, resolveMark,
+    queryWfList, queryByWfData, queryMultiSnData, querySingleSnData,
     wfSortKey, sortedWfKeys,
     invalidateCache, checkVersion, triggerRefresh, refreshCounter
   }
