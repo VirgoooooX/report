@@ -31,4 +31,4 @@ EXPOSE 5050
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5050/api/dashboard/overview')" || exit 1
 
-CMD ["python", "backend/api.py"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5050", "--workers", "2", "backend.api:app"]
