@@ -5,9 +5,9 @@
       <SnQuickSearch />
     </div>
 
-    <LoadingState v-if="loading" variant="skeleton" />
+    <LoadingState v-if="loading && !store.overviewData" variant="skeleton" />
     <ErrorState
-      v-else-if="error"
+      v-else-if="error && !store.overviewData"
       :message="error"
       :retry-label="t('common.retry')"
       @retry="loadAll"
@@ -63,12 +63,12 @@
     </template>
 
     <!-- CatManage Modal -->
-    <CatManageModal :show="showCatModal" @close="showCatModal = false" @updated="loadAll" />
+    <CatManageModal :show="showCatModal" @close="showCatModal = false" @updated="refresh" />
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from '@/i18n/useI18n'
 import { useAppStore } from '@/stores/app'
@@ -120,13 +120,14 @@ function goCategory(name) {
   router.push({ name: 'category', params: { name } })
 }
 
-async function loadAll() {
+async function loadAll(force = false) {
+  if (!force && store.overviewData && store.crossData) return
   loading.value = true
   error.value = null
   try {
     await Promise.all([
-      store.fetchOverview(),
-      store.fetchFaCross('location', 'config')
+      store.fetchOverview(force),
+      store.fetchFaCross('location', 'config', force)
     ])
   } catch (e) {
     error.value = e.message || 'Failed to load dashboard'
@@ -138,6 +139,8 @@ async function loadAll() {
 onMounted(() => {
   loadAll()
 })
+
+watch(() => store.refreshCounter, () => { loadAll(true) })
 </script>
 
 <style scoped>

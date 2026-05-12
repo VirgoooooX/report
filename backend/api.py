@@ -162,6 +162,29 @@ def spa_catchall(path):
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  API: Data Version (for frontend cache invalidation)
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/api/version')
+def api_version():
+    """Return a version token that changes when the database is updated.
+    The frontend uses this to decide whether to invalidate cached API responses."""
+    conn = get_conn()
+    row = conn.execute(
+        """SELECT id, report_date, version FROM reports
+           WHERE is_active = 1
+           ORDER BY report_date DESC, version DESC
+           LIMIT 1"""
+    ).fetchone()
+    conn.close()
+    if not row:
+        return jsonify({'version': 'empty'})
+    return jsonify({
+        'version': f"{row['report_date']}-r{row['id']}-v{row['version']}"
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  API: Dashboard Overview
 # ═══════════════════════════════════════════════════════════════════════
 

@@ -33,6 +33,10 @@ export const useAppStore = defineStore('app', () => {
   const wfNames = ref({})
   const overviewData = ref(null)
   const summaryData = ref(null)
+  const lastOverviewFetch = ref(0)
+  const lastSummaryFetch = ref(0)
+  const dataVersion = ref(localStorage.getItem('data-version') || '')
+  const refreshCounter = ref(0)
   const loading = ref(false)
   const dailyIssues = ref([])
   const dailyIssuesConsistency = ref({})
@@ -63,12 +67,14 @@ export const useAppStore = defineStore('app', () => {
   const CONFIG_ORDER = ['R1FNF', 'R2CNM', 'R3', 'R4']
   const CAT_ORDER = ['Drop', 'Ingress', 'Environmental', 'Mechanical']
 
-  async function fetchOverview() {
+  async function fetchOverview(force = false) {
+    if (!force && overviewData.value) return overviewData.value
     loading.value = true
     error.value = null
     try {
       const data = await requestJson('/api/dashboard/overview')
       overviewData.value = data
+      lastOverviewFetch.value = Date.now()
       reportDate.value = data.report_date || ''
       projectName.value = data.project_name || ''
       if (data.wf_names) {
@@ -88,7 +94,8 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function fetchDailyIssues() {
+  async function fetchDailyIssues(force = false) {
+    if (!force && dailyIssues.value.length) return { issues: dailyIssues.value, consistency: dailyIssuesConsistency.value, report_date: dailyIssuesReportDate.value }
     try {
       const data = await requestJson('/api/daily/issues')
       dailyIssues.value = data.issues || []
@@ -101,9 +108,11 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function fetchSummary() {
+  async function fetchSummary(force = false) {
+    if (!force && summaryData.value) return summaryData.value
     try {
       summaryData.value = await requestJson('/api/test-summary')
+      lastSummaryFetch.value = Date.now()
       return summaryData.value
     } catch (e) {
       error.value = e.message
@@ -111,36 +120,50 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function fetchCategories() {
+  async function fetchCategories(force = false) {
+    if (!force && categories.value.length) return categories.value
     const d = await requestJson('/api/categories')
     categories.value = d.categories || []
     return categories.value
   }
 
-  async function fetchPredictions(wf, cfg) {
+  const predictionsCacheKey = ref('')
+
+  async function fetchPredictions(wf, cfg, force = false) {
     let url = '/api/predictions'
     const params = []
     if (wf) params.push('wf=' + encodeURIComponent(wf))
     if (cfg) params.push('config=' + encodeURIComponent(cfg))
     if (params.length) url += '?' + params.join('&')
+    if (!force && predictionsCacheKey.value === url && predictions.value.length) return predictions.value
     const d = await requestJson(url)
     predictions.value = d.predictions || []
+    predictionsCacheKey.value = url
     return predictions.value
   }
 
-  async function fetchSchedule() {
+  async function fetchSchedule(force = false) {
+    if (!force && scheduleData.value) return scheduleData.value
     scheduleData.value = await requestJson('/api/schedule')
     return scheduleData.value
   }
 
-  async function fetchCategoryDetail(name) {
+  const categoryDetailName = ref('')
+
+  async function fetchCategoryDetail(name, force = false) {
+    if (!force && categoryDetailName.value === name && categoryDetail.value) return categoryDetail.value
     const d = await requestJson(`/api/completion/category/${encodeURIComponent(name)}`)
     categoryDetail.value = d
+    categoryDetailName.value = name
     return d
   }
 
-  async function fetchSnResult(sn) {
+  const snResultSn = ref('')
+
+  async function fetchSnResult(sn, force = false) {
+    if (!force && snResultSn.value === sn && snResult.value) return snResult.value
     snResult.value = await requestJson(`/api/sn/${encodeURIComponent(sn)}`)
+    snResultSn.value = sn
     return snResult.value
   }
 
@@ -164,24 +187,76 @@ export const useAppStore = defineStore('app', () => {
     return data
   }
 
-  async function fetchExportData(filters) {
+  const exportDataKey = ref('')
+
+  async function fetchExportData(filters, force = false) {
     const p = new URLSearchParams()
     if (filters.wf) p.set('wf', filters.wf)
     if (filters.config) p.set('config', filters.config)
     if (filters.sn) p.set('sn', filters.sn)
-    const d = await requestJson(`/api/export?${p}`)
+    const key = p.toString()
+    if (!force && exportDataKey.value === key && exportData.value) return exportData.value
+    const d = await requestJson(`/api/export?${key}`)
     exportData.value = d
+    exportDataKey.value = key
     return d
   }
 
-  async function fetchFaCross(dim1 = 'location', dim2 = 'config') {
+  const faCrossDims = ref('')
+
+  async function fetchFaCross(dim1 = 'location', dim2 = 'config', force = false) {
+    const dimKey = `${dim1}:${dim2}`
+    if (!force && faCrossDims.value === dimKey && crossData.value) return crossData.value
     try {
       crossData.value = await requestJson(`/api/fa/cross?dim1=${dim1}&dim2=${dim2}`)
+      faCrossDims.value = dimKey
       return crossData.value
     } catch (e) {
       error.value = e.message
       throw e
     }
+  }
+
+  // ── Cache layer ──
+
+  function invalidateCache() {
+    overviewData.value = null
+    summaryData.value = null
+    dailyIssues.value = []
+    dailyIssuesConsistency.value = {}
+    dailyIssuesReportDate.value = ''
+    categories.value = []
+    categoryDetail.value = null
+    categoryDetailName.value = ''
+    predictions.value = []
+    predictionsCacheKey.value = ''
+    scheduleData.value = null
+    snResult.value = null
+    snResultSn.value = ''
+    exportData.value = null
+    exportDataKey.value = ''
+    crossData.value = null
+    faCrossDims.value = ''
+    lastOverviewFetch.value = 0
+    lastSummaryFetch.value = 0
+  }
+
+  async function checkVersion() {
+    try {
+      const { version } = await requestJson('/api/version')
+      if (dataVersion.value && dataVersion.value !== version) {
+        invalidateCache()
+      }
+      dataVersion.value = version
+      localStorage.setItem('data-version', version)
+    } catch { /* allow — version check is advisory */ }
+  }
+
+  // Run version check on store creation (survives page reload)
+  checkVersion()
+
+  function triggerRefresh() {
+    refreshCounter.value++
   }
 
   function wfSortKey(wfn) {
@@ -204,13 +279,14 @@ export const useAppStore = defineStore('app', () => {
 
   return {
     language, theme, setLanguage, setTheme, toggleTheme, applyPreferences,
-    projectName, reportDate, wfNames, overviewData, summaryData, loading, error,
+    projectName, reportDate, wfNames, overviewData, summaryData, lastOverviewFetch, lastSummaryFetch, loading, error,
     dailyIssues, dailyIssuesConsistency, dailyIssuesReportDate,
     categories, categoryDetail, predictions, scheduleData, snResult, exportData,
     configColors, catColors, CONFIG_ORDER, CAT_ORDER,
     fetchOverview, fetchDailyIssues, fetchSummary, fetchCategories, fetchPredictions, fetchSchedule,
     fetchCategoryDetail, fetchSnResult, searchSn, fetchExportData, uploadReport, fetchFaCross,
     crossData,
-    wfSortKey, sortedWfKeys
+    wfSortKey, sortedWfKeys,
+    invalidateCache, checkVersion, triggerRefresh, refreshCounter
   }
 })

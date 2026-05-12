@@ -5,7 +5,6 @@
         <h1 class="page-title">{{ t('dailyUpdate.title') }}</h1>
         <p class="page-subtitle">{{ t('dailyUpdate.subtitle') }}</p>
       </div>
-      <button class="refresh-btn" @click="loadAll">{{ t('common.refresh') }}</button>
     </header>
 
     <section class="section">
@@ -29,7 +28,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, ref, onMounted, watch } from 'vue'
 import { useI18n } from '@/i18n/useI18n'
 import { useAppStore } from '@/stores/app'
 import DailyUpdates from '@/components/DailyUpdates.vue'
@@ -39,6 +38,7 @@ import { buildDailyUpdateKpis } from '@/views/dailyUpdateDisplay'
 
 const store = useAppStore()
 const { t } = useI18n()
+const loading = ref(false)
 
 const kpiItems = computed(() => buildDailyUpdateKpis(
   store.overviewData?.daily_updates,
@@ -46,20 +46,26 @@ const kpiItems = computed(() => buildDailyUpdateKpis(
   store.dailyIssuesConsistency
 ))
 
-async function loadAll() {
-  await Promise.all([
-    store.fetchOverview(),
-    store.fetchDailyIssues()
-  ])
+async function loadAll(force = false) {
+  if (!force && store.overviewData && store.dailyIssues.length) return
+  loading.value = true
+  try {
+    await Promise.all([
+      store.fetchOverview(force),
+      store.fetchDailyIssues(force)
+    ])
+  } catch (e) {
+    store.error = e.message || 'Failed to load daily update'
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(async () => {
-  try {
-    await loadAll()
-  } catch (e) {
-    store.error = e.message || 'Failed to load daily update'
-  }
+  await loadAll()
 })
+
+watch(() => store.refreshCounter, () => { loadAll(true) })
 </script>
 
 <style scoped>
@@ -87,23 +93,6 @@ onMounted(async () => {
   margin-top: 4px;
   font-size: 13px;
   color: var(--text-muted);
-}
-
-.refresh-btn {
-  padding: 7px 16px;
-  font-size: 12px;
-  font-family: var(--font-display);
-  font-weight: 600;
-  color: var(--accent-steel);
-  background: var(--bg-card);
-  border: 1px solid var(--accent-steel);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.refresh-btn:hover {
-  background: var(--accent-steel);
-  color: #fff;
 }
 
 .page-footer {

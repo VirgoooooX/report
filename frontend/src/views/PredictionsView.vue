@@ -36,13 +36,10 @@
             <option v-for="c in configOptions" :key="c" :value="c">{{ c }}</option>
           </select>
         </div>
-        <button class="refresh-btn" :disabled="store.loading" @click="loadData">
-          {{ store.loading ? t('common.loading') : t('common.refresh') }}
-        </button>
       </div>
     </div>
 
-    <LoadingState v-if="store.loading && !store.predictions.length" />
+    <LoadingState v-if="loading && !store.predictions.length" />
 
     <!-- Predictions by WF -->
     <div v-if="store.predictions.length" class="card pred-card">
@@ -123,7 +120,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n/useI18n'
 import { requestJson } from '@/composables/useApi'
@@ -132,6 +129,7 @@ import LoadingState from '@/components/LoadingState.vue'
 
 const store = useAppStore()
 const { t } = useI18n()
+const loading = ref(false)
 const filterWf = ref('')
 const filterConfig = ref('')
 const editModal = ref(false)
@@ -199,14 +197,18 @@ function badgeStyle(c) {
   return { color, borderColor: color + '40', backgroundColor: color + '0d' }
 }
 
-async function loadData() {
+async function loadData(force = false) {
+  if (!force && store.predictions.length) return
+  loading.value = true
   try {
     await Promise.all([
-      store.fetchOverview(),
-      store.fetchPredictions(filterWf.value || null, filterConfig.value || null)
+      store.fetchOverview(force),
+      store.fetchPredictions(filterWf.value || null, filterConfig.value || null, force)
     ])
   } catch (e) {
     store.error = e.message || 'Failed to load predictions'
+  } finally {
+    loading.value = false
   }
 }
 
@@ -237,6 +239,8 @@ async function saveEdit() {
 }
 
 onMounted(loadData)
+
+watch(() => store.refreshCounter, () => { loadData(true) })
 </script>
 
 <style scoped>
@@ -300,14 +304,6 @@ onMounted(loadData)
   background: var(--bg-input); color: var(--text-primary); outline: none; min-width: 160px;
 }
 .filter-input:focus, .filter-select:focus { border-color: var(--border-focus); }
-.refresh-btn {
-  padding: 8px 20px; font-size: 13px; font-family: var(--font-display);
-  font-weight: 500; color: #fff; background: var(--accent-steel);
-  border: none; border-radius: var(--radius-sm); cursor: pointer; white-space: nowrap;
-}
-.refresh-btn:hover:not(:disabled) { opacity: 0.9; }
-.refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
 /* Predictions card */
 .pred-card { overflow: hidden; }
 .pred-header {

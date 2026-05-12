@@ -498,11 +498,13 @@ function onCellClick(v1, v2) {
 
 // ── Init ──
 onMounted(async () => {
-  await loadOverview()
-  loadCross()
+  if (!overviewData.value) await loadOverview()
+  if (!crossData.value) loadCross()
 })
 
 watch([dim1, dim2], loadCross)
+
+watch(() => store.refreshCounter, () => { loadOverview(); loadCross() })
 </script>
 
 <style scoped>

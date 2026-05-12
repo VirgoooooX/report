@@ -14,12 +14,11 @@
               <option v-for="config in store.CONFIG_ORDER" :key="config" :value="config">{{ config }}</option>
           </select>
           <button class="clear-btn" @click="clearFilters">{{ t('schedule.clear') }}</button>
-          <button class="refresh-btn" @click="loadData">{{ t('common.refresh') }}</button>
         </section>
       </div>
     </header>
 
-    <LoadingState v-if="loading" />
+    <LoadingState v-if="loading && !store.scheduleData" />
     <div v-else-if="!scheduleLanes.length" class="card empty-state">{{ t('common.noData') }}</div>
 
     <ScheduleTimeline
@@ -32,7 +31,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import LoadingState from '@/components/LoadingState.vue'
 import ScheduleTimeline from '@/components/ScheduleTimeline.vue'
 import { useI18n } from '@/i18n/useI18n'
@@ -62,12 +61,13 @@ function clearFilters() {
   filterConfig.value = ''
 }
 
-async function loadData() {
+async function loadData(force = false) {
+  if (!force && store.scheduleData) return
   loading.value = true
   try {
     await Promise.all([
-      store.fetchOverview(),
-      store.fetchSchedule()
+      store.fetchOverview(force),
+      store.fetchSchedule(force)
     ])
   } catch (e) {
     store.error = e.message || 'Failed to load schedule'
@@ -77,6 +77,8 @@ async function loadData() {
 }
 
 onMounted(loadData)
+
+watch(() => store.refreshCounter, () => { loadData(true) })
 </script>
 
 <style scoped>
@@ -148,7 +150,6 @@ onMounted(loadData)
   width: 132px;
 }
 
-.refresh-btn,
 .clear-btn {
   height: 27px;
   padding: 0 10px;
@@ -162,7 +163,6 @@ onMounted(loadData)
   cursor: pointer;
 }
 
-.refresh-btn:hover,
 .clear-btn:hover {
   background: var(--accent-steel);
   color: #fff;

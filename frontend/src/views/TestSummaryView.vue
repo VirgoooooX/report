@@ -1,7 +1,7 @@
 <template>
   <div class="page-container ts-page">
-    <LoadingState v-if="loading" />
-    <ErrorState v-else-if="error" :message="error" @retry="load" />
+    <LoadingState v-if="loading && !store.summaryData" />
+    <ErrorState v-else-if="error && !store.summaryData" :message="error" @retry="load" />
     <TestSummary v-else :summary-data="store.summaryData" @cell-click="onCellClick" />
 
     <FAModal :show="showFAModal" :wf="faWf" :cfg="faCfg" :test="faTest"
@@ -11,16 +11,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
-import { useI18n } from '@/i18n/useI18n'
 import TestSummary from '@/components/TestSummary.vue'
 import FAModal from '@/components/FAModal.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 
 const store = useAppStore()
-const { t } = useI18n()
 const loading = ref(false)
 const error = ref('')
 
@@ -74,15 +72,18 @@ function onCellClick(payload) {
   showFAModal.value = true
 }
 
-async function load() {
+async function load(force = false) {
+  if (!force && store.summaryData && store.overviewData) return
   loading.value = true; error.value = ''
   try {
-    await Promise.all([store.fetchOverview(), store.fetchSummary()])
+    await Promise.all([store.fetchOverview(force), store.fetchSummary(force)])
   } catch { error.value = 'Failed to load data' }
   finally { loading.value = false }
 }
 
 onMounted(load)
+
+watch(() => store.refreshCounter, () => { load(true) })
 </script>
 
 <style scoped>

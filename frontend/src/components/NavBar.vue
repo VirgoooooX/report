@@ -26,6 +26,15 @@
       </div>
       <div class="nav-controls">
         <button
+          class="nav-refresh-btn"
+          :title="t('common.refresh')"
+          :aria-label="t('common.refresh')"
+          :disabled="refreshing"
+          @click="onRefresh"
+        >
+          <span class="refresh-icon" :class="{ spinning: refreshing }" aria-hidden="true">↻</span>
+        </button>
+        <button
           class="lang-toggle-btn"
           :title="store.language === 'zh-CN' ? 'Switch to English' : '切换到中文'"
           :aria-label="store.language === 'zh-CN' ? 'Switch to English' : '切换到中文'"
@@ -78,6 +87,13 @@ import UploadDialog from '@/components/UploadDialog.vue'
 const store = useAppStore()
 const { t } = useI18n()
 const mobileOpen = ref(false)
+const refreshing = ref(false)
+
+function onRefresh() {
+  refreshing.value = true
+  store.triggerRefresh()
+  setTimeout(() => { refreshing.value = false }, 600)
+}
 
 // Upload
 const uploadState = ref('idle')
@@ -89,6 +105,8 @@ async function onUploadDone(formData) {
   uploadState.value = 'uploading'
   try {
     await store.uploadReport(formData)
+    store.invalidateCache()
+    store.checkVersion()
     uploadState.value = 'done'
     doneTimer = setTimeout(() => { uploadState.value = 'idle' }, 3000)
   } catch (e) {
@@ -183,7 +201,8 @@ function toggleLanguage() {
   display: flex; align-items: center; gap: 8px;
 }
 .lang-toggle-btn,
-.theme-btn {
+.theme-btn,
+.nav-refresh-btn {
   width: 32px;
   height: 32px;
   display: flex;
@@ -196,6 +215,18 @@ function toggleLanguage() {
   cursor: pointer;
   line-height: 1;
   transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
+}
+.nav-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.refresh-icon {
+  font-size: 18px;
+  display: inline-block;
+  line-height: 1;
+}
+.refresh-icon.spinning {
+  animation: spin 0.6s linear infinite;
 }
 .lang-toggle-btn {
   font-size: 11px;

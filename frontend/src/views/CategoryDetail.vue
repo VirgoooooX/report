@@ -17,10 +17,11 @@
     </div>
 
     <!-- Loading / Error -->
-    <LoadingState v-if="store.loading && !store.categoryDetail" :label="t('categories.loadingCategory')" />
+    <LoadingState v-if="loading" :label="t('categories.loadingCategory')" />
     <ErrorState
-      v-else-if="store.error && !store.categoryDetail"
-      :message="store.error"
+      v-else-if="error"
+      :message="error"
+      @retry="load(true)"
     />
 
     <template v-if="store.categoryDetail">
@@ -160,12 +161,26 @@ function wfName(key) {
   return typeof v === 'object' ? v?.name || '' : v || ''
 }
 
-async function load() {
-  await store.fetchCategoryDetail(categoryName.value)
+const loading = ref(false)
+const error = ref('')
+
+async function load(force = false) {
+  if (!force && store.categoryDetail) return
+  loading.value = true
+  error.value = ''
+  try {
+    await store.fetchCategoryDetail(categoryName.value, force)
+  } catch (e) {
+    error.value = e.message || 'Failed to load category'
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(load)
-watch(categoryName, load)
+watch(categoryName, () => load())
+
+watch(() => store.refreshCounter, () => { load(true) })
 </script>
 
 <style scoped>
