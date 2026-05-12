@@ -233,9 +233,9 @@ export const useAppStore = defineStore('app', () => {
     return data
   }
 
-  async function fetchQueryByWf(wf, config) {
+  async function fetchQueryByWf(wf, config, force = false) {
     const key = `${wf}|${config || ''}`
-    if (queryByWfKey.value === key && queryByWfData.value) return queryByWfData.value
+    if (!force && queryByWfKey.value === key && queryByWfData.value) return queryByWfData.value
     loading.value = true
     error.value = null
     try {
@@ -288,8 +288,12 @@ export const useAppStore = defineStore('app', () => {
   }
 
   async function fetchSnCheckDetails(sn, wf, config, cpIdx) {
-    const params = new URLSearchParams({ wf, config, cp_idx: String(cpIdx) })
-    return await requestJson(`/api/sn/${encodeURIComponent(sn)}/checks?${params.toString()}`)
+    try {
+      const params = new URLSearchParams({ wf, config, cp_idx: String(cpIdx) })
+      return await requestJson(`/api/sn/${encodeURIComponent(sn)}/checks?${params.toString()}`)
+    } catch {
+      return { check_items: [] }
+    }
   }
 
   async function resolveMark(mark) {
