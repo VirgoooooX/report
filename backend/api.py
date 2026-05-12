@@ -1302,7 +1302,7 @@ def api_sn_search():
 @app.route('/api/sn/<sn>/checks')
 def api_sn_check_details(sn):
     """Check-item details for one CP. Query: wf, config, cp_idx."""
-    wf = request.args.get('wf', '').strip()
+    wf = _normalize_wf(request.args.get('wf', ''))
     config = request.args.get('config', '').strip()
     cp_idx_raw = request.args.get('cp_idx', '').strip()
 
