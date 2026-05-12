@@ -13,7 +13,7 @@
                 cp.has_data ? 'clickable' : '',
                 expandedCp === cp.cp_idx ? 'expanded' : '',
               ]"
-              :colspan="expandedCp === cp.cp_idx ? Math.max(1, visibleCheckItemCount) : 1"
+              :colspan="expandedCp === cp.cp_idx ? Math.max(1, expandedCheckItemCount) : 1"
               @click="cp.has_data && !checkItemFilter && toggleCp(cp.cp_idx)"
             >
               <div class="cp-name">{{ cp.cp_name }}</div>
@@ -92,7 +92,17 @@ const expandedCp = ref(null)
 // Per-CP loaded check items, keyed by cp_idx.
 const loadedByCp = ref({})
 
-const visibleCheckItemCount = computed(() => props.checkItems.length || 1)
+const expandedCheckItemCount = computed(() => {
+  if (props.checkItems.length) return props.checkItems.length
+  if (expandedCp.value !== null) {
+    const cp = props.cpList.find(c => c.cp_idx === expandedCp.value)
+    if (cp) {
+      const items = checkItemsForCp(cp) || []
+      if (items.length) return items.length
+    }
+  }
+  return 1
+})
 
 function checkItemsForCp(cp) {
   if (Array.isArray(cp.checkItems)) return cp.checkItems
@@ -130,47 +140,48 @@ function findCheckItem(cp, name) {
   return items.find(i => (i.name || i.check_item) === name) || null
 }
 
+function classifyByStatus(status, failure_type) {
+  if (status === 'pass') return 'pass'
+  if (status === 'fail' || failure_type === 'spec') return 'fail'
+  if (failure_type === 'strife') return 'strife'
+  return 'skip'
+}
+
+function symbolForStatus(status, failure_type) {
+  if (status === 'pass') return '✓'
+  if (status === 'fail' || failure_type) return '✗'
+  return '—'
+}
+
 function cpCellClass(cp) {
   if (!cp.has_data) return 'cell-skip'
-  if (cp.status === 'fail' || cp.failure_type === 'spec') return 'cell-fail'
-  if (cp.failure_type === 'strife') return 'cell-strife'
-  return 'cell-pass'
+  return `cell-${classifyByStatus(cp.status, cp.failure_type)}`
 }
 
 function ciCellClass(cp, name) {
   const ci = findCheckItem(cp, name)
   if (!ci) return 'ci-skip'
-  if (ci.status === 'pass') return 'ci-pass'
-  if (ci.status === 'fail' || ci.failure_type === 'spec') return 'ci-fail'
-  if (ci.failure_type === 'strife') return 'ci-strife'
-  return 'ci-skip'
+  return `ci-${classifyByStatus(ci.status, ci.failure_type)}`
 }
 
 function ciCellText(cp, name) {
   const ci = findCheckItem(cp, name)
   if (!ci) return '—'
-  if (ci.status === 'pass') return '✓'
-  if (ci.status === 'fail' || ci.failure_type) return '✗'
-  return '—'
+  return symbolForStatus(ci.status, ci.failure_type)
 }
 
 function ciFilteredCellClass(cp) {
   if (!cp.has_data) return 'cell-skip'
   const ci = findCheckItem(cp, props.checkItemFilter)
   if (!ci) return 'cell-skip'
-  if (ci.status === 'pass') return 'cell-pass'
-  if (ci.status === 'fail' || ci.failure_type === 'spec') return 'cell-fail'
-  if (ci.failure_type === 'strife') return 'cell-strife'
-  return 'cell-skip'
+  return `cell-${classifyByStatus(ci.status, ci.failure_type)}`
 }
 
 function ciFilteredCellText(cp) {
   if (!cp.has_data) return '/'
   const ci = findCheckItem(cp, props.checkItemFilter)
   if (!ci) return '—'
-  if (ci.status === 'pass') return '✓'
-  if (ci.status === 'fail' || ci.failure_type) return '✗'
-  return '—'
+  return symbolForStatus(ci.status, ci.failure_type)
 }
 
 function statusLabel(cp) {
