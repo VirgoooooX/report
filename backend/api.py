@@ -1317,7 +1317,7 @@ def api_sn_check_details(sn):
     report_id = get_latest_active_report_id(conn)
     conn.close()
     if not report_id:
-        return jsonify({'check_items': []})
+        return jsonify({'sn': sn, 'wf_num': wf, 'config': config, 'cp_idx': cp_idx, 'check_items': []})
 
     rows = get_sn_check_details(report_id, wf, config, sn, cp_idx) or []
     return jsonify({
