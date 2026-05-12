@@ -6,6 +6,7 @@
  * into the shape consumed by SnLifecycle.vue.
  */
 export function normalizeCp(cp) {
+  if (!cp || typeof cp !== 'object') return null
   const hasData = cp.status && cp.status !== 'pending'
   return {
     cp_idx: cp.cp_idx,
@@ -53,7 +54,7 @@ export function normalizeTimeline(payload) {
  * Returns: {wf_num, wf_name, config_filter, total_cps, check_items, summary, sns: [...]}
  */
 export function normalizeByWf(payload) {
-  if (!payload) return null
+  if (!payload) return { sns: [], check_items: [], summary: {} }
   return {
     wf_num: payload.wf_num,
     wf_name: payload.wf_name,
@@ -88,14 +89,14 @@ export function groupMultiSnByWf(normalized) {
           check_items: wf.checkItems,
           total_cps: wf.total_cps,
           // Union of all cp_idx values any SN in this WF has reached.
-          cpColumns: new Map(),
+          _cpColMap: new Map(),
           sns: [],
         })
       }
       const g = groups.get(key)
       for (const cp of wf.cpList) {
-        if (!g.cpColumns.has(cp.cp_idx)) {
-          g.cpColumns.set(cp.cp_idx, { cp_idx: cp.cp_idx, cp_name: cp.cp_name })
+        if (!g._cpColMap.has(cp.cp_idx)) {
+          g._cpColMap.set(cp.cp_idx, { cp_idx: cp.cp_idx, cp_name: cp.cp_name })
         }
       }
       g.sns.push({
@@ -110,7 +111,7 @@ export function groupMultiSnByWf(normalized) {
   // Sort CP columns ascending; attach as plain array.
   return [...groups.values()].map(g => ({
     ...g,
-    cpColumns: [...g.cpColumns.values()].sort((a, b) => a.cp_idx - b.cp_idx),
+    cpColumns: [...g._cpColMap.values()].sort((a, b) => a.cp_idx - b.cp_idx),
   }))
 }
 
@@ -118,7 +119,8 @@ function deriveCheckItemNames(cps) {
   const names = new Set()
   for (const cp of cps || []) {
     for (const it of cp.items || []) {
-      if (it.name || it.check_item) names.add(it.name || it.check_item)
+      const label = it.name || it.check_item
+      if (label) names.add(label)
     }
   }
   return [...names]

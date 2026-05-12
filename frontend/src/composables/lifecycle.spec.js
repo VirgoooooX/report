@@ -44,4 +44,28 @@ import { normalizeCp, normalizeTimeline, normalizeByWf, groupMultiSnByWf }
   assert.equal(n[0].wfs[0].cpList[0].checkItems[0].name, 'Cosm')
 }
 
+// normalizeCp handles null/undefined
+{
+  assert.equal(normalizeCp(null), null)
+  assert.equal(normalizeCp(undefined), null)
+}
+
+// normalizeTimeline handles empty/null payload
+{
+  assert.deepEqual(normalizeTimeline(null), [])
+  assert.deepEqual(normalizeTimeline({}), [])
+}
+
+// normalizeByWf handles empty/null payload
+{
+  const r = normalizeByWf(null)
+  assert.deepEqual(r.sns, [])
+  assert.deepEqual(r.check_items, [])
+}
+
+// groupMultiSnByWf handles empty input
+{
+  assert.deepEqual(groupMultiSnByWf([]), [])
+}
+
 console.log('useLifecycle.js tests passed')
