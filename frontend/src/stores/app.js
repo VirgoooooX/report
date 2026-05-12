@@ -47,7 +47,6 @@ export const useAppStore = defineStore('app', () => {
   const categoryDetail = ref(null)
   const predictions = ref([])
   const scheduleData = ref(null)
-  const snResult = ref(null)
   const exportData = ref(null)
   const crossData = ref(null)
   const queryByWfData = ref(null)
@@ -164,15 +163,6 @@ export const useAppStore = defineStore('app', () => {
     categoryDetail.value = d
     categoryDetailName.value = name
     return d
-  }
-
-  const snResultSn = ref('')
-
-  async function fetchSnResult(sn, force = false) {
-    if (!force && snResultSn.value === sn && snResult.value) return snResult.value
-    snResult.value = await requestJson(`/api/sn/${encodeURIComponent(sn)}`)
-    snResultSn.value = sn
-    return snResult.value
   }
 
   async function searchSn(q) {
@@ -319,8 +309,6 @@ export const useAppStore = defineStore('app', () => {
     predictions.value = []
     predictionsCacheKey.value = ''
     scheduleData.value = null
-    snResult.value = null
-    snResultSn.value = ''
     exportData.value = null
     exportDataKey.value = ''
     crossData.value = null
@@ -376,10 +364,10 @@ export const useAppStore = defineStore('app', () => {
     language, theme, setLanguage, setTheme, toggleTheme, applyPreferences,
     projectName, reportDate, wfNames, overviewData, summaryData, lastOverviewFetch, lastSummaryFetch, loading, error,
     dailyIssues, dailyIssuesConsistency, dailyIssuesReportDate,
-    categories, categoryDetail, predictions, scheduleData, snResult, exportData,
+    categories, categoryDetail, predictions, scheduleData, exportData,
     configColors, catColors, CONFIG_ORDER, CAT_ORDER,
     fetchOverview, fetchDailyIssues, fetchSummary, fetchCategories, fetchPredictions, fetchSchedule,
-    fetchCategoryDetail, fetchSnResult, searchSn, fetchExportData, uploadReport, fetchFaCross,
+    fetchCategoryDetail, searchSn, fetchExportData, uploadReport, fetchFaCross,
     crossData,
     fetchWfList, fetchQueryByWf, fetchSnTimeline, fetchSnCheckDetails, resolveMark,
     queryWfList, queryByWfData, queryMultiSnData, querySingleSnData,
