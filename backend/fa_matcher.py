@@ -96,8 +96,8 @@ def summary(matched_fas):
 # ── CLI self-test ───────────────────────────────────────────────────────
 if __name__ == '__main__':
     import os, sys
-    dr = os.path.join(os.path.dirname(__file__), 'data', 'M60 EVT Rel Daily Report_20260508.xlsx')
-    fa = os.path.join(os.path.dirname(__file__), 'data', 'M60 EVT REL FA Tracker 20260508.xlsx')
+    dr = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'rawdata', 'M60 EVT Rel Daily Report_20260508.xlsx')
+    fa = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'rawdata', 'M60 EVT REL FA Tracker 20260508.xlsx')
     
     from engine import analyze
     print("Analyzing Daily Report...")

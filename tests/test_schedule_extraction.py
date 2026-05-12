@@ -7,7 +7,7 @@ import db
 import engine
 
 
-DATA_PATH = os.path.join('data', 'M60 EVT Rel Daily Report_20260509.xlsx')
+DATA_PATH = os.path.join('rawdata', 'M60 EVT Rel Daily Report_20260509.xlsx')
 
 
 def build_schedule_segments():
@@ -28,6 +28,7 @@ def find_segment(segments, wf_num, config, test_idx):
     raise AssertionError(f'missing segment wf={wf_num} cfg={config} test={test_idx}')
 
 
+@unittest.skipUnless(os.path.exists(DATA_PATH), f"Data file not found: {DATA_PATH}")
 class ScheduleExtractionTests(unittest.TestCase):
     def test_wf4_splits_altitude_and_rock_tumble(self):
         segments = build_schedule_segments()
