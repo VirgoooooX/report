@@ -18,37 +18,43 @@
           :disabled="uploadState === 'uploading'"
           @click="showUploadDialog = true"
         >
-          <span v-if="uploadState === 'uploading'" class="upload-spinner"></span>
-          <template v-if="uploadState === 'done'">&#10003; {{ t('upload.done') }}</template>
-          <template v-else-if="uploadState === 'uploading'">{{ t('upload.uploading') }}</template>
-          <template v-else>{{ t('upload.idle') }}</template>
+          <span class="upload-icon" aria-hidden="true">
+            <span v-if="uploadState === 'uploading'" class="upload-spinner"></span>
+            <template v-else-if="uploadState === 'done'">&#10003;</template>
+            <template v-else>↑</template>
+          </span>
+          <span class="upload-label">
+            <template v-if="uploadState === 'done'">{{ t('upload.done') }}</template>
+            <template v-else-if="uploadState === 'uploading'">{{ t('upload.uploading') }}</template>
+            <template v-else>{{ t('upload.idle') }}</template>
+          </span>
         </button>
       </div>
       <div class="nav-controls">
         <button
-          class="nav-refresh-btn"
+          class="nav-icon-btn"
           :title="t('common.refresh')"
           :aria-label="t('common.refresh')"
           :disabled="refreshing"
           @click="onRefresh"
         >
-          <span class="refresh-icon" :class="{ spinning: refreshing }" aria-hidden="true">↻</span>
+          <span class="icon-symbol" :class="{ spinning: refreshing }" aria-hidden="true">↻</span>
         </button>
         <button
-          class="lang-toggle-btn"
+          class="nav-icon-btn"
           :title="store.language === 'zh-CN' ? 'Switch to English' : '切换到中文'"
           :aria-label="store.language === 'zh-CN' ? 'Switch to English' : '切换到中文'"
           @click="toggleLanguage"
         >
-          <span class="lang-icon" aria-hidden="true">{{ store.language === 'zh-CN' ? '中' : 'EN' }}</span>
+          <span class="icon-symbol lang-symbol" aria-hidden="true">{{ store.language === 'zh-CN' ? '中' : 'EN' }}</span>
         </button>
         <button
-          class="theme-btn"
+          class="nav-icon-btn"
           :title="store.theme === 'dark' ? '切换到浅色模式' : 'Switch to dark mode'"
           :aria-label="store.theme === 'dark' ? '切换到浅色模式' : 'Switch to dark mode'"
           @click="store.toggleTheme()"
         >
-          <span class="theme-icon" aria-hidden="true">{{ store.theme === 'dark' ? '☀' : '☾' }}</span>
+          <span class="icon-symbol theme-symbol" aria-hidden="true">{{ store.theme === 'dark' ? '☀' : '☾' }}</span>
         </button>
         <button
           class="nav-menu-btn"
@@ -167,94 +173,139 @@ function toggleLanguage() {
 .nav-links a.router-link-active {
   background: var(--text-primary); color: var(--text-inverse);
 }
+/* ── Upload button ── */
 .nav-upload-btn {
-  height: 32px;
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 0 14px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius-sm);
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 16px;
+  background: transparent;
+  border: 1px dashed var(--border-input);
+  border-radius: 20px;
   color: var(--text-secondary);
-  font-size: 0.82rem; font-weight: 500;
+  font-size: 0.8rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
   margin-left: 8px;
+  transition:
+    color 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease,
+    border-style 0.2s ease,
+    box-shadow 0.2s ease;
 }
 .nav-upload-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-card-hover);
+  color: var(--accent-steel);
+  background: color-mix(in srgb, var(--accent-steel) 6%, transparent);
+  border-color: var(--accent-steel);
+  border-style: solid;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-steel) 12%, transparent);
 }
 .nav-upload-btn.uploading {
-  color: var(--text-muted); cursor: default;
+  color: var(--text-muted);
+  cursor: default;
+  border-style: solid;
+  box-shadow: none;
+}
+.nav-upload-btn.uploading:hover {
+  background: transparent;
+  border-color: var(--border-input);
+  box-shadow: none;
 }
 .nav-upload-btn.done {
-  color: #059669; border-color: #059669;
+  color: #059669;
+  border-color: #059669;
+  border-style: solid;
+  background: color-mix(in srgb, #059669 6%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, #059669 12%, transparent);
 }
-.upload-spinner {
-  display: inline-block; width: 12px; height: 12px;
-  border: 2px solid var(--border-input);
-  border-top-color: var(--text-secondary); border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-.nav-controls {
-  display: flex; align-items: center; gap: 8px;
-}
-.lang-toggle-btn,
-.theme-btn,
-.nav-refresh-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-card);
-  border: 1px solid var(--border-input);
-  border-radius: var(--radius-sm);
-  color: var(--text-secondary);
-  cursor: pointer;
-  line-height: 1;
-  transition: color var(--duration-fast), background var(--duration-fast), border-color var(--duration-fast);
-}
-.nav-refresh-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.refresh-icon {
-  font-size: 18px;
-  display: inline-block;
-  line-height: 1;
-}
-.refresh-icon.spinning {
-  animation: spin 0.6s linear infinite;
-}
-.lang-toggle-btn {
-  font-size: 11px;
-  font-family: var(--font-display);
-  font-weight: 600;
-}
-.lang-icon,
-.theme-icon {
+.upload-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 14px;
   line-height: 1;
 }
-.lang-icon {
-  min-width: 1.5em;
+.upload-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-input);
+  border-top-color: var(--text-muted);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+.upload-label {
+  line-height: 1;
+}
+
+/* ── Icon bubble buttons ── */
+.nav-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.nav-icon-btn {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tag);
+  border: 1px solid transparent;
+  border-radius: 50%;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1;
+  transition:
+    color 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+.nav-icon-btn:hover {
+  color: #fff;
+  background: var(--accent-steel);
+  border-color: var(--accent-steel);
+  transform: scale(1.08);
+}
+.nav-icon-btn:active {
+  transform: scale(0.95);
+}
+.nav-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+.nav-icon-btn:disabled:hover {
+  color: var(--text-muted);
+  background: var(--bg-tag);
+  border-color: transparent;
+}
+.icon-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+.icon-symbol.spinning {
+  animation: spin 0.6s linear infinite;
+}
+.lang-symbol {
+  font-family: var(--font-display);
   font-size: 11px;
+  font-weight: 700;
   letter-spacing: 0;
-  transform: translateY(-0.5px);
 }
-.theme-icon {
+.theme-symbol {
   font-size: 15px;
-  transform: translateY(-0.5px);
 }
-.lang-toggle-btn:hover,
-.theme-btn:hover {
-  color: var(--text-primary);
-  background: var(--bg-card-hover);
-}
+
+@keyframes spin { to { transform: rotate(360deg); } }
 .nav-date {
   font-family: 'Source Code Pro', monospace;
   font-size: 13px; color: var(--text-muted);
