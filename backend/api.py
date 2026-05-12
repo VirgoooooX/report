@@ -1072,7 +1072,14 @@ def _test_progress_state(current_cp_idx, first_cp_idx, last_cp_idx):
 
 @app.route('/api/test-summary')
 def api_test_summary():
-    """Generate a test summary table similar to Daily Report's Test Summary."""
+    """Generate a test summary table similar to Daily Report's Test Summary.
+
+    Failure rate logic:
+      1. Only completed tests (current_cp >= last_cp) count toward FR.
+      2. For each SN, only the LAST CP within the test's range is considered.
+      3. In-progress tests display the schedule plan end date (blue background).
+      4. Not-started tests display the schedule plan start date (white background).
+    """
     conn = get_conn()
     rid = get_latest_active_report_id(conn)
     if not rid:
@@ -1117,15 +1124,27 @@ def api_test_summary():
                 AND sc.current_cp_idx >= tr.first_cp
                GROUP BY tr.wf_num, sc.config, tr.test_idx
            ),
+           -- Only count failures from complete tests: current_cp >= test's last_cp
+           -- And only from the LAST CP of the test (not earlier CPs)
+           sn_test_failure AS (
+               SELECT sc.wf_num, sc.config, sc.sn, tr.test_idx,
+                      l.failure_type
+               FROM sn_current sc
+               JOIN cp_test_ranges tr
+                 ON tr.wf_num = sc.wf_num AND sc.current_cp_idx >= tr.last_cp
+               JOIN sn_check_state_history l
+                 ON l.wf_num = sc.wf_num AND l.config = sc.config AND l.sn = sc.sn
+                AND l.cp_idx = tr.last_cp
+                AND l.first_report_id <= ?
+                AND (l.closed_before_report_id IS NULL OR l.closed_before_report_id > ?)
+               WHERE l.failure_type IS NOT NULL
+           ),
            test_fail_agg AS (
                SELECT wf_num, config, test_idx,
                       COUNT(DISTINCT CASE WHEN failure_type = 'spec' THEN sn END) AS spec_fail_count,
                       COUNT(DISTINCT CASE WHEN failure_type = 'strife' THEN sn END) AS strife_fail_count,
                       GROUP_CONCAT(DISTINCT sn) AS failure_sns_csv
-               FROM sn_check_state_history
-               WHERE first_report_id <= ?
-                 AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
-                 AND failure_type IS NOT NULL
+               FROM sn_test_failure
                GROUP BY wf_num, config, test_idx
            )
            SELECT s.wf_num, c.config, s.test_idx,
@@ -1177,23 +1196,17 @@ def api_test_summary():
                     AND sc.current_cp_idx >= tr.first_cp
                    GROUP BY tr.wf_num, sc.config, tr.test_idx
                ),
-               sn_test_latest_cp AS (
-                   SELECT cp.wf_num, cp.config, cp.sn, rcp.test_idx,
-                          MAX(cp.cp_idx) AS latest_cp_idx
-                   FROM sn_cp_results cp
-                   JOIN report_cps rcp
-                     ON rcp.report_id = ? AND rcp.wf_num = cp.wf_num AND rcp.cp_idx = cp.cp_idx
-                   WHERE cp.report_id = ? AND cp.has_data = 1
-                   GROUP BY cp.wf_num, cp.config, cp.sn, rcp.test_idx
-               ),
+               -- Only complete tests, last CP of the test only
                sn_test_failure AS (
-                   SELECT stl.wf_num, stl.config, stl.sn, stl.test_idx,
+                   SELECT sc.wf_num, sc.config, sc.sn, tr.test_idx,
                           cp.failure_type
-                   FROM sn_test_latest_cp stl
+                   FROM sn_current sc
+                   JOIN cp_test_ranges tr
+                     ON tr.wf_num = sc.wf_num AND sc.current_cp_idx >= tr.last_cp
                    JOIN sn_cp_results cp
                      ON cp.report_id = ?
-                    AND cp.wf_num = stl.wf_num AND cp.config = stl.config
-                    AND cp.sn = stl.sn AND cp.cp_idx = stl.latest_cp_idx
+                    AND cp.wf_num = sc.wf_num AND cp.config = sc.config
+                    AND cp.sn = sc.sn AND cp.cp_idx = tr.last_cp
                    WHERE cp.failure_type IS NOT NULL
                ),
                test_fail_agg AS (
@@ -1218,7 +1231,7 @@ def api_test_summary():
                  ON fa.wf_num = s.wf_num AND fa.config = c.config AND fa.test_idx = s.test_idx
                GROUP BY s.wf_num, c.config, s.test_idx
                ORDER BY CAST(s.wf_num AS REAL), c.config, s.test_idx""",
-            (rid, rid, rid, rid, rid, rid, rid),
+            (rid, rid, rid, rid, rid),
         ).fetchall()
 
     # 查询每个 WF/Config/test 的 CP 范围
@@ -1267,6 +1280,30 @@ def api_test_summary():
         ).fetchall():
             current_cps[(row['wf_num'], row['config'])] = row['current_cp_idx']
 
+    # 加载 schedule segments 用于计划日期显示
+    schedule_dates = {}
+    for row in conn.execute(
+        """SELECT wf_num, config, test_idx,
+                  planned_start_date, planned_end_date
+           FROM current_schedule_segments""",
+    ).fetchall():
+        schedule_dates[(row['wf_num'], row['config'], row['test_idx'])] = {
+            'planned_start_date': row['planned_start_date'],
+            'planned_end_date': row['planned_end_date'],
+        }
+    if not schedule_dates:
+        for row in conn.execute(
+            """SELECT wf_num, config, test_idx,
+                      planned_start_date, planned_end_date
+               FROM report_schedule_segments
+               WHERE report_id = ?""",
+            (rid,),
+        ).fetchall():
+            schedule_dates[(row['wf_num'], row['config'], row['test_idx'])] = {
+                'planned_start_date': row['planned_start_date'],
+                'planned_end_date': row['planned_end_date'],
+            }
+
     conn.close()
 
     # Load real test names from wf_names table for fallback
@@ -1277,7 +1314,6 @@ def api_test_summary():
     summary = {}
     for r in rows:
         wf = r['wf_num']
-        # Prefer per-report TS names; fallback to wf_names metadata table
         wf_real_names = report_test_names.get(wf) or wf_names.get(wf, {}).get('test_names', [])
         if wf not in summary:
             summary[wf] = {
@@ -1294,30 +1330,13 @@ def api_test_summary():
         stf = r['strife_fail_count']
         t = r['total_units']
 
-        # Use real test name if available, fallback to TestN
         tname = wf_real_names[ti] if ti < len(wf_real_names) else f'Test{ti+1}'
 
-        # Ensure test_names array covers this index
         tn_list = summary[wf]['test_names']
         if ti >= len(tn_list):
             tn_list.extend([''] * (ti - len(tn_list) + 1))
         if not tn_list[ti]:
             tn_list[ti] = tname
-
-        # Build result string: xF/nT or xSF/nT or 0F/nT
-        if sf > 0:
-            res = f'{sf}F/{t}T'
-        elif stf > 0:
-            res = f'{stf}SF/{t}T'
-        else:
-            res = f'0F/{t}T'
-
-        has_fail = sf > 0 or stf > 0
-
-        if cfg not in summary[wf]['configs']:
-            summary[wf]['configs'][cfg] = {}
-        if cfg not in summary[wf]['config_results']:
-            summary[wf]['config_results'][cfg] = []
 
         # 计算进度状态
         cp_range = cp_ranges.get((wf, ti))
@@ -1325,6 +1344,32 @@ def api_test_summary():
         first_cp = cp_range['first_cp_idx'] if cp_range else None
         last_cp = cp_range['last_cp_idx'] if cp_range else None
         state = _test_progress_state(current_cp, first_cp, last_cp)
+
+        # 获取 schedule 计划日期
+        sched = schedule_dates.get((wf, cfg, ti), {})
+
+        # Build result string based on progress state
+        if state == 'complete':
+            # Only completed tests show FR
+            if sf > 0:
+                res = f'{sf}F/{t}T'
+            elif stf > 0:
+                res = f'{stf}SF/{t}T'
+            else:
+                res = f'0F/{t}T'
+        elif state == 'in_progress':
+            # 进行中：显示 schedule 的 plan end date，标蓝底
+            res = sched.get('planned_end_date', 'Ongoing')
+        else:
+            # 未开始：显示 schedule 的 plan start date，标白底
+            res = sched.get('planned_start_date', '—')
+
+        has_fail = (state == 'complete') and (sf > 0 or stf > 0)
+
+        if cfg not in summary[wf]['configs']:
+            summary[wf]['configs'][cfg] = {}
+        if cfg not in summary[wf]['config_results']:
+            summary[wf]['config_results'][cfg] = []
 
         entry = {
             'result': res,
@@ -1337,6 +1382,8 @@ def api_test_summary():
             'current_cp_idx': current_cp,
             'first_cp_idx': first_cp,
             'last_cp_idx': last_cp,
+            'planned_start_date': sched.get('planned_start_date', ''),
+            'planned_end_date': sched.get('planned_end_date', ''),
         }
         summary[wf]['configs'][cfg][tname] = entry
         indexed_results = summary[wf]['config_results'][cfg]
@@ -1827,6 +1874,11 @@ def upload_report():
             conn.execute(f"DELETE FROM {table} WHERE report_id IN ({p})", old_ids)
         for table in ['sn_cp_results', 'sn_check_results']:
             conn.execute(f"DELETE FROM {table} WHERE report_date = ?", (report_date,))
+        # Close lifecycle rows introduced by old reports so they don't leak into the new import
+        conn.execute(
+            f"UPDATE sn_check_state_history SET closed_before_report_id = first_report_id, closed_before_report_date = ? WHERE first_report_id IN ({p})",
+            (report_date,),
+        )
         conn.execute(f"DELETE FROM reports WHERE id IN ({p})", old_ids)
         conn.commit()
     conn.close()

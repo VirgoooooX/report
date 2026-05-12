@@ -150,8 +150,17 @@ export const useAppStore = defineStore('app', () => {
 
   async function uploadReport(formData) {
     const resp = await fetch('/api/upload', { method: 'POST', body: formData })
-    const data = await resp.json()
-    if (!resp.ok || !data.success) throw new Error(data.error || 'Upload failed')
+    const contentType = resp.headers.get('content-type') || ''
+    if (!resp.ok) {
+      const text = await resp.text()
+      let message = `HTTP ${resp.status}`
+      if (contentType.includes('application/json')) {
+        try { message = JSON.parse(text).error || message } catch {}
+      }
+      throw new Error(message)
+    }
+    const data = contentType.includes('application/json') ? await resp.json() : await resp.text()
+    if (!data.success) throw new Error(data.error || 'Upload failed')
     return data
   }
 
