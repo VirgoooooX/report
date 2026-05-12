@@ -201,7 +201,9 @@ class ApiConsistencyTests(unittest.TestCase):
 
         self.assertEqual(wf['test_names'], ['Random Drop', 'Battery Swap', 'Random Drop'])
         self.assertEqual(wf['config_results']['R1FNF'][0]['result'], '0F/4T')
-        self.assertEqual(wf['config_results']['R1FNF'][2]['result'], '0F/0T')
+        # Slot 2 has 0 total units and is not_started → shows '—' (not a fake 0F/0T)
+        self.assertEqual(wf['config_results']['R1FNF'][2]['result'], '—')
+        self.assertEqual(wf['config_results']['R1FNF'][2]['status'], 'not_started')
 
     def test_schedule_includes_wf_config_current_progress(self):
         """/api/schedule should include latest WF+config current CP progress per segment."""
