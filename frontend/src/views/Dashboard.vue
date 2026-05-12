@@ -5,6 +5,14 @@
       <SnQuickSearch />
     </div>
 
+    <LoadingState v-if="loading" variant="skeleton" />
+    <ErrorState
+      v-else-if="error"
+      :message="error"
+      :retry-label="t('common.retry')"
+      @retry="loadAll"
+    />
+    <template v-else>
     <!-- 1. Overview Cards -->
     <section class="section">
       <OverviewCards :overview-data="overviewCompletion" />
@@ -52,6 +60,7 @@
       <span>{{ wfCount }} {{ t('common.wfs') }}</span>
       <span>{{ failureCount }} {{ t('common.failures') }}</span>
     </footer>
+    </template>
 
     <!-- CatManage Modal -->
     <CatManageModal :show="showCatModal" @close="showCatModal = false" @updated="loadAll" />
@@ -69,12 +78,16 @@ import TrendChart from '@/components/TrendChart.vue'
 import DashboardHeatmap from '@/components/DashboardHeatmap.vue'
 import SnQuickSearch from '@/components/SnQuickSearch.vue'
 import CatManageModal from '@/components/CatManageModal.vue'
+import LoadingState from '@/components/LoadingState.vue'
+import ErrorState from '@/components/ErrorState.vue'
 
 const store = useAppStore()
 const router = useRouter()
 const { t } = useI18n()
 
 const showCatModal = ref(false)
+const loading = ref(false)
+const error = ref(null)
 
 const trendData = computed(() => {
   return store.overviewData?.trend ?? []
@@ -108,18 +121,22 @@ function goCategory(name) {
 }
 
 async function loadAll() {
-  await Promise.all([
-    store.fetchOverview(),
-    store.fetchFaCross('location', 'config')
-  ])
+  loading.value = true
+  error.value = null
+  try {
+    await Promise.all([
+      store.fetchOverview(),
+      store.fetchFaCross('location', 'config')
+    ])
+  } catch (e) {
+    error.value = e.message || 'Failed to load dashboard'
+  } finally {
+    loading.value = false
+  }
 }
 
-onMounted(async () => {
-  try {
-    await loadAll()
-  } catch (e) {
-    store.error = e.message || 'Failed to load dashboard'
-  }
+onMounted(() => {
+  loadAll()
 })
 </script>
 
