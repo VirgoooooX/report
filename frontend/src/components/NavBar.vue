@@ -56,6 +56,14 @@
         >
           <span class="icon-symbol theme-symbol" aria-hidden="true">{{ store.theme === 'dark' ? '☀' : '☾' }}</span>
         </button>
+        <router-link
+          class="nav-icon-btn"
+          to="/settings"
+          :title="t('nav.settings')"
+          :aria-label="t('nav.settings')"
+        >
+          <SettingOutlined />
+        </router-link>
         <button
           class="nav-menu-btn"
           type="button"
@@ -87,7 +95,7 @@
 import { ref, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n/useI18n'
-import { MenuOutlined } from '@ant-design/icons-vue'
+import { MenuOutlined, SettingOutlined } from '@ant-design/icons-vue'
 import UploadDialog from '@/components/UploadDialog.vue'
 
 const store = useAppStore()
@@ -265,6 +273,7 @@ function toggleLanguage() {
   border-radius: 50%;
   color: var(--text-muted);
   cursor: pointer;
+  text-decoration: none;
   line-height: 1;
   transition:
     color 0.2s ease,
@@ -277,6 +286,11 @@ function toggleLanguage() {
   background: var(--accent-steel);
   border-color: var(--accent-steel);
   transform: scale(1.08);
+}
+.nav-icon-btn.router-link-active {
+  color: #fff;
+  background: var(--accent-steel);
+  border-color: var(--accent-steel);
 }
 .nav-icon-btn:active {
   transform: scale(0.95);

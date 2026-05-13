@@ -7,6 +7,13 @@ from collections import defaultdict
 import re, datetime, os
 import logging
 
+try:
+    from custom_rules import failure_type_for_colors, is_wf_ignored, resolve_config_alias
+except Exception:
+    failure_type_for_colors = None
+    is_wf_ignored = lambda _wf: False
+    resolve_config_alias = lambda value: value
+
 SKIP_SHEETS = {'Sample Delivery Tracker', 'Test Schedule', 'Test Summary', 'T0 Summary'}
 CHECK_NAMES = {'Cosmetic','ISB','FACT','BT-OTA','Touch-CAL-Post','Charging','Button User','User Test','Pull-out force'}
 logger = logging.getLogger(__name__)
@@ -43,9 +50,13 @@ def infer_config_from_unit_num(unit_num):
 
 def resolve_row_config(explicit_config, default_config=None, unit_num=None):
     cfg = str(explicit_config).strip() if explicit_config is not None else ''
+    cfg = resolve_config_alias(cfg)
     if cfg in CONFIGS:
         return cfg
-    return default_config or infer_config_from_unit_num(unit_num)
+    fallback = resolve_config_alias(default_config) if default_config else ''
+    if fallback in CONFIGS:
+        return fallback
+    return infer_config_from_unit_num(unit_num)
 
 
 def has_pre_cp_data(ws, row_idx, first_cp_col):
@@ -80,6 +91,13 @@ def parse_result(s):
 
 def get_failure_type(cell):
     """Returns 'spec', 'strife', or None based on cell fill color."""
+    if failure_type_for_colors:
+        try:
+            configured = failure_type_for_colors(cell_color_rgb(cell), font_color_rgb(cell))
+            if configured:
+                return configured
+        except Exception:
+            logger.exception("Failed to evaluate custom failure color rules")
     try:
         fg = cell.fill.fgColor
         if fg and fg.type == 'rgb':
@@ -857,6 +875,7 @@ def _parse_wf_sheet(ws, wfn, ts_names):
             config = None
             while dr <= ws.max_row:
                 cv = ws.cell(dr, 3).value
+                cv = resolve_config_alias(cv)
                 if cv in CONFIGS: config = cv; break
                 dr += 1
             
@@ -980,6 +999,7 @@ def analyze_from_workbook(wb, ts_test_names):
         if name in SKIP_SHEETS or name.startswith('MLB'): continue
         wfn = wf_num(name)
         if not wfn: continue
+        if is_wf_ignored(wfn): continue
 
         ts_names = ts_test_names.get(wfn, [''])
         if ts_names == ['']: ts_names = ['(unnamed)']
@@ -1070,6 +1090,8 @@ def extract_all_cp_structures_from_workbook(wb):
         wfn = wf_num(name)
         if not wfn:
             continue
+        if is_wf_ignored(wfn):
+            continue
         ws = wb[name]
         header_row = 1
         for r in range(1, ws.max_row + 1):
@@ -1121,6 +1143,8 @@ def extract_sn_progress_from_workbook(wb, ts_test_names):
         wfn = wf_num(name)
         if not wfn:
             continue
+        if is_wf_ignored(wfn):
+            continue
 
         ts_names = ts_test_names.get(wfn, [''])
         if ts_names == ['']:
@@ -1159,6 +1183,8 @@ def extract_sn_fact_rows_from_workbook(wb, report_id, report_date, ts_test_names
             continue
         wfn = wf_num(name)
         if not wfn:
+            continue
+        if is_wf_ignored(wfn):
             continue
         ts_names = ts_test_names.get(wfn, ['(unnamed)'])
         cp_rows, check_rows = extract_wf_fact_rows(
@@ -1224,6 +1250,7 @@ def _extract_wf_progress(ws, ts_names):
             config = None
             while dr <= ws.max_row:
                 cv = ws.cell(dr, 3).value
+                cv = resolve_config_alias(cv)
                 if cv in CONFIGS:
                     config = cv
                     break
@@ -1381,6 +1408,7 @@ def extract_wf_fact_rows(ws, wf_num, report_id, report_date, ts_names):
             default_config = None
             while dr <= ws.max_row:
                 cv = ws.cell(dr, 3).value
+                cv = resolve_config_alias(cv)
                 if cv in CONFIGS:
                     default_config = cv
                     break
@@ -1560,6 +1588,22 @@ def parse_daily_report(path, report_date=None, source_file_name=None):
 
         # 9. Extract SN progress (for stats, not DB writes)
         result.progress_data = extract_sn_progress_from_workbook(wb, result.ts_test_names)
+
+        ignored = {wf for wf in set(result.wf_names) | set(result.ts_test_names) if is_wf_ignored(wf)}
+        if ignored:
+            for wf in ignored:
+                result.ts_test_names.pop(wf, None)
+                result.ts_qty.pop(wf, None)
+                result.wf_names.pop(wf, None)
+                result.cp_structures.pop(wf, None)
+                result.mapped_cps.pop(wf, None)
+                result.summary_results.pop(wf, None)
+                result.progress_data.pop(wf, None)
+                result.test_names_by_wf.pop(wf, None)
+            result.schedule_segments = [
+                segment for segment in result.schedule_segments
+                if str(segment.get('wf_num', '')) not in ignored
+            ]
 
     finally:
         wb.close()

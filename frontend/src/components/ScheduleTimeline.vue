@@ -9,7 +9,7 @@
               v-for="column in dateColumns"
               :key="column.date"
               class="day-head"
-              :class="{ sunday: column.isSunday }"
+              :class="{ sunday: column.isSunday, today: isTodayColumn(column) }"
               :data-date="column.date"
             >
               <span>{{ column.monthDay }}</span>
@@ -86,6 +86,7 @@
                   v-for="(cp, index) in displayCpsOnDate(row, column.date)"
                   :key="`${rowKey(row)}-${column.date}-${cp.test_idx}-${cp.cp_idx}`"
                   class="cp-text"
+                  :class="cpMarkerClass(row, cp)"
                   :style="cpDotStyle(index, displayCpsOnDate(row, column.date).length)"
                   :title="cp.cp_title || cp.cp_name"
                 >{{ cp.display_cp_idx ?? cp.cp_idx }}</span>
@@ -205,6 +206,7 @@ function cellClass(row, column) {
   const active = onDay || (column.isSunday && isDateInRange(row, column.date))
   return {
     sunday: column.isSunday,
+    today: isTodayColumn(column),
     active,
     'actual-progress': actualSegmentsOnDate(row, column.date).length > 0,
     hasEdgeMarker: Boolean(edgeMarkerOnDate(row, column.date)),
@@ -224,17 +226,7 @@ function cellTitle(row, column) {
 }
 
 function cellStyle(row, column) {
-  const onDay = testsOnDate(row, column.date).length > 0
-  const inRange = onDay || actualSegmentsOnDate(row, column.date).length > 0 || (column.isSunday && isDateInRange(row, column.date))
-  if (!inRange) return {}
-  const color = barColor(row.config)
-  return {
-    '--schedule-color': color,
-    '--schedule-soft': `color-mix(in srgb, ${color} 42%, var(--bg-card))`,
-    '--actual-progress-soft': `color-mix(in srgb, ${color} 10%, var(--bg-card))`,
-    '--actual-progress-fill': `color-mix(in srgb, ${color} 10%, var(--bg-card))`,
-    '--actual-progress-ring': `color-mix(in srgb, ${color} 24%, var(--bg-card))`
-  }
+  return {}
 }
 
 function barColor(config) {
@@ -242,12 +234,7 @@ function barColor(config) {
 }
 
 function badgeStyle(config) {
-  const color = barColor(config)
-  return {
-    color,
-    borderColor: `${color}40`,
-    backgroundColor: `${color}12`
-  }
+  return {}
 }
 
 function laneTests(row) {
@@ -285,6 +272,10 @@ function localIsoDate(date = new Date()) {
   return `${year}-${month}-${day}`
 }
 
+function isTodayColumn(column) {
+  return column.date === localIsoDate()
+}
+
 async function scrollTodayIntoView() {
   await nextTick()
   const container = sheetScroll.value
@@ -296,6 +287,18 @@ async function scrollTodayIntoView() {
 
   const targetCenter = target.offsetLeft + target.offsetWidth / 2
   container.scrollLeft = Math.max(0, targetCenter - container.clientWidth / 2)
+}
+
+function cpMarkerClass(row, cp) {
+  const progress = row.actual_progress
+  if (!progress || progress.current_cp_idx == null) {
+    return { 'cp-completed': false, 'cp-pending': true }
+  }
+  if (progress.is_complete) {
+    return { 'cp-completed': true, 'cp-pending': false }
+  }
+  const completed = cp.cp_idx <= progress.current_cp_idx
+  return { 'cp-completed': completed, 'cp-pending': !completed }
 }
 
 function cpDotStyle(index, total) {
@@ -330,6 +333,10 @@ watch(() => props.dateColumns.map((column) => column.date).join('|'), scrollToda
 
 <style scoped>
 .schedule-sheet {
+  --plan-color: var(--accent-steel);
+  --actual-color: var(--chart-r2cnm);
+  --today-color: var(--color-danger);
+
   min-height: 0;
   flex: 1;
   overflow: hidden;
@@ -445,7 +452,8 @@ thead .sticky-col {
 
 .wf-row td {
   height: 34px;
-  background: color-mix(in srgb, var(--border-card) 40%, var(--bg-card));
+  background: var(--bg-card);
+  border-top: 1px solid var(--border-card);
 }
 
 .wf-cell {
@@ -470,7 +478,7 @@ thead .sticky-col {
   gap: 6px;
   padding: 0 10px;
   border: 0;
-  background: color-mix(in srgb, var(--border-card) 40%, var(--bg-card));
+  background: var(--bg-card);
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
@@ -547,7 +555,9 @@ thead .sticky-col {
 
 .cfg-badge {
   min-width: 46px;
-  border: 1px solid;
+  border: 1px solid var(--border-card);
+  background: transparent;
+  color: var(--text-primary);
 }
 
 .test-copy {
@@ -580,7 +590,9 @@ thead .sticky-col {
   height: 36px;
   padding: 0;
   vertical-align: middle;
-  background: var(--bg-card);
+  background: color-mix(in srgb, var(--text-muted) 4%, var(--bg-card));
+  border-width: 1px;
+  border-color: transparent;
   position: relative;
 }
 
@@ -589,34 +601,30 @@ thead .sticky-col {
   color: var(--text-muted);
 }
 
-.day-cell.sunday {
-  background: var(--bg-card);
-  color: var(--text-muted);
+.day-head.today {
+  color: var(--today-color);
+  font-weight: 700;
 }
 
-.day-cell.sunday::after {
+.day-cell.today::after {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--today-color);
   z-index: 2;
-  background: color-mix(in srgb, var(--text-muted) 14%, transparent);
   pointer-events: none;
 }
 
 .day-cell.active {
-  background: var(--bg-card);
-}
-
-.day-cell.active.sunday {
-  background: var(--bg-card);
+  background: color-mix(in srgb, var(--text-muted) 4%, var(--bg-card));
 }
 
 .day-cell.actual-progress {
-  background: var(--bg-card);
-}
-
-.day-cell.actual-progress.sunday {
-  background: var(--bg-card);
+  background: color-mix(in srgb, var(--text-muted) 4%, var(--bg-card));
 }
 
 .plan-progress-rail {
@@ -626,7 +634,7 @@ thead .sticky-col {
   right: -1px;
   z-index: 1;
   height: 28px;
-  background: var(--schedule-soft);
+  background: color-mix(in srgb, var(--plan-color) 42%, var(--bg-card));
   pointer-events: none;
 }
 
@@ -649,8 +657,8 @@ thead .sticky-col {
   right: -1px;
   z-index: 2;
   height: 28px;
-  background: var(--actual-progress-fill);
-  box-shadow: inset 0 0 0 1px var(--actual-progress-ring);
+  background: color-mix(in srgb, var(--actual-color) 10%, var(--bg-card));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--actual-color) 24%, var(--bg-card));
   pointer-events: none;
 }
 
@@ -676,8 +684,8 @@ thead .sticky-col {
   height: 11px;
   border: 2px solid var(--bg-card);
   border-radius: 50%;
-  background: color-mix(in srgb, var(--schedule-color) 72%, var(--bg-card));
-  box-shadow: 0 0 0 2px var(--actual-progress-ring);
+  background: color-mix(in srgb, var(--actual-color) 72%, var(--bg-card));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--actual-color) 24%, var(--bg-card));
   transform: translateY(-50%);
 }
 
@@ -694,8 +702,8 @@ thead .sticky-col {
   justify-content: center;
   padding: 0 6px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--schedule-color) 16%, var(--bg-card));
-  color: var(--schedule-color);
+  background: color-mix(in srgb, var(--plan-color) 16%, var(--bg-card));
+  color: var(--plan-color);
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
@@ -724,13 +732,24 @@ thead .sticky-col {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--schedule-color) 24%, var(--bg-card));
-  color: var(--schedule-color);
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 700;
   line-height: 1;
   cursor: help;
+}
+
+.cp-text.cp-pending {
+  background: var(--plan-color);
+  color: #ffffff;
+  opacity: 1;
+}
+
+.cp-text.cp-completed {
+  background: transparent;
+  border: 1px solid var(--plan-color);
+  color: var(--plan-color);
+  opacity: 0.6;
 }
 .cp-text:hover {
   transform: translateY(-50%) scale(1.16);

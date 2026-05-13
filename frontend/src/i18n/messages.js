@@ -11,7 +11,8 @@ export const messages = {
       schedule: '排程',
       export: '导出',
       loading: '加载中',
-      dailyUpdate: '每日更新'
+      dailyUpdate: '每日更新',
+      settings: '设置'
     },
     actions: {
       search: '搜索',
@@ -297,7 +298,8 @@ export const messages = {
       schedule: 'Schedule',
       export: 'Export',
       loading: 'Loading',
-      dailyUpdate: 'Daily Update'
+      dailyUpdate: 'Daily Update',
+      settings: 'Settings'
     },
     actions: {
       search: 'Search',

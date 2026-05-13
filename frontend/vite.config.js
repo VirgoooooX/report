@@ -2,6 +2,8 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath } from 'url'
 
+const apiProxy = process.env.VITE_API_PROXY || 'http://localhost:5050'
+
 export default defineConfig({
   plugins: [vue()],
   resolve: {
@@ -12,7 +14,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:5050'
+      '/api': apiProxy
     }
   },
   build: {

@@ -56,6 +56,8 @@ export const useAppStore = defineStore('app', () => {
   const queryWfList = ref(null)
   const querySingleSnData = ref(null)
   const querySingleSnKey = ref('')
+  const settingsRawdata = ref({ files: [], reports: [] })
+  const settingsRules = ref(null)
   const lastQueryType = ref('')  // 'lookup' | 'wcfg' | 'failure'
   const faCache = ref({})  // key = sn → [{symptom, failure_mode, ...}]
   const faLastTags = ref('')  // comma-separated last FA query tags
@@ -187,6 +189,61 @@ export const useAppStore = defineStore('app', () => {
     const data = contentType.includes('application/json') ? await resp.json() : await resp.text()
     if (!data.success) throw new Error(data.error || 'Upload failed')
     return data
+  }
+
+  async function fetchRawdataSettings() {
+    settingsRawdata.value = await requestJson('/api/settings/rawdata')
+    return settingsRawdata.value
+  }
+
+  async function deleteRawdataFile(path, purgeDb = false) {
+    const data = await requestJson('/api/settings/rawdata/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, purge_db: purgeDb })
+    })
+    await fetchRawdataSettings()
+    if (purgeDb) {
+      invalidateCache()
+      await checkVersion()
+    }
+    return data
+  }
+
+  async function parseRawdata(dailyPath, faPath = '') {
+    const data = await requestJson('/api/settings/rawdata/parse', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ daily_path: dailyPath, fa_path: faPath })
+    })
+    invalidateCache()
+    await checkVersion()
+    await fetchRawdataSettings()
+    return data
+  }
+
+  async function fetchSettingsRules() {
+    const data = await requestJson('/api/settings/rules')
+    settingsRules.value = data.rules
+    return data
+  }
+
+  async function saveSettingsRules(rules) {
+    const data = await requestJson('/api/settings/rules', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rules })
+    })
+    settingsRules.value = data.rules
+    invalidateCache()
+    return data.rules
+  }
+
+  async function resetSettingsRules() {
+    const data = await requestJson('/api/settings/rules/reset', { method: 'POST' })
+    settingsRules.value = data.rules
+    invalidateCache()
+    return data.rules
   }
 
   const exportDataKey = ref('')
@@ -428,7 +485,10 @@ export const useAppStore = defineStore('app', () => {
     fetchWfList, fetchQueryByWf, fetchSnTimeline, fetchSnCheckDetails, resolveMark, fetchSnFa, fetchFaOptions,
     queryWfList, queryByWfData, queryMultiSnData, querySingleSnData,
     queryByWfKey, queryMultiSnKey, querySingleSnKey,
+    settingsRawdata, settingsRules,
     lastQueryType, faCache, faLastTags, faOptions,
+    fetchRawdataSettings, deleteRawdataFile, parseRawdata,
+    fetchSettingsRules, saveSettingsRules, resetSettingsRules,
     wfSortKey, sortedWfKeys,
     invalidateCache, checkVersion, triggerRefresh, refreshCounter
   }

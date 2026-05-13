@@ -326,50 +326,45 @@ def process_all(rebuild=False):
 #  process_newest — 增量更新
 # ═══════════════════════════════════════════════════════════════════════
 
-def process_newest():
-    """处理最新的 Daily Report（增量更新）。
+def process_report_file(report_date, daily_path, fa_path=None):
+    """Process one selected Daily Report file.
 
-    如果该日期的报告已存在于数据库中，则跳过不重复处理。
+    Args:
+        report_date: YYYY-MM-DD date for the report.
+        daily_path: Daily Report workbook path.
+        fa_path: optional FA Tracker workbook path. If omitted, the closest
+            tracker for report_date is selected automatically.
 
     Returns:
-        dict or None: 处理结果信息。
+        dict or None: processing result information.
     """
-    reports = _find_daily_reports()
-    if not reports:
-        print("ERROR: No Daily Report files found")
-        return None
+    fname = os.path.basename(daily_path)
+    print(f"[OK] Selected file: {fname}  (date: {report_date})")
 
-    latest_date, latest_path = reports[-1]
-    fname = os.path.basename(latest_path)
-    print(f"[OK] Newest file: {fname}  (date: {latest_date})")
-
-    # 检查是否已存在
     conn = get_conn()
     existing = conn.execute(
-        "SELECT id FROM reports WHERE report_date = ?", (latest_date,)
+        "SELECT id FROM reports WHERE report_date = ?", (report_date,)
     ).fetchone()
     conn.close()
 
     if existing:
-        print(f"   [INFO] Existing active report for {latest_date}; importing as new version")
+        print(f"   [INFO] Existing active report for {report_date}; importing as new version")
 
-    # 确保 DB 已初始化
     init_db()
     init_categories()
 
     print("   [+] Starting process...")
     try:
-        # Parse workbook once (Phase 6: consolidated workbook open)
-        parsed = parse_daily_report(latest_path, report_date=latest_date, source_file_name=os.path.basename(latest_path))
+        parsed = parse_daily_report(daily_path, report_date=report_date, source_file_name=fname)
         results = parsed.summary_results
-        progress_data = parsed.progress_data
 
-        # FA Tracker
         fa_stats = {'total': 0, 'matched': 0}
-        fa_path, fa_date = _find_fa_tracker(latest_date)
-        if fa_path:
+        selected_fa_path = fa_path
+        if not selected_fa_path:
+            selected_fa_path, _ = _find_fa_tracker(report_date)
+        if selected_fa_path:
             try:
-                fa_records = read_fa_tracker(fa_path)
+                fa_records = read_fa_tracker(selected_fa_path)
                 fa_matched = fa_match(fa_records, results)
                 fa_stats = fa_summary(fa_matched)
                 print(f"   FA: {fa_stats['matched']}/{fa_stats['total']} 匹配")
@@ -377,9 +372,8 @@ def process_newest():
                 print(f"   FA Tracker process failed: {e}")
 
         conn = get_conn()
-        report_id = create_report_version(conn, latest_date, latest_path, source_file_name=fname, ts_test_names=parsed.ts_test_names)
+        report_id = create_report_version(conn, report_date, daily_path, source_file_name=fname, ts_test_names=parsed.ts_test_names)
 
-        # Save definitions using already-parsed data
         save_report_wf_meta(conn, report_id, parsed.wf_names)
         save_report_test_names(conn, report_id, parsed.test_names_by_wf)
         save_report_cps(conn, report_id, parsed.mapped_cps)
@@ -398,7 +392,7 @@ def process_newest():
                WHERE is_active = 1 AND report_date < ?
                ORDER BY report_date DESC, version DESC
                LIMIT 1""",
-            (latest_date,),
+               (report_date,),
         ).fetchone()
         previous_report_id = previous['id'] if previous else None
         changes = detect_definition_changes(conn, report_id, previous_report_id)
@@ -407,25 +401,22 @@ def process_newest():
         conn.commit()
         conn.close()
 
-        report_id = save_report(latest_date, results, fa_stats, latest_path, parsed.ts_test_names, report_id=report_id)
+        report_id = save_report(report_date, results, fa_stats, daily_path, parsed.ts_test_names, report_id=report_id)
 
-        # Phase 5: Stop writing snapshot tables — lifecycle is the source of truth.
-        # save_sn_progress(report_id, progress_data)  # retired
-
-        cp_fact_rows, check_fact_rows = extract_sn_fact_rows(latest_path, report_id, latest_date)
+        cp_fact_rows, check_fact_rows = extract_sn_fact_rows(daily_path, report_id, report_date)
         conn = get_conn()
-        # save_sn_cp_results(conn, cp_fact_rows)  # retired — API now reads from lifecycle
-        save_sn_check_state_history(conn, report_id, latest_date, check_fact_rows)
+        save_sn_check_state_history(conn, report_id, report_date, check_fact_rows)
         conn.commit()
         conn.close()
         print(f"   [+] SN facts: {len(cp_fact_rows)} CP rows, {len(check_fact_rows)} check rows")
 
         print(f"OK done (report_id={report_id})")
         return {
-            'date': latest_date,
-            'file': latest_path,
+            'date': report_date,
+            'file': daily_path,
             'report_id': report_id,
             'wfs': len(results),
+            'fa_file': selected_fa_path,
         }
 
     except Exception as e:
@@ -433,6 +424,21 @@ def process_newest():
         import traceback
         traceback.print_exc()
         return None
+
+
+def process_newest():
+    """处理最新的 Daily Report（增量更新）。
+
+    Returns:
+        dict or None: 处理结果信息。
+    """
+    reports = _find_daily_reports()
+    if not reports:
+        print("ERROR: No Daily Report files found")
+        return None
+
+    latest_date, latest_path = reports[-1]
+    return process_report_file(latest_date, latest_path)
 
 
 # ═══════════════════════════════════════════════════════════════════════

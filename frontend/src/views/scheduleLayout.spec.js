@@ -142,20 +142,14 @@ assert.ok(
   'edge markers should stay below the sticky config column while horizontally scrolling'
 )
 
-const sundayCellRule = ruleBody(scheduleTimelineStyles, '.day-cell.sunday')
 assert.ok(
-  hasDeclaration(sundayCellRule, 'background', 'var\\(--bg-card\\)'),
-  'Sunday date cells should keep the normal cell background so progress rails can render continuously'
+  !scheduleTimelineStyles.includes('.day-cell.sunday'),
+  'Sunday date cells should not have a separate CSS rule (handled by the default gray base)'
 )
 
-const sundayOverlayRule = pseudoRuleBody(scheduleTimelineStyles, '.day-cell.sunday::after')
 assert.ok(
-  /background\s*:\s*color-mix\(in srgb, var\(--text-muted\) 14%, transparent\)/.test(sundayOverlayRule),
-  'Sunday date cells should tint the column with a transparent overlay instead of replacing progress backgrounds'
-)
-assert.ok(
-  hasDeclaration(sundayOverlayRule, 'pointer-events', 'none'),
-  'Sunday overlay should not block hover or tooltip interactions'
+  !scheduleTimelineStyles.includes('.day-cell.sunday::after'),
+  'Sunday date cells should not have a ::after pseudo-element overlay (requirement 2.1)'
 )
 
 const hiddenScrollbarRule = pseudoRuleBody(scheduleTimelineStyles, '.sheet-scroll::-webkit-scrollbar')

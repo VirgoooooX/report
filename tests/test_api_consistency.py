@@ -441,7 +441,7 @@ class ApiConsistencyTests(unittest.TestCase):
         results = resp.get_json()
         self.assertIsInstance(results, list)
         self.assertGreater(len(results), 0)
-        self.assertIn('SN100', results)
+        self.assertIn('SN100', [r['sn'] for r in results])
 
     def test_unknown_sn_returns_404(self):
         """/api/sn/UNKNOWN 返回 HTTP 404 和 records: []。"""

@@ -43,6 +43,11 @@ const routes = [
     name: 'daily-update',
     component: () => import('@/views/DailyUpdateView.vue')
   },
+  {
+    path: '/settings',
+    name: 'settings',
+    component: () => import('@/views/SettingsView.vue')
+  },
 ]
 
 export default createRouter({

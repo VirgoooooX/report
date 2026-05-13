@@ -9,6 +9,7 @@ import os, sys, json, io, csv, datetime, re, logging
 
 sys.path.insert(0, os.path.dirname(__file__))
 from app_paths import RAWDATA_DIR, UPLOAD_DIR, ensure_runtime_dirs, iter_rawdata_files, find_rawdata_file
+from custom_rules import DEFAULT_RULES, load_rules, save_rules
 from engine import analyze, build_summary_table, build_failure_detail, extract_test_schedule_segments
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
 import fa_analysis
@@ -30,7 +31,7 @@ from db import (
     get_current_schedule_segments, save_current_schedule_segments,
     get_report_test_names, get_current_wf_definitions, get_current_test_definitions,
 )
-from processor import process_newest, compute_auto_predictions, REPORT_PATTERN, FA_PATTERN
+from processor import process_newest, process_report_file, compute_auto_predictions, REPORT_PATTERN, FA_PATTERN
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 VUE_STATIC = os.path.join(BASE_DIR, 'static')
@@ -44,6 +45,73 @@ logger = logging.getLogger(__name__)
 ensure_runtime_dirs()
 init_db()
 init_categories()
+
+
+def _rawdata_relpath(path):
+    return os.path.relpath(path, RAWDATA_DIR).replace('\\', '/')
+
+
+def _resolve_rawdata_path(relpath):
+    rel = str(relpath or '').replace('\\', '/').lstrip('/')
+    if not rel:
+        raise ValueError('Missing rawdata path')
+    full = os.path.abspath(os.path.join(RAWDATA_DIR, rel))
+    root = os.path.abspath(RAWDATA_DIR)
+    if os.path.commonpath([root, full]) != root:
+        raise ValueError('Invalid rawdata path')
+    return full
+
+
+def _classify_rawdata_file(fname):
+    if REPORT_PATTERN.match(fname):
+        return 'daily_report'
+    if FA_PATTERN.match(fname):
+        return 'fa_tracker'
+    return 'other'
+
+
+def _rawdata_date(fname):
+    for pattern in (REPORT_PATTERN, FA_PATTERN):
+        match = pattern.match(fname)
+        if match:
+            raw = match.group(1)
+            return f"{raw[:4]}-{raw[4:6]}-{raw[6:]}"
+    return ''
+
+
+def _delete_report_data_by_date(report_date):
+    conn = get_conn()
+    rows = conn.execute("SELECT id FROM reports WHERE report_date = ?", (report_date,)).fetchall()
+    ids = [row['id'] for row in rows]
+    if not ids:
+        conn.close()
+        return 0
+
+    placeholders = ','.join('?' * len(ids))
+    for table in [
+        'wf_results', 'report_stats', 'daily_changes', 'sn_progress',
+        'report_wf_meta', 'report_test_names', 'report_cps',
+        'report_schedule_segments', 'definition_changes',
+    ]:
+        conn.execute(f"DELETE FROM {table} WHERE report_id IN ({placeholders})", ids)
+    for table in ['sn_cp_results', 'sn_check_results']:
+        conn.execute(f"DELETE FROM {table} WHERE report_id IN ({placeholders})", ids)
+    for table in [
+        'current_schedule_segments', 'current_wf_definitions',
+        'current_test_definitions', 'current_cp_definitions',
+    ]:
+        conn.execute(f"DELETE FROM {table} WHERE updated_run_id IN ({placeholders})", ids)
+    conn.execute(
+        f"""DELETE FROM sn_check_state_history
+            WHERE first_report_id IN ({placeholders})
+               OR last_seen_report_id IN ({placeholders})
+               OR closed_before_report_id IN ({placeholders})""",
+        ids * 3,
+    )
+    conn.execute(f"DELETE FROM reports WHERE id IN ({placeholders})", ids)
+    conn.commit()
+    conn.close()
+    return len(ids)
 
 # ── Daily Issue helpers ─────────────────────────────────────────────────
 
@@ -249,6 +317,10 @@ def api_overview():
     
     # WF names mapping
     wf_names = get_wf_names()
+    display_rules = load_rules().get('display', {})
+    for wf, alias in display_rules.get('wf_aliases', {}).items():
+        entry = wf_names.setdefault(wf, {'name': '', 'test_names': []})
+        entry['name'] = alias
     
     # Build sorted wf_updates_list
     wf_updates_list = []
@@ -280,6 +352,8 @@ def api_overview():
         m = re.match(r'^(.*?)\s*Daily Report_', rpt['source_file_name'], re.IGNORECASE)
         if m:
             project_name = m.group(1).upper()
+    if display_rules.get('project_name'):
+        project_name = display_rules['project_name']
     
     # Historical trend data
     reports = conn.execute("SELECT id, report_date FROM reports ORDER BY id ASC").fetchall()
@@ -2336,6 +2410,137 @@ def api_daily_issues():
         },
         'issues': sorted(issues, key=lambda x: (x['wf'], x['config'], x['sn'])),
     })
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  API: Settings / Rawdata / Custom Rules
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/api/settings/rawdata')
+def api_settings_rawdata():
+    """List rawdata files and imported report versions for the settings page."""
+    files = []
+    for fname, path in iter_rawdata_files():
+        if fname.startswith('~$'):
+            continue
+        try:
+            stat = os.stat(path)
+        except OSError:
+            continue
+        files.append({
+            'path': _rawdata_relpath(path),
+            'name': fname,
+            'kind': _classify_rawdata_file(fname),
+            'date': _rawdata_date(fname),
+            'size': stat.st_size,
+            'modified_at': datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        })
+    files.sort(key=lambda item: (item.get('date') or '', item['name']), reverse=True)
+
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT id, report_date, version, is_active, source_file_name,
+                  excel_path, imported_at
+           FROM reports
+           ORDER BY report_date DESC, version DESC, id DESC"""
+    ).fetchall()
+    conn.close()
+
+    reports = []
+    for row in rows:
+        reports.append({
+            'id': row['id'],
+            'report_date': row['report_date'],
+            'version': row['version'],
+            'is_active': bool(row['is_active']),
+            'source_file_name': row['source_file_name'] or os.path.basename(row['excel_path'] or ''),
+            'imported_at': row['imported_at'],
+        })
+
+    return jsonify({'files': files, 'reports': reports})
+
+
+@app.route('/api/settings/rawdata/delete', methods=['POST'])
+def api_settings_rawdata_delete():
+    data = request.get_json(silent=True) or {}
+    relpath = data.get('path')
+    try:
+        path = _resolve_rawdata_path(relpath)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    if not os.path.isfile(path):
+        return jsonify({'error': 'File not found'}), 404
+
+    fname = os.path.basename(path)
+    report_date = _rawdata_date(fname)
+    os.remove(path)
+
+    deleted_reports = 0
+    if data.get('purge_db') and report_date:
+        deleted_reports = _delete_report_data_by_date(report_date)
+
+    return jsonify({
+        'success': True,
+        'deleted': _rawdata_relpath(path),
+        'deleted_reports': deleted_reports,
+    })
+
+
+@app.route('/api/settings/rawdata/parse', methods=['POST'])
+def api_settings_rawdata_parse():
+    data = request.get_json(silent=True) or {}
+    try:
+        daily_path = _resolve_rawdata_path(data.get('daily_path'))
+        fa_rel = data.get('fa_path') or ''
+        fa_path = _resolve_rawdata_path(fa_rel) if fa_rel else None
+    except ValueError as exc:
+        return jsonify({'success': False, 'error': str(exc)}), 400
+
+    daily_name = os.path.basename(daily_path)
+    match = REPORT_PATTERN.match(daily_name)
+    if not match:
+        return jsonify({'success': False, 'error': f'Invalid Daily Report filename: {daily_name}'}), 400
+    if fa_path and not FA_PATTERN.match(os.path.basename(fa_path)):
+        return jsonify({'success': False, 'error': f'Invalid FA Tracker filename: {os.path.basename(fa_path)}'}), 400
+
+    raw_date = match.group(1)
+    report_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
+    result = process_report_file(report_date, daily_path, fa_path=fa_path)
+    if not result:
+        return jsonify({'success': False, 'error': 'Selected file failed to parse'}), 500
+
+    try:
+        compute_auto_predictions()
+    except Exception:
+        logger.exception("Failed to recompute predictions after manual parse")
+
+    return jsonify({
+        'success': True,
+        'report_date': result.get('date', report_date),
+        'report_id': result.get('report_id'),
+        'wf_count': result.get('wfs', 0),
+        'daily_path': _rawdata_relpath(daily_path),
+        'fa_path': _rawdata_relpath(fa_path) if fa_path else '',
+    })
+
+
+@app.route('/api/settings/rules')
+def api_settings_rules_get():
+    return jsonify({'rules': load_rules(), 'defaults': DEFAULT_RULES})
+
+
+@app.route('/api/settings/rules', methods=['PUT'])
+def api_settings_rules_put():
+    data = request.get_json(silent=True) or {}
+    rules = data.get('rules', data)
+    if not isinstance(rules, dict):
+        return jsonify({'error': 'Rules must be an object'}), 400
+    return jsonify({'rules': save_rules(rules)})
+
+
+@app.route('/api/settings/rules/reset', methods=['POST'])
+def api_settings_rules_reset():
+    return jsonify({'rules': save_rules(DEFAULT_RULES)})
 
 
 # ═══════════════════════════════════════════════════════════════════════
