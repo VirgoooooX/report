@@ -9,11 +9,24 @@
               v-for="column in dateColumns"
               :key="column.date"
               class="day-head"
-              :class="{ sunday: column.isSunday, today: isTodayColumn(column) }"
+              :class="{
+                sunday: column.isSunday,
+                today: isTodayColumn(column),
+                'selected-date': isSelectedDate(column.date)
+              }"
               :data-date="column.date"
+              @click="toggleDateHighlight(column.date)"
             >
-              <span>{{ column.monthDay }}</span>
-              <small>{{ column.weekday }}</small>
+              <button
+                type="button"
+                class="day-head-btn"
+                :aria-pressed="isSelectedDate(column.date)"
+                :aria-label="`Highlight ${column.date}`"
+                @click.stop="toggleDateHighlight(column.date)"
+              >
+                <span>{{ column.monthDay }}</span>
+                <small>{{ column.weekday }}</small>
+              </button>
             </th>
           </tr>
         </thead>
@@ -111,6 +124,7 @@ const props = defineProps({
 
 const expandedWfs = reactive({})
 const sheetScroll = ref(null)
+const selectedDate = ref('')
 
 function rowKey(row) {
   return row.lane_key || `${row.wf_num}-${row.config}-${row.test_idx}`
@@ -122,6 +136,14 @@ function isOpen(wfNum) {
 
 function toggleWf(wfNum) {
   expandedWfs[wfNum] = !isOpen(wfNum)
+}
+
+function toggleDateHighlight(date) {
+  selectedDate.value = selectedDate.value === date ? '' : date
+}
+
+function isSelectedDate(date) {
+  return selectedDate.value === date
 }
 
 function cpsOnDate(row, date) {
@@ -207,6 +229,7 @@ function cellClass(row, column) {
   return {
     sunday: column.isSunday,
     today: isTodayColumn(column),
+    'selected-date': isSelectedDate(column.date),
     active,
     'actual-progress': actualSegmentsOnDate(row, column.date).length > 0,
     hasEdgeMarker: Boolean(edgeMarkerOnDate(row, column.date)),
@@ -292,13 +315,21 @@ async function scrollTodayIntoView() {
 function cpMarkerClass(row, cp) {
   const progress = row.actual_progress
   if (!progress || progress.current_cp_idx == null) {
-    return { 'cp-completed': false, 'cp-pending': true }
+    return { 'cp-completed': false, 'cp-pending': true, 'cp-current': false }
   }
   if (progress.is_complete) {
-    return { 'cp-completed': true, 'cp-pending': false }
+    return {
+      'cp-completed': true,
+      'cp-pending': false,
+      'cp-current': false
+    }
   }
   const completed = cp.cp_idx <= progress.current_cp_idx
-  return { 'cp-completed': completed, 'cp-pending': !completed }
+  return {
+    'cp-completed': completed,
+    'cp-pending': !completed,
+    'cp-current': cp.cp_idx === progress.current_cp_idx
+  }
 }
 
 function cpDotStyle(index, total) {
@@ -333,8 +364,12 @@ watch(() => props.dateColumns.map((column) => column.date).join('|'), scrollToda
 
 <style scoped>
 .schedule-sheet {
-  --plan-color: var(--accent-steel);
-  --actual-color: var(--chart-r2cnm);
+  --plan-color: rgb(219, 245, 150);
+  --actual-color: #0f766e;
+  --pending-cp-color: rgb(62, 170, 239);
+  --completed-cp-color: #64748b;
+  --current-cp-color: #374151;
+  --column-highlight-color: #0ea5e9;
   --today-color: var(--color-danger);
 
   min-height: 0;
@@ -415,15 +450,29 @@ thead th {
 
 .day-head {
   width: 68px;
+  padding: 0;
+  cursor: pointer;
 }
 
-.day-head span,
-.day-head small {
+.day-head-btn {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-content: center;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.day-head-btn span,
+.day-head-btn small {
   display: block;
   line-height: 1.15;
 }
 
-.day-head small {
+.day-head-btn small {
   margin-top: 3px;
   color: var(--text-muted);
   font-family: var(--font-display);
@@ -606,6 +655,19 @@ thead .sticky-col {
   font-weight: 700;
 }
 
+.day-head.selected-date {
+  background: color-mix(in srgb, var(--column-highlight-color) 14%, var(--bg-card));
+  color: var(--column-highlight-color);
+  box-shadow:
+    inset 2px 0 0 color-mix(in srgb, var(--column-highlight-color) 52%, transparent),
+    inset -2px 0 0 color-mix(in srgb, var(--column-highlight-color) 52%, transparent),
+    0 1px 0 var(--border-card);
+}
+
+.day-head.selected-date small {
+  color: color-mix(in srgb, var(--column-highlight-color) 72%, var(--text-muted));
+}
+
 .day-cell.today::after {
   content: '';
   position: absolute;
@@ -615,7 +677,7 @@ thead .sticky-col {
   width: 2px;
   transform: translateX(-50%);
   background: var(--today-color);
-  z-index: 2;
+  z-index: 7;
   pointer-events: none;
 }
 
@@ -627,6 +689,18 @@ thead .sticky-col {
   background: color-mix(in srgb, var(--text-muted) 4%, var(--bg-card));
 }
 
+.day-cell.selected-date::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  background: color-mix(in srgb, var(--column-highlight-color) 12%, transparent);
+  box-shadow:
+    inset 2px 0 0 color-mix(in srgb, var(--column-highlight-color) 58%, transparent),
+    inset -2px 0 0 color-mix(in srgb, var(--column-highlight-color) 58%, transparent);
+  pointer-events: none;
+}
+
 .plan-progress-rail {
   position: absolute;
   top: 4px;
@@ -634,7 +708,11 @@ thead .sticky-col {
   right: -1px;
   z-index: 1;
   height: 28px;
-  background: color-mix(in srgb, var(--plan-color) 42%, var(--bg-card));
+  background: var(--plan-color);
+  box-shadow:
+    inset 0 0 0 1px rgb(173, 214, 94),
+    inset 1px 0 0 rgb(146, 191, 63),
+    inset -1px 0 0 rgb(146, 191, 63);
   pointer-events: none;
 }
 
@@ -657,19 +735,18 @@ thead .sticky-col {
   right: -1px;
   z-index: 2;
   height: 28px;
-  background: color-mix(in srgb, var(--actual-color) 10%, var(--bg-card));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--actual-color) 24%, var(--bg-card));
+  background: color-mix(in srgb, var(--completed-cp-color) 14%, var(--bg-card));
   pointer-events: none;
 }
 
 .actual-progress-start {
-  left: 7px;
+  left: -1px;
   border-top-left-radius: 999px;
   border-bottom-left-radius: 999px;
 }
 
 .actual-progress-end {
-  right: 7px;
+  right: -1px;
   border-top-right-radius: 999px;
   border-bottom-right-radius: 999px;
 }
@@ -740,16 +817,24 @@ thead .sticky-col {
 }
 
 .cp-text.cp-pending {
-  background: var(--plan-color);
+  background: color-mix(in srgb, var(--pending-cp-color) 88%, var(--bg-card));
   color: #ffffff;
   opacity: 1;
 }
 
 .cp-text.cp-completed {
-  background: transparent;
-  border: 1px solid var(--plan-color);
-  color: var(--plan-color);
-  opacity: 0.6;
+  background: color-mix(in srgb, var(--completed-cp-color) 16%, var(--bg-card));
+  color: color-mix(in srgb, var(--completed-cp-color) 58%, var(--text-muted));
+  opacity: 0.52;
+}
+
+.cp-text.cp-current {
+  background: var(--current-cp-color);
+  color: #ffffff;
+  opacity: 1;
+  box-shadow:
+    0 0 0 2px var(--bg-card),
+    0 0 0 4px color-mix(in srgb, var(--current-cp-color) 32%, transparent);
 }
 .cp-text:hover {
   transform: translateY(-50%) scale(1.16);

@@ -28,6 +28,11 @@ function hasDeclaration(rule, property, value) {
   return new RegExp(`${property}\\s*:\\s*${value}\\s*;`).test(rule)
 }
 
+function zIndexValue(rule) {
+  const match = rule.match(/z-index\s*:\s*(\d+)\s*;/)
+  return match ? Number(match[1]) : null
+}
+
 const scheduleViewStyles = styleBlock(scheduleView)
 const scheduleTimelineStyles = styleBlock(scheduleTimeline)
 
@@ -38,6 +43,14 @@ assert.ok(
 assert.ok(
   /:data-date="column\.date"/.test(scheduleTimeline),
   'date cells should expose their date for centering today'
+)
+assert.ok(
+  /selectedDate/.test(scheduleTimeline) && /toggleDateHighlight/.test(scheduleTimeline),
+  'date headers should allow toggling a highlighted date column'
+)
+assert.ok(
+  /'selected-date': isSelectedDate\(column\.date\)/.test(scheduleTimeline),
+  'selected date should add a column highlight class to date headers and cells'
 )
 assert.ok(
   /scrollTodayIntoView/.test(scheduleTimeline),
@@ -81,6 +94,11 @@ assert.ok(
   'actual completion segments should keep capsule endpoints per test'
 )
 assert.ok(
+  hasDeclaration(ruleBody(scheduleTimelineStyles, '.actual-progress-start'), 'left', '-1px') &&
+    hasDeclaration(ruleBody(scheduleTimelineStyles, '.actual-progress-end'), 'right', '-1px'),
+  'actual completion rail should fully cover the underlying plan rail at segment caps'
+)
+assert.ok(
   /isActualSegmentStartDate\(segment, column\.date\)/.test(scheduleTimeline) &&
     /isActualSegmentEndDate\(segment, row, column\.date\)/.test(scheduleTimeline),
   'actual rail caps should be based on each completed test segment boundary'
@@ -88,6 +106,10 @@ assert.ok(
 assert.ok(
   /actual-progress-tip/.test(scheduleTimeline),
   'actual completion should mark the current completed CP endpoint'
+)
+assert.ok(
+  /cp-current/.test(scheduleTimeline),
+  'current CP marker should have a dedicated visual class'
 )
 assert.ok(
   !/box-shadow\s*:\s*inset 3px 0 0 var\(--schedule-color\)/.test(scheduleTimelineStyles),
@@ -140,6 +162,39 @@ const edgeMarkerRule = ruleBody(scheduleTimelineStyles, '.edge-marker')
 assert.ok(
   hasDeclaration(edgeMarkerRule, 'z-index', '2'),
   'edge markers should stay below the sticky config column while horizontally scrolling'
+)
+
+const planRailRule = ruleBody(scheduleTimelineStyles, '.plan-progress-rail')
+assert.ok(
+  /box-shadow\s*:/.test(planRailRule) && /inset 1px 0 0/.test(planRailRule) && /inset -1px 0 0/.test(planRailRule),
+  'planned rails should show per-date left/right borders inside each date cell'
+)
+
+const actualRailRule = ruleBody(scheduleTimelineStyles, '.actual-progress-rail')
+assert.ok(
+  !/box-shadow\s*:/.test(actualRailRule) && !/border\s*:/.test(actualRailRule),
+  'actual completion rail should be a borderless opaque overlay'
+)
+assert.ok(
+  /background\s*:\s*color-mix\(in srgb, var\(--completed-cp-color\) 14%, var\(--bg-card\)\)\s*;/.test(actualRailRule),
+  'actual completion rail should use a slightly darker gray mix instead of transparent alpha stacking'
+)
+
+const pendingCpRule = ruleBody(scheduleTimelineStyles, '.cp-text.cp-pending')
+assert.ok(
+  /background\s*:\s*color-mix\(in srgb, var\(--pending-cp-color\) 88%, var\(--bg-card\)\)\s*;/.test(pendingCpRule),
+  'pending CP markers should use the requested blue fill color'
+)
+
+const selectedDateRule = pseudoRuleBody(scheduleTimelineStyles, '.day-cell.selected-date::before')
+const cpTextRule = ruleBody(scheduleTimelineStyles, '.cp-text')
+const actualTipRule = pseudoRuleBody(scheduleTimelineStyles, '.actual-progress-tip::after')
+assert.ok(
+  zIndexValue(selectedDateRule) > zIndexValue(cpTextRule) &&
+    zIndexValue(selectedDateRule) > zIndexValue(actualTipRule) &&
+    zIndexValue(selectedDateRule) > zIndexValue(planRailRule) &&
+    zIndexValue(selectedDateRule) > zIndexValue(actualRailRule),
+  'selected date column overlay should render above rails, CP markers, and the current progress tip'
 )
 
 assert.ok(

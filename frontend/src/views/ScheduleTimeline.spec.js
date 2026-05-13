@@ -8,13 +8,13 @@ import fc from 'fast-check'
 function cpMarkerClass(row, cp) {
   const progress = row.actual_progress
   if (!progress || progress.current_cp_idx == null) {
-    return { 'cp-completed': false, 'cp-pending': true }
+    return { 'cp-completed': false, 'cp-pending': true, 'cp-current': false }
   }
   if (progress.is_complete) {
-    return { 'cp-completed': true, 'cp-pending': false }
+    return { 'cp-completed': true, 'cp-pending': false, 'cp-current': false }
   }
   const completed = cp.cp_idx <= progress.current_cp_idx
-  return { 'cp-completed': completed, 'cp-pending': !completed }
+  return { 'cp-completed': completed, 'cp-pending': !completed, 'cp-current': cp.cp_idx === progress.current_cp_idx }
 }
 
 /**
@@ -77,8 +77,8 @@ fc.assert(
 
       for (const cp of cps) {
         const result = cpMarkerClass(row, cp)
-        assert.deepEqual(result, { 'cp-completed': true, 'cp-pending': false },
-          `CP with cp_idx=${cp.cp_idx} should be cp-completed when lane is complete`)
+        assert.deepEqual(result, { 'cp-completed': true, 'cp-pending': false, 'cp-current': false },
+          `CP with cp_idx=${cp.cp_idx} should be completed without current highlight when lane is complete`)
       }
     }
   ),

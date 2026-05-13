@@ -2,42 +2,42 @@
   <div class="page-container settings-page">
     <div class="page-head">
       <div>
-        <h1 class="page-title">设置</h1>
-        <p class="page-subtitle">Rawdata、解析入口和自定义规则集中管理。</p>
+        <h1 class="page-title">{{ t('settings.title') }}</h1>
+        <p class="page-subtitle">{{ t('settings.subtitle') }}</p>
       </div>
-      <button class="icon-btn" :disabled="loading" title="刷新" aria-label="刷新" @click="loadAll">
+      <button class="icon-btn" :disabled="loading" :title="t('common.refresh')" :aria-label="t('common.refresh')" @click="loadAll">
         <ReloadOutlined />
       </button>
     </div>
 
     <div class="settings-tabs" role="tablist">
-      <button :class="{ active: tab === 'rawdata' }" @click="tab = 'rawdata'">Rawdata</button>
-      <button :class="{ active: tab === 'rules' }" @click="tab = 'rules'">自定义规则</button>
-      <button :class="{ active: tab === 'ideas' }" @click="tab = 'ideas'">Brainstorm</button>
+      <button :class="{ active: tab === 'rawdata' }" @click="tab = 'rawdata'">{{ t('settings.tabRawdata') }}</button>
+      <button :class="{ active: tab === 'rules' }" @click="tab = 'rules'">{{ t('settings.tabRules') }}</button>
+      <button :class="{ active: tab === 'ideas' }" @click="tab = 'ideas'">{{ t('settings.tabIdeas') }}</button>
     </div>
 
     <section v-if="tab === 'rawdata'" class="settings-grid">
       <div class="panel parse-panel">
         <div class="panel-title">
           <PlayCircleOutlined />
-          <span>手动解析</span>
+          <span>{{ t('settings.parseSection') }}</span>
         </div>
         <div class="field-grid">
           <label class="field">
-            <span>Daily Report</span>
+            <span>{{ t('settings.dailyReport') }}</span>
             <select v-model="selectedDaily">
-              <option value="">选择文件</option>
+              <option value="">{{ t('settings.selectFile') }}</option>
               <option v-for="file in dailyFiles" :key="file.path" :value="file.path">
-                {{ file.date || 'no date' }} · {{ file.name }}
+                {{ file.date || t('settings.noDate') }} · {{ file.name }}
               </option>
             </select>
           </label>
           <label class="field">
-            <span>FA Tracker</span>
+            <span>{{ t('settings.faTracker') }}</span>
             <select v-model="selectedFa">
-              <option value="">自动匹配</option>
+              <option value="">{{ t('settings.autoMatch') }}</option>
               <option v-for="file in faFiles" :key="file.path" :value="file.path">
-                {{ file.date || 'no date' }} · {{ file.name }}
+                {{ file.date || t('settings.noDate') }} · {{ file.name }}
               </option>
             </select>
           </label>
@@ -45,7 +45,7 @@
         <div class="action-row">
           <button class="btn-primary" :disabled="!selectedDaily || parsing" @click="parseSelected">
             <PlayCircleOutlined />
-            <span>{{ parsing ? '解析中...' : '解析选中文件' }}</span>
+            <span>{{ parsing ? t('settings.parsing') : t('settings.parseSelected') }}</span>
           </button>
           <span class="status-text" :class="{ error: statusType === 'error' }">{{ statusText }}</span>
         </div>
@@ -54,18 +54,18 @@
       <div class="panel rawdata-panel">
         <div class="panel-title">
           <FileExcelOutlined />
-          <span>Rawdata 文件</span>
+          <span>{{ t('settings.rawdataFiles') }}</span>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>类型</th>
-                <th>日期</th>
-                <th>文件</th>
-                <th>大小</th>
-                <th>修改时间</th>
-                <th>操作</th>
+                <th>{{ t('settings.kind') }}</th>
+                <th>{{ t('settings.date') }}</th>
+                <th>{{ t('settings.file') }}</th>
+                <th>{{ t('settings.size') }}</th>
+                <th>{{ t('settings.modifiedAt') }}</th>
+                <th>{{ t('settings.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -80,34 +80,34 @@
                     <button
                       v-if="file.kind === 'daily_report'"
                       class="icon-btn small"
-                      title="解析这份数据"
-                      aria-label="解析这份数据"
+                      :title="t('settings.parseFile')"
+                      :aria-label="t('settings.parseFile')"
                       @click="parseFile(file)"
                     >
                       <PlayCircleOutlined />
                     </button>
-                    <button class="icon-btn small danger" title="删除文件" aria-label="删除文件" @click="deleteFile(file)">
+                    <button class="icon-btn small danger" :title="t('settings.deleteFile')" :aria-label="t('settings.deleteFile')" @click="deleteFile(file)">
                       <DeleteOutlined />
                     </button>
                   </div>
                 </td>
               </tr>
               <tr v-if="!files.length">
-                <td colspan="6" class="empty-row">暂无 rawdata 文件</td>
+                <td colspan="6" class="empty-row">{{ t('settings.noRawdataFiles') }}</td>
               </tr>
             </tbody>
           </table>
         </div>
         <label class="purge-toggle">
           <input v-model="purgeDbOnDelete" type="checkbox" />
-          <span>删除 Daily Report 时同步清理对应数据库记录</span>
+          <span>{{ t('settings.purgeDb') }}</span>
         </label>
       </div>
 
       <div class="panel reports-panel">
         <div class="panel-title">
           <DatabaseOutlined />
-          <span>已导入版本</span>
+          <span>{{ t('settings.importedReports') }}</span>
         </div>
         <div class="report-list">
           <div v-for="report in reports" :key="report.id" class="report-row">
@@ -115,10 +115,10 @@
             <span>v{{ report.version }}</span>
             <span class="report-file">{{ report.source_file_name }}</span>
             <span class="active-pill" :class="{ muted: !report.is_active }">
-              {{ report.is_active ? 'Active' : 'History' }}
+              {{ report.is_active ? t('settings.active') : t('settings.history') }}
             </span>
           </div>
-          <div v-if="!reports.length" class="empty-row">暂无导入记录</div>
+          <div v-if="!reports.length" class="empty-row">{{ t('settings.noImportedReports') }}</div>
         </div>
       </div>
     </section>
@@ -127,71 +127,79 @@
       <div class="panel">
         <div class="panel-title">
           <SettingOutlined />
-          <span>解析规则</span>
+          <span>{{ t('settings.parseRules') }}</span>
         </div>
         <div class="field-grid">
           <label class="field">
-            <span>Spec 填充色</span>
-            <input v-model="ruleDraft.parse.spec_fill_colors_text" placeholder="FF0000, C00000" />
+            <span>{{ t('settings.specFillColors') }}</span>
+            <input v-model="ruleDraft.parse.spec_fill_colors_text" :placeholder="t('settings.specFillColorsPlaceholder')" />
           </label>
           <label class="field">
-            <span>Strife 填充色</span>
-            <input v-model="ruleDraft.parse.strife_fill_colors_text" placeholder="FFFF00" />
+            <span>{{ t('settings.strifeFillColors') }}</span>
+            <input v-model="ruleDraft.parse.strife_fill_colors_text" :placeholder="t('settings.strifeFillColorsPlaceholder')" />
           </label>
           <label class="field">
-            <span>Spec 字体色</span>
-            <input v-model="ruleDraft.parse.spec_font_colors_text" placeholder="FF9C0006" />
+            <span>{{ t('settings.specFontColors') }}</span>
+            <input v-model="ruleDraft.parse.spec_font_colors_text" :placeholder="t('settings.specFontColorsPlaceholder')" />
           </label>
           <label class="field">
-            <span>忽略 WF</span>
-            <input v-model="ruleDraft.parse.ignore_wfs_text" placeholder="1.1, 14.2" />
+            <span>{{ t('settings.ignoreWfs') }}</span>
+            <input v-model="ruleDraft.parse.ignore_wfs_text" :placeholder="t('settings.ignoreWfsPlaceholder')" />
           </label>
         </div>
         <label class="field full">
-          <span>Config 别名</span>
-          <textarea v-model="ruleDraft.parse.config_aliases_text" rows="4" placeholder="R1=R1FNF&#10;R2=R2CNM"></textarea>
+          <span>{{ t('settings.configAliases') }}</span>
+          <textarea
+            v-model="ruleDraft.parse.config_aliases_text"
+            rows="4"
+            :placeholder="t('settings.configAliasesPlaceholder')"
+          ></textarea>
         </label>
       </div>
 
       <div class="panel">
         <div class="panel-title">
           <EyeOutlined />
-          <span>显示规则</span>
+          <span>{{ t('settings.displayRules') }}</span>
         </div>
         <div class="field-grid">
           <label class="field">
-            <span>项目名</span>
-            <input v-model="ruleDraft.display.project_name" placeholder="M60 EVT REL" />
+            <span>{{ t('settings.projectName') }}</span>
+            <input v-model="ruleDraft.display.project_name" :placeholder="t('settings.projectNamePlaceholder')" />
           </label>
           <label class="field">
-            <span>Config 排序</span>
-            <input v-model="ruleDraft.display.config_order_text" placeholder="R1FNF, R2CNM, R3, R4" />
+            <span>{{ t('settings.configOrder') }}</span>
+            <input v-model="ruleDraft.display.config_order_text" :placeholder="t('settings.configOrderPlaceholder')" />
           </label>
           <label class="field">
-            <span>隐藏 WF</span>
-            <input v-model="ruleDraft.display.hidden_wfs_text" placeholder="MLB, 1.2" />
+            <span>{{ t('settings.hiddenWfs') }}</span>
+            <input v-model="ruleDraft.display.hidden_wfs_text" :placeholder="t('settings.hiddenWfsPlaceholder')" />
           </label>
         </div>
         <label class="field full">
-          <span>WF 显示别名</span>
-          <textarea v-model="ruleDraft.display.wf_aliases_text" rows="5" placeholder="16.1=Drop Sequence&#10;20=Button Cycling"></textarea>
+          <span>{{ t('settings.wfAliases') }}</span>
+          <textarea
+            v-model="ruleDraft.display.wf_aliases_text"
+            rows="5"
+            :placeholder="t('settings.wfAliasesPlaceholder')"
+          ></textarea>
         </label>
       </div>
 
       <div class="panel rules-actions-panel">
         <div class="panel-title">
           <CodeOutlined />
-          <span>规则预览</span>
+          <span>{{ t('settings.rulePreview') }}</span>
         </div>
         <pre class="rules-preview">{{ previewRules }}</pre>
         <div class="action-row">
           <button class="btn-primary" :disabled="savingRules" @click="saveRules">
             <SaveOutlined />
-            <span>{{ savingRules ? '保存中...' : '保存规则' }}</span>
+            <span>{{ savingRules ? t('settings.savingRules') : t('settings.saveRules') }}</span>
           </button>
           <button class="btn-secondary" :disabled="savingRules" @click="resetRules">
             <UndoOutlined />
-            <span>恢复默认</span>
+            <span>{{ t('settings.resetDefaults') }}</span>
           </button>
           <span class="status-text" :class="{ error: statusType === 'error' }">{{ statusText }}</span>
         </div>
@@ -222,8 +230,10 @@ import {
   UndoOutlined,
 } from '@ant-design/icons-vue'
 import { useAppStore } from '@/stores/app'
+import { useI18n } from '@/i18n/useI18n'
 
 const store = useAppStore()
+const { t } = useI18n()
 const loading = ref(false)
 const parsing = ref(false)
 const savingRules = ref(false)
@@ -259,32 +269,32 @@ const faFiles = computed(() => files.value.filter(file => file.kind === 'fa_trac
 
 const previewRules = computed(() => JSON.stringify(serializeRules(), null, 2))
 
-const ideas = [
+const ideas = computed(() => [
   {
-    title: '解析 Dry Run',
-    body: '手动解析前先跑一遍预检查，输出将要写入的报告日期、WF 数、失败颜色命中和可能被忽略的 sheet。',
+    title: t('settings.brainstormDryRunTitle'),
+    body: t('settings.brainstormDryRunBody'),
   },
   {
-    title: '规则命中模拟器',
-    body: '上传或选择一小段样本单元格，页面直接展示当前规则会判定为 pass、spec、strife 还是 pending。',
+    title: t('settings.brainstormSimulatorTitle'),
+    body: t('settings.brainstormSimulatorBody'),
   },
   {
-    title: '数据血缘与回滚',
-    body: '每次解析生成一份审计记录，支持把 active report 回滚到某个历史 version。',
+    title: t('settings.brainstormLineageTitle'),
+    body: t('settings.brainstormLineageBody'),
   },
   {
-    title: '自动匹配提醒',
-    body: 'Daily Report 和 FA Tracker 日期不一致时给出醒目的提醒，并显示当前采用的是精确匹配还是 fallback。',
+    title: t('settings.brainstormReminderTitle'),
+    body: t('settings.brainstormReminderBody'),
   },
   {
-    title: '规则模板',
-    body: '把常见项目阶段的颜色、WF 别名、隐藏项和 Config 顺序保存成模板，一键切换。',
+    title: t('settings.brainstormTemplateTitle'),
+    body: t('settings.brainstormTemplateBody'),
   },
   {
-    title: '异常数据收件箱',
-    body: '把无法识别的 WF、未知 Config、空 SN、重复 SN 聚合成待处理队列，设置页里逐条处理。',
+    title: t('settings.brainstormInboxTitle'),
+    body: t('settings.brainstormInboxBody'),
   },
-]
+])
 
 async function loadAll() {
   loading.value = true
@@ -299,7 +309,7 @@ async function loadAll() {
       selectedDaily.value = dailyFiles.value[0].path
     }
   } catch (e) {
-    showStatus(e.message || '加载设置失败', 'error')
+    showStatus(e.message || t('settings.loadFailed'), 'error')
   } finally {
     loading.value = false
   }
@@ -373,10 +383,10 @@ async function parseSelected() {
   showStatus('')
   try {
     const result = await store.parseRawdata(selectedDaily.value, selectedFa.value)
-    showStatus(`解析完成：${result.report_date}，${result.wf_count} 个 WF`)
+    showStatus(t('settings.parseDone', { date: result.report_date, count: result.wf_count }))
     store.triggerRefresh()
   } catch (e) {
-    showStatus(e.message || '解析失败', 'error')
+    showStatus(e.message || t('settings.parseFailed'), 'error')
   } finally {
     parsing.value = false
   }
@@ -390,15 +400,15 @@ function parseFile(file) {
 }
 
 async function deleteFile(file) {
-  const suffix = purgeDbOnDelete.value && file.kind === 'daily_report' ? '，并清理对应数据库记录' : ''
-  if (!window.confirm(`确认删除 ${file.name}${suffix}？`)) return
+  const suffix = purgeDbOnDelete.value && file.kind === 'daily_report' ? t('settings.deleteConfirmSuffix') : ''
+  if (!window.confirm(t('settings.deleteConfirm', { name: file.name, suffix }))) return
   try {
     await store.deleteRawdataFile(file.path, purgeDbOnDelete.value && file.kind === 'daily_report')
-    showStatus(`已删除：${file.name}`)
+    showStatus(t('settings.deleteDone', { name: file.name }))
     if (selectedDaily.value === file.path) selectedDaily.value = ''
     if (selectedFa.value === file.path) selectedFa.value = ''
   } catch (e) {
-    showStatus(e.message || '删除失败', 'error')
+    showStatus(e.message || t('settings.deleteFailed'), 'error')
   }
 }
 
@@ -407,30 +417,30 @@ async function saveRules() {
   try {
     const saved = await store.saveSettingsRules(serializeRules())
     hydrateRules(saved)
-    showStatus('规则已保存，下一次解析会使用新规则')
+    showStatus(t('settings.rulesSaved'))
   } catch (e) {
-    showStatus(e.message || '保存失败', 'error')
+    showStatus(e.message || t('settings.saveFailed'), 'error')
   } finally {
     savingRules.value = false
   }
 }
 
 async function resetRules() {
-  if (!window.confirm('确认恢复默认规则？')) return
+  if (!window.confirm(t('settings.resetConfirm'))) return
   savingRules.value = true
   try {
     const saved = await store.resetSettingsRules()
     hydrateRules(saved)
-    showStatus('已恢复默认规则')
+    showStatus(t('settings.resetDone'))
   } catch (e) {
-    showStatus(e.message || '恢复失败', 'error')
+    showStatus(e.message || t('settings.resetFailed'), 'error')
   } finally {
     savingRules.value = false
   }
 }
 
 function kindLabel(kind) {
-  return kind === 'daily_report' ? 'Daily' : kind === 'fa_tracker' ? 'FA' : 'Other'
+  return kind === 'daily_report' ? t('settings.kindDaily') : kind === 'fa_tracker' ? t('settings.kindFa') : t('settings.kindOther')
 }
 
 function formatSize(size) {
