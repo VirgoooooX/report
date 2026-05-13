@@ -193,17 +193,7 @@ async function downloadJSON() {
 
 <style scoped>
 .page-container {
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 24px 32px 40px;
-}
-
-.page-title {
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 24px;
 }
 
 /* Filter card */

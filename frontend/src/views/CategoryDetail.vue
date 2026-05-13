@@ -185,9 +185,7 @@ watch(() => store.refreshCounter, () => { load(true) })
 
 <style scoped>
 .page-container {
-  max-width: 1440px;
-  margin: 0 auto;
-  padding: 24px 32px 40px;
+  color: var(--text-primary);
 }
 
 .breadcrumb {
@@ -216,14 +214,6 @@ watch(() => store.refreshCounter, () => { load(true) })
   justify-content: space-between;
   margin-bottom: 28px;
   gap: 16px;
-}
-
-.page-title {
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 4px;
 }
 
 .page-subtitle {

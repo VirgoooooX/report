@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container page-shell">
+  <div class="page-container">
     <div class="page-head">
       <h1 class="page-title">{{ t('dashboard.title') }}</h1>
     </div>

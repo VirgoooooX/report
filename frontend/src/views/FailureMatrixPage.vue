@@ -1,5 +1,5 @@
 <template>
-  <div class="page-container page-shell">
+  <div class="page-container">
     <h1 class="page-title">{{ t('failureAnalysis.title') }}</h1>
 
     <div class="kpi-grid">

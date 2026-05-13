@@ -1,5 +1,5 @@
 <template>
-  <div class="daily-update-page">
+  <div class="page-container daily-update-page">
     <header class="page-heading">
       <div>
         <h1 class="page-title">{{ t('dailyUpdate.title') }}</h1>
@@ -80,13 +80,6 @@ watch(() => store.refreshCounter, () => { loadAll(true) })
   justify-content: space-between;
   gap: 16px;
   margin-bottom: 24px;
-}
-
-.page-title {
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 700;
-  color: var(--text-primary);
 }
 
 .page-subtitle {

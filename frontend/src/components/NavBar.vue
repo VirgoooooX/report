@@ -142,18 +142,18 @@ function toggleLanguage() {
 .nav {
   position: sticky; top: 0; z-index: 100;
   background: var(--bg-nav);
-  box-shadow: var(--shadow-nav);
+  border-bottom: 1px solid var(--border-light);
   padding: 0 32px;
 }
 .nav-inner {
-  max-width: 1440px; margin: 0 auto;
+  max-width: var(--layout-wide-max-width); margin: 0 auto;
   display: flex; align-items: center;
   height: 56px; gap: 24px;
 }
 .nav-brand {
   display: flex; align-items: center; gap: 12px;
   font-family: 'Work Sans', sans-serif;
-  font-weight: 700; font-size: 14px;
+  font-weight: 700; font-size: 15px;
   color: var(--text-primary); white-space: nowrap;
 }
 .nav-badge {
@@ -162,28 +162,37 @@ function toggleLanguage() {
   font-weight: 500;
 }
 .nav-links {
-  display: flex; gap: 4px; margin-left: auto; align-items: center;
+  display: flex; gap: 2px; margin-left: auto; align-items: center;
 }
 .nav-links a {
+  position: relative;
   color: var(--text-muted); text-decoration: none;
-  padding: 6px 14px; border-radius: 6px; font-size: 0.85rem;
-  font-weight: 500; transition: background 0.2s, color 0.2s;
+  padding: 8px 14px; border-radius: var(--radius-sm); font-size: 0.85rem;
+  font-weight: 500; transition: color 0.2s, background 0.2s;
 }
-.nav-links a:hover { color: var(--text-primary); background: rgba(0,0,0,0.04); }
+.nav-links a:hover { color: var(--text-primary); background: color-mix(in srgb, var(--accent-steel) 6%, transparent); }
 .nav-links a.router-link-active {
-  background: var(--text-primary); color: var(--text-inverse);
+  color: var(--accent-steel); background: transparent; font-weight: 600;
+}
+.nav-links a.router-link-active::after {
+  content: '';
+  position: absolute;
+  left: 10px; right: 10px; bottom: -1px;
+  height: 2px;
+  background: var(--accent-steel);
+  border-radius: 1px;
 }
 /* ── Upload button ── */
 .nav-upload-btn {
-  height: 34px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
-  gap: 7px;
-  padding: 0 16px;
-  background: transparent;
-  border: 1px dashed var(--border-input);
-  border-radius: 20px;
-  color: var(--text-secondary);
+  gap: 6px;
+  padding: 0 14px;
+  background: color-mix(in srgb, var(--accent-steel) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-steel) 20%, transparent);
+  border-radius: var(--radius-full);
+  color: var(--accent-steel);
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
@@ -192,33 +201,30 @@ function toggleLanguage() {
     color 0.2s ease,
     background 0.2s ease,
     border-color 0.2s ease,
-    border-style 0.2s ease,
     box-shadow 0.2s ease;
 }
 .nav-upload-btn:hover {
-  color: var(--accent-steel);
-  background: color-mix(in srgb, var(--accent-steel) 6%, transparent);
+  background: color-mix(in srgb, var(--accent-steel) 14%, transparent);
   border-color: var(--accent-steel);
-  border-style: solid;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-steel) 12%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-steel) 10%, transparent);
 }
 .nav-upload-btn.uploading {
   color: var(--text-muted);
   cursor: default;
-  border-style: solid;
+  background: var(--bg-muted);
+  border-color: var(--border-input);
   box-shadow: none;
 }
 .nav-upload-btn.uploading:hover {
-  background: transparent;
+  background: var(--bg-muted);
   border-color: var(--border-input);
   box-shadow: none;
 }
 .nav-upload-btn.done {
-  color: #059669;
-  border-color: #059669;
-  border-style: solid;
-  background: color-mix(in srgb, #059669 6%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, #059669 12%, transparent);
+  color: var(--color-success);
+  border-color: color-mix(in srgb, var(--color-success) 30%, transparent);
+  background: color-mix(in srgb, var(--color-success) 8%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success) 10%, transparent);
 }
 .upload-icon {
   display: inline-flex;
