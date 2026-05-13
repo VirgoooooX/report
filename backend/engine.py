@@ -28,6 +28,27 @@ ER_UNIT_CONFIG_MAP = {
 }
 
 
+class RawDataValidationError(Exception):
+    """Raised when Daily Report rawdata has blocking consistency problems."""
+
+    def __init__(self, errors):
+        self.errors = errors or []
+        message = _validation_error_message(self.errors)
+        super().__init__(message)
+
+
+def _validation_error_message(errors):
+    if not errors:
+        return 'Rawdata validation failed'
+    first = errors[0]
+    return (
+        "Rawdata validation failed: "
+        f"{first.get('sheet', '')} row {first.get('row', '')} "
+        f"SN {first.get('sn', '')} has failure at {first.get('failed_cp', '')} "
+        f"but later data at {first.get('later_cp', '')}"
+    )
+
+
 def is_cp_header_label(value):
     """Return True when a header cell is a real CP label, not a boundary/check column."""
     if not value or not isinstance(value, str):
@@ -172,6 +193,199 @@ def aggregate_cp_status(check_rows, cp_idx, last_real):
     if has_data:
         return 'pass', None, 1
     return 'pending', None, 0
+
+
+def _limited_cells(cells, limit=6):
+    return cells[:limit]
+
+
+def _cell_info(cell):
+    return {
+        'cell': cell.coordinate,
+        'value': normalize_cell_value(cell.value),
+        'fill': cell_color_rgb(cell),
+        'font': font_color_rgb(cell),
+    }
+
+
+def _cp_row_state(ws, row_idx, cp_idx, cp_range):
+    ps, pe, cp_name = cp_range
+    failure_cells = []
+    data_cells = []
+    raw_cells = []
+    for cc in range(ps, pe + 1):
+        cell = ws.cell(row_idx, cc)
+        raw = normalize_cell_value(cell.value)
+        if raw:
+            raw_cells.append(_cell_info(cell))
+        ft = get_failure_type(cell)
+        if ft:
+            info = _cell_info(cell)
+            info['type'] = ft
+            failure_cells.append(info)
+        if raw and raw != '/':
+            data_cells.append(_cell_info(cell))
+
+    if failure_cells:
+        state = 'fail'
+    elif data_cells:
+        state = 'data'
+    else:
+        state = 'empty_or_skip'
+
+    return {
+        'cp_idx': cp_idx,
+        'cp_name': cp_name,
+        'state': state,
+        'failure_cells': failure_cells,
+        'data_cells': data_cells,
+        'raw_cells': raw_cells,
+    }
+
+
+def _find_rawdata_anomalies_for_sheet(ws, wf_num, ts_names, report_date='', source_file_name=''):
+    errors = []
+    r = 1
+    while r <= ws.max_row:
+        if ws.cell(r, 3).value == 'Config' and ws.cell(r, 4).value == 'Unit #':
+            cp_list = []
+            ls = None
+            ln = ''
+            for c in range(7, ws.max_column + 1):
+                v = ws.cell(r, c).value
+                if v and isinstance(v, str) and v.strip():
+                    cv = v.strip()
+                    if is_cp_header_label(cv):
+                        if ls is not None:
+                            cp_list.append((ls, c - 1, ln))
+                        ls = c
+                        ln = cv
+            if ls is not None:
+                ec = ws.max_column
+                for c in range(ls, ws.max_column + 1):
+                    v = ws.cell(r, c).value
+                    if v and isinstance(v, str) and v.strip() in ('Comments', 'Overall Result'):
+                        ec = c - 1
+                        break
+                cp_list.append((ls, ec, ln))
+
+            if not cp_list:
+                r += 1
+                continue
+
+            cp_names = [(ps, pn) for ps, pe, pn in cp_list]
+            cp_test_map = map_cps_to_tests(cp_names, ts_names)
+
+            dr = r + 2
+            default_config = None
+            while dr <= ws.max_row:
+                cv = ws.cell(dr, 3).value
+                cv = resolve_config_alias(cv)
+                if cv in CONFIGS:
+                    default_config = cv
+                    break
+                dr += 1
+
+            dr = r + 2
+            while dr <= ws.max_row:
+                dc1 = ws.cell(dr, 1).value
+                dcfg = ws.cell(dr, 3).value
+                if dc1 == '%' and dcfg == 'Config' and ws.cell(dr, 4).value == 'Unit #':
+                    break
+
+                sn = ws.cell(dr, 5).value
+                unit_num = ws.cell(dr, 4).value
+                if dcfg == 'Config' or (sn and str(sn).strip() == 'S/N') or not sn or not has_pre_cp_data(ws, dr, cp_list[0][0]):
+                    dr += 1
+                    continue
+
+                row_cfg = resolve_row_config(dcfg, default_config, unit_num)
+                if not row_cfg:
+                    dr += 1
+                    continue
+
+                states = [_cp_row_state(ws, dr, pi, cp_range) for pi, cp_range in enumerate(cp_list)]
+                for fail_idx, fail_state in enumerate(states):
+                    if fail_state['state'] != 'fail':
+                        continue
+                    fail_test_idx = cp_test_map[fail_idx] if fail_idx < len(cp_test_map) else None
+                    saw_gap = False
+                    for later_idx in range(fail_idx + 1, len(states)):
+                        later_state = states[later_idx]
+                        later_test_idx = cp_test_map[later_idx] if later_idx < len(cp_test_map) else None
+                        if later_test_idx != fail_test_idx:
+                            break
+                        if later_state['state'] == 'empty_or_skip':
+                            saw_gap = True
+                            continue
+                        if later_state['state'] == 'data' and saw_gap:
+                            errors.append({
+                                'code': 'failure_followed_by_gapped_later_data',
+                                'severity': 'error',
+                                'report_date': report_date,
+                                'source_file': source_file_name,
+                                'sheet': ws.title,
+                                'wf': wf_num,
+                                'row': dr,
+                                'sn': str(sn).strip(),
+                                'unit_num': normalize_cell_value(unit_num),
+                                'config': row_cfg,
+                                'failed_cp_idx': fail_idx,
+                                'failed_cp': fail_state['cp_name'],
+                                'later_cp_idx': later_idx,
+                                'later_cp': later_state['cp_name'],
+                                'failed_cells': _limited_cells(fail_state['failure_cells']),
+                                'later_cells': _limited_cells(later_state['data_cells']),
+                            })
+                            break
+                        saw_gap = False
+                dr += 1
+            r = dr
+        else:
+            r += 1
+    return errors
+
+
+def validate_rawdata_workbook(wb, ts_test_names, report_date='', source_file_name=''):
+    """Return blocking rawdata consistency errors for a Daily Report workbook."""
+    errors = []
+    for name in wb.sheetnames:
+        if name in SKIP_SHEETS or name.startswith('MLB'):
+            continue
+        wfn = wf_num(name)
+        if not wfn or is_wf_ignored(wfn):
+            continue
+        ts_names = ts_test_names.get(wfn, [''])
+        if ts_names == ['']:
+            ts_names = ['(unnamed)']
+        try:
+            errors.extend(_find_rawdata_anomalies_for_sheet(
+                wb[name], wfn, ts_names, report_date=report_date, source_file_name=source_file_name
+            ))
+        except Exception:
+            logger.exception("Failed to validate WF sheet %s", name)
+    return errors
+
+
+def validate_daily_report(path, report_date=None, source_file_name=None):
+    """Validate one Daily Report file and raise RawDataValidationError on blocking rawdata issues."""
+    import os as _os
+
+    source_file_name = source_file_name or _os.path.basename(path)
+    wb = load_workbook(path, data_only=True)
+    try:
+        _, _, ts_test_names, _ = read_test_summary_from_workbook(wb)
+        errors = validate_rawdata_workbook(
+            wb,
+            ts_test_names,
+            report_date=report_date or '',
+            source_file_name=source_file_name,
+        )
+        if errors:
+            raise RawDataValidationError(errors)
+        return []
+    finally:
+        wb.close()
 
 # ── CP-to-Test mapping ─────────────────────────────────────────────────
 
@@ -1565,6 +1779,16 @@ def parse_daily_report(path, report_date=None, source_file_name=None):
                         break
                 if result.report_date:
                     break
+
+        validation_report_date = report_date or result.report_date
+        validation_errors = validate_rawdata_workbook(
+            wb,
+            result.ts_test_names,
+            report_date=validation_report_date,
+            source_file_name=result.source_file_name,
+        )
+        if validation_errors:
+            raise RawDataValidationError(validation_errors)
 
         # 3. Read Test Schedule → WF names
         result.wf_names = read_test_schedule_from_workbook(wb)

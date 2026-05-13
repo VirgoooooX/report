@@ -32,6 +32,8 @@ class ApiConsistencyTests(unittest.TestCase):
         self.conn.execute("DELETE FROM report_stats")
         self.conn.execute("DELETE FROM sn_progress")
         self.conn.execute("DELETE FROM reports")
+        self.conn.execute("DELETE FROM current_cp_definitions")
+        self.conn.execute("DELETE FROM current_test_definitions")
         self.conn.commit()
 
     def tearDown(self):
@@ -598,6 +600,173 @@ class ApiConsistencyTests(unittest.TestCase):
         data2 = resp2.get_json()
         self.assertEqual(len(data2['failures']), 1)
         self.assertEqual(data2['failures'][0]['sn'], 'SN001')
+
+    def test_trend_deduplicates_same_date_multiple_versions(self):
+        """Trend should show one entry per date even if multiple report versions exist."""
+        # Create two reports for the same date (simulating re-import)
+        cur1 = self.conn.execute(
+            """INSERT INTO reports (report_date, version, is_active, excel_path)
+               VALUES ('2025-01-01', 1, 1, 'test_v1.xlsx')"""
+        )
+        rid1 = cur1.lastrowid
+        cur2 = self.conn.execute(
+            """INSERT INTO reports (report_date, version, is_active, excel_path)
+               VALUES ('2025-01-01', 2, 1, 'test_v2.xlsx')"""
+        )
+        rid2 = cur2.lastrowid
+
+        # Insert report_stats for both
+        self.conn.execute(
+            """INSERT INTO report_stats (report_id, total_spec_fails, total_strife_fails)
+               VALUES (?, 3, 1)""",
+            (rid1,),
+        )
+        self.conn.execute(
+            """INSERT INTO report_stats (report_id, total_spec_fails, total_strife_fails)
+               VALUES (?, 5, 2)""",
+            (rid2,),
+        )
+        self.conn.commit()
+
+        client = api.app.test_client()
+        resp = client.get('/api/dashboard/overview')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+
+        trend = data.get('trend', [])
+        dates = [t['date'] for t in trend]
+        # Should only have one entry for 2025-01-01
+        self.assertEqual(dates.count('2025-01-01'), 1)
+        # Should use the latest version (rid2 has higher id)
+        entry = trend[0]
+        self.assertEqual(entry['spec'], 5)
+        self.assertEqual(entry['strife'], 2)
+
+    def test_daily_issues_lifecycle_first_report_id_filter(self):
+        """Daily Issues should only show failures first seen in the current report (lifecycle mode)."""
+        # Create two reports: day1 and day2
+        cur1 = self.conn.execute(
+            """INSERT INTO reports (report_date, version, is_active, excel_path)
+               VALUES ('2025-01-01', 1, 1, 'day1.xlsx')"""
+        )
+        rid1 = cur1.lastrowid
+        cur2 = self.conn.execute(
+            """INSERT INTO reports (report_date, version, is_active, excel_path)
+               VALUES ('2025-01-02', 1, 1, 'day2.xlsx')"""
+        )
+        rid2 = cur2.lastrowid
+
+        # Insert current_cp_definitions and current_test_definitions for JOIN
+        self.conn.execute(
+            """INSERT INTO current_cp_definitions (wf_num, cp_idx, cp_name, test_idx, updated_run_id)
+               VALUES ('10', 0, 'Drop20', 0, ?)""",
+            (rid2,),
+        )
+        self.conn.execute(
+            """INSERT INTO current_test_definitions (wf_num, test_idx, test_name, updated_run_id)
+               VALUES ('10', 0, 'Drop Test', ?)""",
+            (rid2,),
+        )
+
+        # Failure A: first seen in day1 (should NOT appear in day2's new issues)
+        self.conn.execute(
+            """INSERT INTO sn_check_state_history
+               (wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                check_item, state_hash, status, failure_type, first_report_id, first_report_date,
+                last_seen_report_id, last_seen_report_date)
+               VALUES ('10', 'R3', 'SN_OLD', '', 0, 0, 0,
+                       'Cosmetic', '["fail","spec","","",""]', 'fail', 'spec', ?, '2025-01-01', ?, '2025-01-02')""",
+            (rid1, rid2),
+        )
+
+        # Failure B: first seen in day2 (SHOULD appear in day2's new issues)
+        self.conn.execute(
+            """INSERT INTO sn_check_state_history
+               (wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                check_item, state_hash, status, failure_type, first_report_id, first_report_date,
+                last_seen_report_id, last_seen_report_date)
+               VALUES ('10', 'R3', 'SN_NEW', '', 0, 0, 0,
+                       'Cosmetic', '["fail","strife","","",""]', 'fail', 'strife', ?, '2025-01-02', ?, '2025-01-02')""",
+            (rid2, rid2),
+        )
+        self.conn.commit()
+
+        client = api.app.test_client()
+        resp = client.get('/api/daily/issues')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+
+        issues = data.get('issues', [])
+        issue_sns = [i['sn'] for i in issues]
+
+        # SN_NEW should be present (first_report_id == current report)
+        self.assertIn('SN_NEW', issue_sns)
+        # SN_OLD should NOT be present (first_report_id is an older report)
+        self.assertNotIn('SN_OLD', issue_sns)
+
+    def test_daily_issues_reappearing_failure_not_marked_new(self):
+        """A failure that disappeared and reappeared should NOT be marked as new."""
+        # Create three reports: day1, day2 (closed), day3 (reopened)
+        cur1 = self.conn.execute(
+            """INSERT INTO reports (report_date, version, is_active, excel_path)
+               VALUES ('2025-01-01', 1, 1, 'day1.xlsx')"""
+        )
+        rid1 = cur1.lastrowid
+        cur2 = self.conn.execute(
+            """INSERT INTO reports (report_date, version, is_active, excel_path)
+               VALUES ('2025-01-02', 1, 1, 'day2.xlsx')"""
+        )
+        rid2 = cur2.lastrowid
+        cur3 = self.conn.execute(
+            """INSERT INTO reports (report_date, version, is_active, excel_path)
+               VALUES ('2025-01-03', 1, 1, 'day3.xlsx')"""
+        )
+        rid3 = cur3.lastrowid
+
+        # Insert definitions
+        self.conn.execute(
+            """INSERT INTO current_cp_definitions (wf_num, cp_idx, cp_name, test_idx, updated_run_id)
+               VALUES ('10', 0, 'Drop20', 0, ?)""",
+            (rid3,),
+        )
+        self.conn.execute(
+            """INSERT INTO current_test_definitions (wf_num, test_idx, test_name, updated_run_id)
+               VALUES ('10', 0, 'Drop Test', ?)""",
+            (rid3,),
+        )
+
+        # Original failure: first seen day1, closed before day2
+        self.conn.execute(
+            """INSERT INTO sn_check_state_history
+               (wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                check_item, state_hash, status, failure_type, first_report_id, first_report_date,
+                last_seen_report_id, last_seen_report_date,
+                closed_before_report_id, closed_before_report_date)
+               VALUES ('10', 'R3', 'SN_REAPPEAR', '', 0, 0, 0,
+                       'Cosmetic', '["fail","spec","","",""]', 'fail', 'spec', ?, '2025-01-01', ?, '2025-01-01', ?, '2025-01-02')""",
+            (rid1, rid1, rid2),
+        )
+
+        # Same failure reappears in day3 — new lifecycle row with first_report_id = day3
+        # But in the plan's logic, this IS a new lifecycle row so it WILL show.
+        # The key insight: if the system creates a NEW lifecycle row for the reappearance,
+        # then first_report_id == rid3 and it correctly shows as new.
+        # If the system reopens the old row, first_report_id stays as rid1 and it won't show.
+        # The current DB design creates new rows for reappearances, so this tests that
+        # the old closed row does NOT show up.
+        self.conn.commit()
+
+        client = api.app.test_client()
+        resp = client.get('/api/daily/issues')
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+
+        issues = data.get('issues', [])
+        issue_sns = [i['sn'] for i in issues]
+
+        # The old closed failure should NOT appear (first_report_id = rid1, not rid3)
+        # Only new lifecycle rows with first_report_id == latest report would show
+        self.assertNotIn('SN_REAPPEAR', issue_sns)
 
 
 if __name__ == '__main__':

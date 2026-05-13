@@ -19,7 +19,12 @@ import logging
 
 sys.path.insert(0, os.path.dirname(__file__))
 from app_paths import RAWDATA_DIR, ensure_runtime_dirs, iter_rawdata_files
-from engine import analyze, extract_sn_progress, extract_sn_fact_rows, build_failure_detail, read_test_schedule, read_test_summary, extract_all_cp_structures, attach_test_idx_to_cps, extract_test_schedule_segments, DailyReportParseResult, parse_daily_report
+from engine import (
+    analyze, extract_sn_progress, extract_sn_fact_rows, build_failure_detail,
+    read_test_schedule, read_test_summary, extract_all_cp_structures,
+    attach_test_idx_to_cps, extract_test_schedule_segments, DailyReportParseResult,
+    parse_daily_report, RawDataValidationError,
+)
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
 from db import (
     init_db, save_report, save_wf_names, save_wf_cps, get_completion_stats,
@@ -279,6 +284,15 @@ def process_all(rebuild=False):
             stats['total_spec_fails'] += sum(1 for f in failures if f['type'] == 'spec')
             stats['total_strife_fails'] += sum(1 for f in failures if f['type'] == 'strife')
 
+        except RawDataValidationError as e:
+            print(f"VALIDATION ERROR: {e}")
+            for err in e.errors[:5]:
+                print(
+                    "   - "
+                    f"{err.get('sheet')} row {err.get('row')} SN {err.get('sn')}: "
+                    f"{err.get('failed_cp')} -> {err.get('later_cp')}"
+                )
+            continue
         except Exception as e:
             print(f"ERROR: process failed: {e}")
             import traceback
@@ -419,6 +433,21 @@ def process_report_file(report_date, daily_path, fa_path=None):
             'fa_file': selected_fa_path,
         }
 
+    except RawDataValidationError as e:
+        print(f"VALIDATION ERROR: {e}")
+        for err in e.errors[:5]:
+            print(
+                "   - "
+                f"{err.get('sheet')} row {err.get('row')} SN {err.get('sn')}: "
+                f"{err.get('failed_cp')} -> {err.get('later_cp')}"
+            )
+        return {
+            'date': report_date,
+            'file': daily_path,
+            'validation_failed': True,
+            'validation_errors': e.errors,
+            'error': str(e),
+        }
     except Exception as e:
         print(f"ERROR: process failed: {e}")
         import traceback

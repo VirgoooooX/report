@@ -10,7 +10,10 @@ import os, sys, json, io, csv, datetime, re, logging
 sys.path.insert(0, os.path.dirname(__file__))
 from app_paths import RAWDATA_DIR, UPLOAD_DIR, ensure_runtime_dirs, iter_rawdata_files, find_rawdata_file
 from custom_rules import DEFAULT_RULES, load_rules, save_rules
-from engine import analyze, build_summary_table, build_failure_detail, extract_test_schedule_segments
+from engine import (
+    analyze, build_summary_table, build_failure_detail, extract_test_schedule_segments,
+    RawDataValidationError, validate_daily_report,
+)
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
 import fa_analysis
 from db import (
@@ -49,6 +52,34 @@ init_categories()
 
 def _rawdata_relpath(path):
     return os.path.relpath(path, RAWDATA_DIR).replace('\\', '/')
+
+
+def _format_validation_error(errors):
+    if not errors:
+        return 'Rawdata validation failed'
+    first = errors[0]
+    failed_cells = ', '.join(
+        f"{c.get('cell')}={c.get('value')}" for c in first.get('failed_cells', []) if c.get('cell')
+    )
+    later_cells = ', '.join(
+        f"{c.get('cell')}={c.get('value')}" for c in first.get('later_cells', []) if c.get('cell')
+    )
+    return (
+        "Rawdata validation failed: "
+        f"{first.get('sheet', '')} row {first.get('row', '')} SN {first.get('sn', '')}, "
+        f"{first.get('failed_cp', '')} has failure"
+        f"{f' ({failed_cells})' if failed_cells else ''}, "
+        f"but later CP {first.get('later_cp', '')} has data"
+        f"{f' ({later_cells})' if later_cells else ''}."
+    )
+
+
+def _validation_response(errors, status=400):
+    return jsonify({
+        'success': False,
+        'error': _format_validation_error(errors),
+        'validation_errors': errors or [],
+    }), status
 
 
 def _resolve_rawdata_path(relpath):
@@ -355,15 +386,29 @@ def api_overview():
     if display_rules.get('project_name'):
         project_name = display_rules['project_name']
     
-    # Historical trend data
-    reports = conn.execute("SELECT id, report_date FROM reports ORDER BY id ASC").fetchall()
+    # Historical trend data — one entry per date (latest version only)
+    reports = conn.execute(
+        """SELECT r.id, r.report_date
+           FROM reports r
+           INNER JOIN (
+               SELECT report_date, MAX(id) AS max_id
+               FROM reports
+               WHERE is_active = 1
+               GROUP BY report_date
+           ) latest ON r.id = latest.max_id
+           ORDER BY r.report_date ASC"""
+    ).fetchall()
     trend_data = []
+    seen_dates = set()
     for r in reports:
+        if r['report_date'] in seen_dates:
+            continue
         stats = conn.execute(
             "SELECT total_spec_fails, total_strife_fails FROM report_stats WHERE report_id=?",
             (r['id'],)
         ).fetchone()
         if stats:
+            seen_dates.add(r['report_date'])
             trend_data.append({
                 'date': r['report_date'],
                 'spec': stats['total_spec_fails'] or 0,
@@ -2205,6 +2250,7 @@ def api_daily_issues():
         return (d['sn'], d['wf'], d['config'], d['type'], d['location'])
 
     def _lifecycle_failure_issues(target_rid):
+        """All active failures as of target_rid (for fallback/full list)."""
         rows = conn.execute(
             """SELECT l.sn, l.wf_num, l.config, l.failure_type,
                       l.check_item, l.test_idx, l.cp_idx,
@@ -2237,81 +2283,133 @@ def api_daily_issues():
             seen.add(key)
             issues.append(item)
         return issues
+
+    def _lifecycle_new_failures(target_rid):
+        """Only failures first seen in target_rid (first_report_id == target_rid)."""
+        rows = conn.execute(
+            """SELECT l.sn, l.wf_num, l.config, l.failure_type,
+                      l.check_item, l.test_idx, l.cp_idx,
+                      c.cp_name, t.test_name
+               FROM sn_check_state_history l
+               LEFT JOIN current_cp_definitions c
+                 ON c.wf_num = l.wf_num AND c.cp_idx = l.cp_idx
+               LEFT JOIN current_test_definitions t
+                 ON t.wf_num = l.wf_num AND t.test_idx = l.test_idx
+               WHERE l.first_report_id = ?
+                 AND l.failure_type IS NOT NULL
+               ORDER BY CAST(l.wf_num AS REAL), l.config, l.sn, l.cp_idx, l.check_item_idx""",
+            (target_rid,),
+        ).fetchall()
+        issues = []
+        seen = set()
+        for row in rows:
+            item = {
+                'sn': str(row['sn'] or '').strip(),
+                'wf': row['wf_num'],
+                'config': row['config'],
+                'type': row['failure_type'] or '',
+                'location': row['check_item'] or row['test_name'] or f"Test{(row['test_idx'] or 0) + 1}",
+                'failed_cycle': row['cp_name'] or f"CP{(row['cp_idx'] or 0) + 1}",
+            }
+            key = _key(item)
+            if key in seen:
+                continue
+            seen.add(key)
+            issues.append(item)
+        return issues
     
     # Get previous report for diff (Daily Report is cumulative)
     prev_rid = get_previous_active_report_id(conn, rid)
     
-    # 2. Get today's failure_details from DB
-    rows = conn.execute(
-        """SELECT wf_num, config, test_idx, failure_details
-           FROM wf_results
-           WHERE report_id = ? AND failure_details IS NOT NULL AND failure_details != '[]'""",
-        (rid,)
-    ).fetchall()
+    # 2. Get today's NEW failures.
+    # Strategy: lifecycle-first — if lifecycle data exists, "new" = first_report_id == current report.
+    # Fallback: diff-based (today's failure_details minus yesterday's).
     
-    wf_names_map = get_wf_names()
-    db_issues = []
-    for row in rows:
-        wf = row['wf_num']
-        cfg = row['config']
-        ti = row['test_idx']
-        try:
-            details = json.loads(row['failure_details'] or '[]')
-        except (json.JSONDecodeError, TypeError):
-            details = []
-        
-        wf_info = wf_names_map.get(wf, {})
-        test_names = wf_info.get('test_names', [])
-        fallback_location = test_names[ti] if ti < len(test_names) and test_names[ti] else f'Test{ti + 1}'
-        
-        for d in details:
-            db_issues.append({
-                'sn': str(d.get('sn', '')).strip(),
-                'wf': wf,
-                'config': cfg,
-                'type': d.get('type', ''),
-                'location': d.get('location', '') or fallback_location,
-                'failed_cycle': d.get('failed_cp', ''),
-            })
-
-    if not db_issues:
-        db_issues = _lifecycle_failure_issues(rid)
+    lifecycle_new = _lifecycle_new_failures(rid)
     
-    # 2b. Filter to only NEW failures (not present in previous report)
-    if prev_rid:
-        prev_rows = conn.execute(
-            """SELECT wf_num, config, test_idx, failure_details
-               FROM wf_results
-               WHERE report_id = ? AND failure_details IS NOT NULL AND failure_details != '[]'""",
-            (prev_rid,)
-        ).fetchall()
+    if lifecycle_new is not None and len(lifecycle_new) > 0:
+        # Lifecycle data exists and found new failures → use directly
+        db_issues = lifecycle_new
+    else:
+        # Check if lifecycle has ANY data for this report (maybe just no new failures today)
+        has_lifecycle = conn.execute(
+            """SELECT 1 FROM sn_check_state_history
+               WHERE first_report_id <= ?
+                 AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
+                 AND failure_type IS NOT NULL
+               LIMIT 1""",
+            (rid, rid),
+        ).fetchone()
         
-        yesterday_keys = set()
-        for row in prev_rows:
-            pwf = row['wf_num']
-            pcfg = row['config']
-            pti = row['test_idx']
-            try:
-                pdetails = json.loads(row['failure_details'] or '[]')
-            except (json.JSONDecodeError, TypeError):
-                pdetails = []
-            pwf_info = wf_names_map.get(pwf, {})
-            ptest_names = pwf_info.get('test_names', [])
-            pfallback = ptest_names[pti] if pti < len(ptest_names) and ptest_names[pti] else f'Test{pti + 1}'
-            for d in pdetails:
-                yesterday_keys.add(_key({
-                    'sn': str(d.get('sn', '')).strip(),
-                    'wf': pwf,
-                    'config': pcfg,
-                    'type': d.get('type', ''),
-                    'location': d.get('location', '') or pfallback,
-                    'failed_cycle': d.get('failed_cp', ''),
-                }))
-
-        if not yesterday_keys:
-            yesterday_keys = {_key(item) for item in _lifecycle_failure_issues(prev_rid)}
-        
-        db_issues = [d for d in db_issues if _key(d) not in yesterday_keys]
+        if has_lifecycle:
+            # Lifecycle exists but no new failures today → empty list
+            db_issues = []
+        else:
+            # No lifecycle data at all → fallback to failure_details diff
+            rows = conn.execute(
+                """SELECT wf_num, config, test_idx, failure_details
+                   FROM wf_results
+                   WHERE report_id = ? AND failure_details IS NOT NULL AND failure_details != '[]'""",
+                (rid,)
+            ).fetchall()
+            
+            wf_names_map = get_wf_names()
+            db_issues = []
+            for row in rows:
+                wf = row['wf_num']
+                cfg = row['config']
+                ti = row['test_idx']
+                try:
+                    details = json.loads(row['failure_details'] or '[]')
+                except (json.JSONDecodeError, TypeError):
+                    details = []
+                
+                wf_info = wf_names_map.get(wf, {})
+                test_names = wf_info.get('test_names', [])
+                fallback_location = test_names[ti] if ti < len(test_names) and test_names[ti] else f'Test{ti + 1}'
+                
+                for d in details:
+                    db_issues.append({
+                        'sn': str(d.get('sn', '')).strip(),
+                        'wf': wf,
+                        'config': cfg,
+                        'type': d.get('type', ''),
+                        'location': d.get('location', '') or fallback_location,
+                        'failed_cycle': d.get('failed_cp', ''),
+                    })
+            
+            # Subtract yesterday's failures (diff-based fallback)
+            if prev_rid and db_issues:
+                prev_rows = conn.execute(
+                    """SELECT wf_num, config, test_idx, failure_details
+                       FROM wf_results
+                       WHERE report_id = ? AND failure_details IS NOT NULL AND failure_details != '[]'""",
+                    (prev_rid,)
+                ).fetchall()
+                
+                yesterday_keys = set()
+                for row in prev_rows:
+                    pwf = row['wf_num']
+                    pcfg = row['config']
+                    pti = row['test_idx']
+                    try:
+                        pdetails = json.loads(row['failure_details'] or '[]')
+                    except (json.JSONDecodeError, TypeError):
+                        pdetails = []
+                    pwf_info = wf_names_map.get(pwf, {})
+                    ptest_names = pwf_info.get('test_names', [])
+                    pfallback = ptest_names[pti] if pti < len(ptest_names) and ptest_names[pti] else f'Test{pti + 1}'
+                    for d in pdetails:
+                        yesterday_keys.add(_key({
+                            'sn': str(d.get('sn', '')).strip(),
+                            'wf': pwf,
+                            'config': pcfg,
+                            'type': d.get('type', ''),
+                            'location': d.get('location', '') or pfallback,
+                            'failed_cycle': d.get('failed_cp', ''),
+                        }))
+                
+                db_issues = [d for d in db_issues if _key(d) not in yesterday_keys]
 
     # 3. Get FA Tracker issues filtered by date
     fa_issues = []
@@ -2506,6 +2604,8 @@ def api_settings_rawdata_parse():
     raw_date = match.group(1)
     report_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
     result = process_report_file(report_date, daily_path, fa_path=fa_path)
+    if result and result.get('validation_failed'):
+        return _validation_response(result.get('validation_errors'), 400)
     if not result:
         return jsonify({'success': False, 'error': 'Selected file failed to parse'}), 500
 
@@ -2564,7 +2664,8 @@ def upload_report():
     dm = REPORT_PATTERN.match(daily_name)
     if not dm:
         return jsonify({'success': False, 'error': f'Invalid Daily Report filename: {daily_name}'}), 400
-    report_date = dm.group(1)
+    raw_report_date = dm.group(1)
+    report_date = f"{raw_report_date[:4]}-{raw_report_date[4:6]}-{raw_report_date[6:]}"
 
     # Validate FA Tracker filename (optional)
     if fa_file and fa_file.filename:
@@ -2576,8 +2677,7 @@ def upload_report():
         fa_name = ''
 
     # Save uploaded raw files by report date under rawdata/uploads/.
-    upload_date = f"{report_date[:4]}-{report_date[4:6]}-{report_date[6:]}"
-    upload_dir = os.path.join(UPLOAD_DIR, upload_date)
+    upload_dir = os.path.join(UPLOAD_DIR, report_date)
     os.makedirs(upload_dir, exist_ok=True)
 
     daily_path = os.path.join(upload_dir, daily_name)
@@ -2586,6 +2686,13 @@ def upload_report():
     if fa_file and fa_name:
         fa_path = os.path.join(upload_dir, fa_name)
         fa_file.save(fa_path)
+    else:
+        fa_path = None
+
+    try:
+        validate_daily_report(daily_path, report_date=report_date, source_file_name=daily_name)
+    except RawDataValidationError as exc:
+        return _validation_response(exc.errors, 400)
 
     # Overwrite old data for this date
     conn = get_conn()
@@ -2610,7 +2717,9 @@ def upload_report():
 
     # Parse
     try:
-        result = process_newest()
+        result = process_report_file(report_date, daily_path, fa_path=fa_path)
+        if result and result.get('validation_failed'):
+            return _validation_response(result.get('validation_errors'), 400)
         if not result:
             return jsonify({'success': False, 'error': 'No report file found to process'}), 500
 

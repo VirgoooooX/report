@@ -1724,6 +1724,7 @@ def get_trend(wf_num, config, test_idx, limit=10):
         """SELECT r.report_date, wr.spec_fail_count, wr.strife_fail_count, wr.total_units
            FROM wf_results wr JOIN reports r ON wr.report_id = r.id
            WHERE wr.wf_num = ? AND wr.config = ? AND wr.test_idx = ?
+             AND r.is_active = 1
            ORDER BY r.report_date ASC
            LIMIT ?""",
         (wf_num, config, test_idx, limit)
