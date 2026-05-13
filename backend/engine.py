@@ -309,16 +309,16 @@ def _find_rawdata_anomalies_for_sheet(ws, wf_num, ts_names, report_date='', sour
                     if fail_state['state'] != 'fail':
                         continue
                     fail_test_idx = cp_test_map[fail_idx] if fail_idx < len(cp_test_map) else None
-                    saw_gap = False
+                    gap_count = 0
                     for later_idx in range(fail_idx + 1, len(states)):
                         later_state = states[later_idx]
                         later_test_idx = cp_test_map[later_idx] if later_idx < len(cp_test_map) else None
                         if later_test_idx != fail_test_idx:
                             break
                         if later_state['state'] == 'empty_or_skip':
-                            saw_gap = True
+                            gap_count += 1
                             continue
-                        if later_state['state'] == 'data' and saw_gap:
+                        if later_state['state'] == 'data' and gap_count >= 3:
                             errors.append({
                                 'code': 'failure_followed_by_gapped_later_data',
                                 'severity': 'error',
@@ -338,7 +338,7 @@ def _find_rawdata_anomalies_for_sheet(ws, wf_num, ts_names, report_date='', sour
                                 'later_cells': _limited_cells(later_state['data_cells']),
                             })
                             break
-                        saw_gap = False
+                        gap_count = 0
                 dr += 1
             r = dr
         else:

@@ -277,23 +277,71 @@ class RawdataValidationTests(unittest.TestCase):
         # Should NOT flag because the later PASS is in a different test
         self.assertEqual(len(errors), 0)
 
+    def test_fail_with_two_gap_cps_no_error(self):
+        """Fail at CP0, 2 gap CPs, then PASS → no error (need >=3 gap CPs to trigger)."""
+        cp_names = ['Drop20', 'Drop40', 'Drop60', 'Drop80']
+        cells = [
+            ('FAIL', 'FFFF0000'),  # CP0: fail
+            ('/', None),            # CP1: gap
+            ('/', None),            # CP2: gap (only 2 gaps)
+            ('PASS', None),         # CP3: pass
+        ]
+
+        wb, ws = self._make_wb_with_sheet(cp_names, [{
+            'config': 'R3',
+            'unit_num': 'ER3-10-1',
+            'sn': 'SN_TWO_GAP',
+            'cells': cells,
+        }])
+
+        errors = engine._find_rawdata_anomalies_for_sheet(
+            ws, '10', ['Drop Test'], report_date='2026-05-12', source_file_name='test.xlsx'
+        )
+
+        self.assertEqual(len(errors), 0)
+
+    def test_fail_with_three_gap_cps_reports_error(self):
+        """Fail at CP0, 3 gap CPs, then PASS → must report error (>=3 gap CPs)."""
+        cp_names = ['Drop20', 'Drop40', 'Drop60', 'Drop80', 'Drop100']
+        cells = [
+            ('FAIL', 'FFFF0000'),  # CP0: fail
+            ('/', None),            # CP1: gap
+            ('/', None),            # CP2: gap
+            ('/', None),            # CP3: gap (3 gaps now)
+            ('PASS', None),         # CP4: pass
+        ]
+
+        wb, ws = self._make_wb_with_sheet(cp_names, [{
+            'config': 'R3',
+            'unit_num': 'ER3-10-1',
+            'sn': 'SN_THREE_GAP',
+            'cells': cells,
+        }])
+
+        errors = engine._find_rawdata_anomalies_for_sheet(
+            ws, '10', ['Drop Test'], report_date='2026-05-12', source_file_name='test.xlsx'
+        )
+
+        self.assertGreater(len(errors), 0)
+        self.assertEqual(errors[0]['code'], 'failure_followed_by_gapped_later_data')
+
     def test_validate_rawdata_workbook_aggregates_sheet_errors(self):
         """validate_rawdata_workbook should collect errors from all WF sheets."""
         wb = Workbook()
         # Remove default sheet
         wb.remove(wb.active)
 
-        # Create a WF sheet with anomaly
+        # Create a WF sheet with anomaly (3 gap CPs to trigger)
         ws = wb.create_sheet('WF10')
-        cp_names = ['Drop20', 'Drop40', 'Drop60']
+        cp_names = ['Drop20', 'Drop40', 'Drop60', 'Drop80', 'Drop100']
         ws.cell(1, 3).value = 'Config'
         ws.cell(1, 4).value = 'Unit #'
         ws.cell(1, 5).value = 'S/N'
         ws.cell(1, 6).value = 'T0'
         for i, name in enumerate(cp_names):
             ws.cell(1, 7 + i).value = name
-        ws.cell(1, 10).value = 'Comments'
-        for i in range(3):
+        ws.cell(1, 12).value = 'Comments'
+        for i in range(5):
             ws.cell(2, 7 + i).value = 'Cosmetic'
         ws.cell(3, 3).value = 'R3'
         ws.cell(3, 4).value = 'ER3-10-1'
@@ -302,9 +350,10 @@ class RawdataValidationTests(unittest.TestCase):
         ws.cell(3, 7).value = 'FAIL'
         ws.cell(3, 7).fill = PatternFill('solid', fgColor='FFFF0000')
         ws.cell(3, 8).value = '/'
-        ws.cell(3, 9).value = 'PASS'
+        ws.cell(3, 9).value = '/'
+        ws.cell(3, 10).value = '/'
+        ws.cell(3, 11).value = 'PASS'
 
-        # Also add Test Summary sheet (required by validate but we test workbook-level)
         ts_test_names = {'10': ['Drop Test']}
 
         errors = engine.validate_rawdata_workbook(wb, ts_test_names, report_date='2026-05-12')
