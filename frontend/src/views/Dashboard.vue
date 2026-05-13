@@ -2,7 +2,6 @@
   <div class="page-container page-shell">
     <div class="page-head">
       <h1 class="page-title">{{ t('dashboard.title') }}</h1>
-      <SnQuickSearch />
     </div>
 
     <LoadingState v-if="loading && !store.overviewData" variant="skeleton" />
@@ -76,7 +75,6 @@ import OverviewCards from '@/components/OverviewCards.vue'
 import CategoryCards from '@/components/CategoryCards.vue'
 import TrendChart from '@/components/TrendChart.vue'
 import DashboardHeatmap from '@/components/DashboardHeatmap.vue'
-import SnQuickSearch from '@/components/SnQuickSearch.vue'
 import CatManageModal from '@/components/CatManageModal.vue'
 import LoadingState from '@/components/LoadingState.vue'
 import ErrorState from '@/components/ErrorState.vue'

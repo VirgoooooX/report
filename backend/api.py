@@ -938,7 +938,7 @@ def api_sn_timeline():
     results = []
     for sn in sns:
         rows = conn.execute(
-            """SELECT wf_num, config, cp_idx, check_item_idx, check_item,
+            """SELECT wf_num, config, unit_num, cp_idx, check_item_idx, check_item,
                       status, failure_type, raw_value, first_report_date
                FROM sn_check_state_history
                WHERE sn = ? AND first_report_id <= ?
@@ -947,9 +947,12 @@ def api_sn_timeline():
             (sn, rid, rid),
         ).fetchall()
 
+        sn_unit_num = ''
         by_wf = {}
         for r in rows:
             wf = r['wf_num']
+            if not sn_unit_num and r['unit_num']:
+                sn_unit_num = r['unit_num']
             if wf not in by_wf:
                 by_wf[wf] = {'wf_num': wf, 'config': r['config'], 'cps': {}}
             cp_idx = r['cp_idx']
@@ -1024,7 +1027,7 @@ def api_sn_timeline():
                 'cps': cp_list,
             })
 
-        results.append({'sn': sn, 'wfs': sn_wfs})
+        results.append({'sn': sn, 'unit_num': sn_unit_num, 'wfs': sn_wfs})
 
     # Get WF names
     wf_names = get_wf_names()
@@ -1052,7 +1055,7 @@ def api_query_by_wf():
         params.append(config)
 
     sn_rows = conn.execute(
-        f"""SELECT DISTINCT sn, config FROM sn_check_state_history
+        f"""SELECT DISTINCT sn, config, COALESCE(unit_num, '') AS unit_num FROM sn_check_state_history
             WHERE wf_num = ? AND first_report_id <= ?
               AND (closed_before_report_id IS NULL OR closed_before_report_id > ?)
               {config_filter}
@@ -1125,6 +1128,7 @@ def api_query_by_wf():
 
         sns_data.append({
             'sn': sn,
+            'unit_num': sn_row['unit_num'] or '',
             'config': cfg,
             'current_cp_idx': current_cp_idx,
             'total_cps': total_cps,

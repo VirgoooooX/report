@@ -3,7 +3,7 @@
 
 /**
  * Normalize one CP object from either /api/query/by-wf or /api/query/sn-timeline
- * into the shape consumed by SnLifecycle.vue.
+ * into a shape consumed by the compare view.
  */
 export function normalizeCp(cp) {
   if (!cp || typeof cp !== 'object') return null
@@ -30,12 +30,13 @@ export function normalizeCp(cp) {
 
 /**
  * /api/query/sn-timeline → per-SN grouped by WF.
- * Returns: [{sn, unit_num?, wfs: [{wf_num, config, total_cps, current_cp_idx, cpList, checkItems}]}]
+ * Returns: [{sn, unit_num, wfs: [{wf_num, config, total_cps, current_cp_idx, cpList, checkItems}]}]
  */
 export function normalizeTimeline(payload) {
   const results = payload?.results || []
   return results.map(r => ({
     sn: r.sn,
+    unit_num: r.unit_num || '',
     wfs: (r.wfs || []).map(w => ({
       wf_num: w.wf_num,
       config: w.config,
@@ -64,6 +65,7 @@ export function normalizeByWf(payload) {
     summary: payload.summary || {},
     sns: (payload.sns || []).map(s => ({
       sn: s.sn,
+      unit_num: s.unit_num || '',
       config: s.config,
       current_cp_idx: s.current_cp_idx,
       total_cps: s.total_cps,
@@ -101,6 +103,7 @@ export function groupMultiSnByWf(normalized) {
       }
       g.sns.push({
         sn: sn.sn,
+        unit_num: sn.unit_num || '',
         config: wf.config,
         current_cp_idx: wf.current_cp_idx,
         cpList: wf.cpList,

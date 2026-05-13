@@ -11,7 +11,7 @@
         <router-link to="/failure-analysis">{{ t('nav.failureAnalysis') }}</router-link>
         <router-link to="/predictions">{{ t('nav.predictions') }}</router-link>
         <router-link to="/schedule">{{ t('nav.schedule') }}</router-link>
-        <router-link to="/export">{{ t('nav.export') }}</router-link>
+        <router-link to="/sn">{{ t('nav.queryCenter') }}</router-link>
         <button
           class="nav-upload-btn"
           :class="{ uploading: uploadState === 'uploading', done: uploadState === 'done' }"
@@ -130,7 +130,7 @@ const navLinks = [
   { to: '/failure-analysis', label: t('nav.failureAnalysis') },
   { to: '/predictions', label: t('nav.predictions') },
   { to: '/schedule', label: t('nav.schedule') },
-  { to: '/export', label: t('nav.export') },
+  { to: '/sn', label: t('nav.queryCenter') },
 ]
 
 function toggleLanguage() {

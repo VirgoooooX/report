@@ -371,6 +371,7 @@ export const useAppStore = defineStore('app', () => {
     crossData,
     fetchWfList, fetchQueryByWf, fetchSnTimeline, fetchSnCheckDetails, resolveMark,
     queryWfList, queryByWfData, queryMultiSnData, querySingleSnData,
+    queryByWfKey, queryMultiSnKey, querySingleSnKey,
     wfSortKey, sortedWfKeys,
     invalidateCache, checkVersion, triggerRefresh, refreshCounter
   }

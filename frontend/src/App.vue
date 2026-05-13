@@ -17,9 +17,11 @@ import NavBar from '@/components/NavBar.vue'
 const store = useAppStore()
 const route = useRoute()
 
-const mainClass = computed(() => (
-  route.name === 'test-summary' ? 'main--test-summary' : ''
-))
+const mainClass = computed(() => {
+  if (route.name === 'test-summary') return 'main--test-summary'
+  if (route.name === 'sn') return 'main--query-center'
+  return ''
+})
 
 const antTheme = computed(() => ({
   algorithm: store.theme === 'dark' ? theme.darkAlgorithm : theme.defaultAlgorithm,
@@ -40,6 +42,9 @@ const antTheme = computed(() => ({
 
 <style scoped>
 .main--test-summary {
+  max-width: 1680px;
+}
+.main--query-center {
   max-width: 1680px;
 }
 </style>
