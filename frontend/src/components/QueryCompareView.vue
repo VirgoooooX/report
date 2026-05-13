@@ -1,14 +1,14 @@
 <template>
   <div class="compare-wrap">
-    <div v-for="g in groups" :key="g.wf_num" class="card compare-group">
+    <div v-for="g in sortedGroups" :key="g.wf_num" class="card compare-group">
       <div class="group-header">
         <span class="wf-pill">WF{{ g.wf_num }}</span>
         <span class="wf-name">{{ wfNames[g.wf_num] || g.test_name || '' }}</span>
         <span class="sn-count">· {{ g.sns.length }} {{ t('queryCenter.snsCount') }}</span>
       </div>
 
+      <!-- Lifecycle mode: full CP matrix -->
       <div class="compare-matrix">
-        <!-- Header strip: click column header to open group-level popover (all SNs at that CP) -->
         <div class="matrix-head">
           <div class="sn-col-head">
             <span>SN</span>
@@ -33,7 +33,6 @@
           </div>
         </div>
 
-        <!-- One row per SN -->
         <div v-for="sn in g.sns" :key="sn.sn + '_' + sn.config" class="matrix-row">
           <div class="sn-col" @click="emit('open-sn', sn.sn)">
             <span class="sn-label">{{ sn.sn }}</span>
@@ -41,19 +40,12 @@
             <span v-else class="sn-mark-badge placeholder" aria-hidden="true"></span>
             <span class="sn-config-chip">{{ sn.config }}</span>
           </div>
-
           <div class="cp-row-cells" :style="gridStyle(g)">
             <div
               v-for="col in g.cpColumns"
               :key="sn.sn + '_' + col.cp_idx"
               class="cp-cell"
-              :class="[
-                cellClass(sn, col.cp_idx),
-                {
-                  'clickable-cell': canClickRowCell(sn, col.cp_idx),
-                  'row-active': isActiveRowCell(g, sn, col.cp_idx),
-                }
-              ]"
+              :class="[cellClass(sn, col.cp_idx), { 'clickable-cell': canClickRowCell(sn, col.cp_idx), 'row-active': isActiveRowCell(g, sn, col.cp_idx) }]"
               :title="cellTitle(sn, col.cp_idx)"
               @click.stop="canClickRowCell(sn, col.cp_idx) && openRowPopover(g, sn, col.cp_idx, $event)"
             >
@@ -63,16 +55,14 @@
               <template v-else-if="getCp(sn, col.cp_idx)">
                 <span class="cell-label">{{ cellLabel(sn, col.cp_idx) }}</span>
               </template>
-              <template v-else>
-                <span class="cell-dash">—</span>
-              </template>
+              <template v-else><span class="cell-dash">—</span></template>
             </div>
           </div>
         </div>
       </div>
+
     </div>
 
-    <!-- Floating popover: reused for both per-row and group modes -->
     <CheckItemPopover
       :visible="active.kind !== null"
       :anchor="active.anchor"
@@ -99,11 +89,44 @@ const props = defineProps({
   groups: { type: Array, required: true },
   checkItemFilter: { type: String, default: null },
   wfNames: { type: Object, default: () => ({}) },
+  sortByMark: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['open-sn', 'request-ci'])
 
 const { t } = useI18n()
+
+// Natural sort for mark numbers like ER1-10-3 → [1, 10, 3]
+function parseMarkSort(mark) {
+  if (!mark) return [Infinity]
+  const nums = String(mark).replace(/^ER/i, '').split(/[-_]/).map(s => {
+    const n = parseInt(s, 10)
+    return isNaN(n) ? Infinity : n
+  })
+  return nums
+}
+
+function compareMarks(a, b) {
+  const ka = parseMarkSort(a)
+  const kb = parseMarkSort(b)
+  for (let i = 0; i < Math.max(ka.length, kb.length); i++) {
+    const va = ka[i] ?? 0, vb = kb[i] ?? 0
+    if (va !== vb) return va - vb
+  }
+  return 0
+}
+
+// Sorted groups: when sortByMark, sort SNs within each group by mark number
+const sortedGroups = computed(() => {
+  if (!props.sortByMark) return props.groups
+  return props.groups.map(g => ({
+    ...g,
+    sns: [...g.sns].sort((a, b) => compareMarks(a.unit_num, b.unit_num)),
+  }))
+})
+
+// For mark sort display only
+function hasFaForGroup() { return false }
 
 // Active popover descriptor. kind: 'row' | 'group' | null
 const active = reactive({
@@ -569,4 +592,6 @@ watch(() => props.groups, () => closePopover())
     grid-template-columns: minmax(180px, 220px) 1fr;
   }
 }
+
+/* Failures-only and FA styles removed — now in separate Failure tab */
 </style>

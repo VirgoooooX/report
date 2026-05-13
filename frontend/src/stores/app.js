@@ -56,6 +56,9 @@ export const useAppStore = defineStore('app', () => {
   const queryWfList = ref(null)
   const querySingleSnData = ref(null)
   const querySingleSnKey = ref('')
+  const lastQueryType = ref('')  // 'lookup' | 'wcfg' | 'failure'
+  const faCache = ref({})  // key = sn → [{symptom, failure_mode, ...}]
+  const faLastTags = ref('')  // comma-separated last FA query tags
   const configColors = {
     overall: '#4f6f8f',
     R1FNF: '#4f6f8f',
@@ -295,6 +298,57 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  async function fetchSnFa(sns, filters = {}) {
+    const list = Array.isArray(sns) ? sns : sns ? [sns] : []
+    const params = new URLSearchParams()
+    if (list.length) params.set('sns', list.join(','))
+    if (filters.symptom) params.set('symptom', filters.symptom)
+    if (filters.location) params.set('location', filters.location)
+    if (filters.config) params.set('config', filters.config)
+    if (filters.wf) params.set('wf', filters.wf)
+    if (filters.failed_test) params.set('failed_test', filters.failed_test)
+
+    // When filters are used, skip cache (filters change results)
+    const hasFilters = Object.values(filters).some(v => !!v)
+    if (!hasFilters && list.length) {
+      const toFetch = list.filter(sn => !faCache.value[sn])
+      if (!toFetch.length) {
+        const out = {}
+        for (const sn of list) out[sn] = faCache.value[sn] || []
+        return out
+      }
+    }
+
+    try {
+      const data = await requestJson(`/api/sn/fa?${params.toString()}`)
+      const results = data?.results || {}
+      if (!hasFilters) {
+        for (const sn of list) faCache.value[sn] = results[sn] || []
+      }
+      return results
+    } catch {
+      const out = {}
+      for (const sn of list) out[sn] = []
+      return out
+    }
+  }
+
+  const faOptions = ref(null)
+  async function fetchFaOptions(filters = {}) {
+    const params = new URLSearchParams()
+    if (filters.wf) params.set('wf', filters.wf)
+    if (filters.config) params.set('config', filters.config)
+    if (filters.failed_test) params.set('failed_test', filters.failed_test)
+    if (filters.symptom) params.set('symptom', filters.symptom)
+    if (filters.location) params.set('location', filters.location)
+    try {
+      faOptions.value = await requestJson(`/api/sn/fa/options?${params.toString()}`)
+    } catch {
+      faOptions.value = { symptoms: [], locations: [], configs: [], wfs: [], failed_tests: [] }
+    }
+    return faOptions.value
+  }
+
   // ── Cache layer ──
 
   function invalidateCache() {
@@ -320,6 +374,8 @@ export const useAppStore = defineStore('app', () => {
     querySingleSnData.value = null
     querySingleSnKey.value = ''
     queryWfList.value = null
+    lastQueryType.value = ''
+    faCache.value = {}
     lastOverviewFetch.value = 0
     lastSummaryFetch.value = 0
   }
@@ -369,9 +425,10 @@ export const useAppStore = defineStore('app', () => {
     fetchOverview, fetchDailyIssues, fetchSummary, fetchCategories, fetchPredictions, fetchSchedule,
     fetchCategoryDetail, searchSn, fetchExportData, uploadReport, fetchFaCross,
     crossData,
-    fetchWfList, fetchQueryByWf, fetchSnTimeline, fetchSnCheckDetails, resolveMark,
+    fetchWfList, fetchQueryByWf, fetchSnTimeline, fetchSnCheckDetails, resolveMark, fetchSnFa, fetchFaOptions,
     queryWfList, queryByWfData, queryMultiSnData, querySingleSnData,
     queryByWfKey, queryMultiSnKey, querySingleSnKey,
+    lastQueryType, faCache, faLastTags, faOptions,
     wfSortKey, sortedWfKeys,
     invalidateCache, checkVersion, triggerRefresh, refreshCounter
   }

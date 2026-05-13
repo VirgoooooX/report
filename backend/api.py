@@ -1363,6 +1363,154 @@ def api_resolve_mark():
     return jsonify({'sn': row['sn'], 'unit_num': mark})
 
 
+@app.route('/api/sn/fa')
+def api_sn_fa():
+    """Get FA Tracker failure info for one or more SNs, with optional filters.
+    Query: sns=SN1,SN2,... (optional — if empty, returns all issues matching filters)
+           symptom, location, config, wf, failed_test (all optional, comma-separated for multi-select)
+    Returns: {results: {SN: [row_dict, ...]}}
+    """
+    sns_param = request.args.get('sns', '').strip()
+    sns = [s.strip() for s in sns_param.split(',') if s.strip()] if sns_param else []
+    if len(sns) > 50:
+        return jsonify({'error': 'Provide up to 50 SNs'}), 400
+
+    # Collect filters (comma-separated values → sets for multi-select)
+    filter_symptom = {v.strip().lower() for v in request.args.get('symptom', '').split(',') if v.strip()}
+    filter_location = {v.strip().lower() for v in request.args.get('location', '').split(',') if v.strip()}
+    filter_config = {v.strip().lower() for v in request.args.get('config', '').split(',') if v.strip()}
+    filter_wf = {_normalize_wf(v) for v in request.args.get('wf', '').split(',') if v.strip()}
+    filter_wf.discard('')
+    filter_test = {v.strip().lower() for v in request.args.get('failed_test', '').split(',') if v.strip()}
+
+    fa_path = _find_fa_tracker_by_date(None)
+    if not fa_path:
+        return jsonify({'results': {}})
+
+    try:
+        all_issues = fa_analysis.read_fa_tracker(fa_path)
+    except Exception:
+        return jsonify({'results': {}})
+
+    sn_set = set(sns) if sns else None
+    results = {}
+    for issue in all_issues:
+        sn = str(issue.get('SN', '')).strip()
+        if not sn:
+            continue
+        # SN filter (if provided)
+        if sn_set and sn not in sn_set:
+            continue
+        # Apply multi-select filters (match ANY of the selected values)
+        if filter_symptom:
+            val = str(issue.get('Failure Symptom / Failure Message', '') or '').lower()
+            if not any(f in val for f in filter_symptom):
+                continue
+        if filter_location:
+            val = str(issue.get('Failed Location', '') or '').lower()
+            if not any(f == val or f in val for f in filter_location):
+                continue
+        if filter_config:
+            val = str(issue.get('Config', '') or '').lower()
+            if val not in filter_config:
+                continue
+        if filter_wf:
+            val = _normalize_wf(issue.get('WF', ''))
+            if val not in filter_wf:
+                continue
+        if filter_test:
+            val = str(issue.get('Failed Test', '') or '').lower()
+            if not any(f in val for f in filter_test):
+                continue
+
+        # Return all meaningful fields
+        entry = {}
+        for key, val in issue.items():
+            if key.startswith('_'):
+                continue
+            entry[key] = str(val).strip() if val is not None else ''
+        results.setdefault(sn, []).append(entry)
+
+    return jsonify({'results': results})
+
+
+@app.route('/api/sn/fa/options')
+def api_sn_fa_options():
+    """Get cascading filter options from FA Tracker.
+    Accepts partial filters to narrow down remaining options.
+    Query: wf, config, failed_test, symptom, location (all optional, comma-separated)
+    Returns: {symptoms: [...], locations: [...], configs: [...], wfs: [...], failed_tests: [...]}
+    """
+    fa_path = _find_fa_tracker_by_date(None)
+    if not fa_path:
+        return jsonify({'symptoms': [], 'locations': [], 'configs': [], 'wfs': [], 'failed_tests': []})
+
+    try:
+        all_issues = fa_analysis.read_fa_tracker(fa_path)
+    except Exception:
+        return jsonify({'symptoms': [], 'locations': [], 'configs': [], 'wfs': [], 'failed_tests': []})
+
+    # Parse current selections for cascading
+    sel_wf = {_normalize_wf(v) for v in request.args.get('wf', '').split(',') if v.strip()}
+    sel_wf.discard('')
+    sel_config = {v.strip().lower() for v in request.args.get('config', '').split(',') if v.strip()}
+    sel_test = {v.strip().lower() for v in request.args.get('failed_test', '').split(',') if v.strip()}
+    sel_symptom = {v.strip().lower() for v in request.args.get('symptom', '').split(',') if v.strip()}
+    sel_location = {v.strip().lower() for v in request.args.get('location', '').split(',') if v.strip()}
+
+    # Filter issues by current selections to derive remaining options
+    filtered = []
+    for issue in all_issues:
+        if sel_wf:
+            val = _normalize_wf(issue.get('WF', ''))
+            if val not in sel_wf:
+                continue
+        if sel_config:
+            val = str(issue.get('Config', '') or '').strip().lower()
+            if val not in sel_config:
+                continue
+        if sel_test:
+            val = str(issue.get('Failed Test', '') or '').strip().lower()
+            if not any(f in val for f in sel_test):
+                continue
+        if sel_symptom:
+            val = str(issue.get('Failure Symptom / Failure Message', '') or '').strip().lower()
+            if not any(f in val for f in sel_symptom):
+                continue
+        if sel_location:
+            val = str(issue.get('Failed Location', '') or '').strip().lower()
+            if not any(f == val or f in val for f in sel_location):
+                continue
+        filtered.append(issue)
+
+    # Derive distinct values from filtered set
+    symptoms = set()
+    locations = set()
+    configs = set()
+    wfs = set()
+    failed_tests = set()
+
+    for issue in filtered:
+        v = str(issue.get('Failure Symptom / Failure Message', '') or '').strip()
+        if v: symptoms.add(v)
+        v = str(issue.get('Failed Location', '') or '').strip()
+        if v: locations.add(v)
+        v = str(issue.get('Config', '') or '').strip()
+        if v: configs.add(v)
+        v = _normalize_wf(issue.get('WF', ''))
+        if v: wfs.add(v)
+        v = str(issue.get('Failed Test', '') or '').strip()
+        if v: failed_tests.add(v)
+
+    return jsonify({
+        'symptoms': sorted(symptoms),
+        'locations': sorted(locations),
+        'configs': sorted(configs),
+        'wfs': sorted(wfs, key=lambda x: float(x) if x.replace('.', '').isdigit() else 999),
+        'failed_tests': sorted(failed_tests),
+    })
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  API: Export
 # ═══════════════════════════════════════════════════════════════════════
