@@ -31,6 +31,12 @@ DEFAULT_RULES = {
             'skip': 'Skip',
         },
     },
+    'matching': {
+        'location_mappings': [
+            {'daily_report': 'Touch-CAL-Post', 'fa_tracker': 'Touch Post', 'mode': 'exact'},
+            {'daily_report': 'Cosmetic', 'fa_tracker': 'Home, IR Lens, Power, System, TV, Play, Vol+, Vol-', 'mode': 'multi'},
+        ],
+    },
 }
 _CACHE = None
 _CACHE_MTIME = None
@@ -59,6 +65,22 @@ def normalize_rules(value):
     rules = _merge(DEFAULT_RULES, value or {})
     parse = rules.setdefault('parse', {})
     display = rules.setdefault('display', {})
+    matching = rules.setdefault('matching', {})
+
+    # Normalize location_mappings
+    raw_mappings = matching.get('location_mappings', [])
+    normalized_mappings = []
+    for m in (raw_mappings if isinstance(raw_mappings, list) else []):
+        if not isinstance(m, dict):
+            continue
+        dr = str(m.get('daily_report', '')).strip()
+        fa = str(m.get('fa_tracker', '')).strip()
+        mode = str(m.get('mode', 'exact')).strip().lower()
+        if mode not in ('exact', 'contains', 'multi'):
+            mode = 'exact'
+        if dr and fa:
+            normalized_mappings.append({'daily_report': dr, 'fa_tracker': fa, 'mode': mode})
+    matching['location_mappings'] = normalized_mappings
 
     for key in ('spec_fill_colors', 'strife_fill_colors', 'spec_font_colors'):
         parse[key] = [
@@ -158,3 +180,81 @@ def resolve_config_alias(value):
         return text
     aliases = load_rules().get('parse', {}).get('config_aliases', {})
     return aliases.get(text, text)
+
+
+def normalize_location_for_matching(daily_location, fa_location):
+    """Check if two location values should be considered a match based on mapping rules.
+    Returns True if they match (either exact equality or via mapping rules).
+    """
+    if daily_location == fa_location:
+        return True
+    if not daily_location or not fa_location:
+        return False
+    mappings = load_rules().get('matching', {}).get('location_mappings', [])
+    for m in mappings:
+        dr = m.get('daily_report', '')
+        fa = m.get('fa_tracker', '')
+        mode = m.get('mode', 'exact')
+        if mode == 'exact':
+            if daily_location == dr and fa_location == fa:
+                return True
+            if daily_location == fa and fa_location == dr:
+                return True
+        elif mode == 'contains':
+            if daily_location == dr and fa_location == fa:
+                return True
+            if fa_location.lower() in daily_location.lower():
+                return True
+            if daily_location.lower() in fa_location.lower():
+                return True
+        elif mode == 'multi':
+            fa_values = [v.strip() for v in fa.split(',') if v.strip()]
+            if daily_location == dr and fa_location in fa_values:
+                return True
+    return False
+
+
+def get_location_canonical(location, source='daily_report'):
+    """Get canonical location value for matching key generation.
+    Maps location values to a canonical form so both sides produce the same key.
+    source: 'daily_report' or 'fa_tracker'
+    
+    Modes:
+    - exact: daily_report value and fa_tracker value are direct equivalents
+    - contains: fa_tracker value is a substring of daily_report value (or vice versa)
+    - multi: one daily_report value maps to multiple fa_tracker values (comma-separated)
+    
+    Strategy: For each mapping rule, both sides map to the same canonical value
+    (the daily_report side). This ensures the keys match.
+    """
+    loc = str(location or '').strip()
+    if not loc:
+        return loc
+    mappings = load_rules().get('matching', {}).get('location_mappings', [])
+    for m in mappings:
+        dr = m.get('daily_report', '')
+        fa = m.get('fa_tracker', '')
+        mode = m.get('mode', 'exact')
+        if mode == 'exact':
+            if source == 'daily_report' and loc == dr:
+                return dr  # already canonical
+            if source == 'fa_tracker' and loc == fa:
+                return dr  # map to canonical
+        elif mode == 'contains':
+            if source == 'daily_report' and loc == dr:
+                return dr  # already canonical
+            if source == 'fa_tracker' and loc == fa:
+                return dr  # map to canonical
+            # fa_tracker location is a substring of daily_report value
+            if source == 'fa_tracker' and loc.lower() in dr.lower():
+                return dr
+            if source == 'daily_report' and fa.lower() in loc.lower():
+                return loc
+        elif mode == 'multi':
+            # fa_tracker field contains comma-separated list of values
+            fa_values = [v.strip() for v in fa.split(',') if v.strip()]
+            if source == 'daily_report' and loc == dr:
+                return dr  # already canonical
+            if source == 'fa_tracker' and loc in fa_values:
+                return dr  # map any of the fa values to canonical
+    return loc

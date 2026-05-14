@@ -9,7 +9,7 @@ import os, sys, json, io, csv, datetime, re, logging, shutil
 
 sys.path.insert(0, os.path.dirname(__file__))
 from app_paths import RAWDATA_DIR, PARSED_DIR, ensure_runtime_dirs, iter_rawdata_files, find_rawdata_file
-from custom_rules import DEFAULT_RULES, load_rules, save_rules
+from custom_rules import DEFAULT_RULES, load_rules, save_rules, get_location_canonical
 from engine import (
     analyze, build_summary_table, build_failure_detail, extract_test_schedule_segments,
     RawDataValidationError, validate_daily_report,
@@ -2245,9 +2245,10 @@ def api_daily_issues():
     rpt = conn.execute("SELECT report_date FROM reports WHERE id = ?", (rid,)).fetchone()
     report_date = rpt['report_date'] if rpt else ''
     
-    # Key function for 5-dimension comparison (cycle is display-only)
-    def _key(d):
-        return (d['sn'], d['wf'], d['config'], d['type'], d['location'])
+    # Key function for 4-dimension comparison + location with mapping support
+    def _key(d, source='daily_report'):
+        loc = get_location_canonical(d['location'], source)
+        return (d['sn'], d['wf'], d['config'], d['type'], loc)
 
     def _lifecycle_failure_issues(target_rid):
         """All active failures as of target_rid (for fallback/full list)."""
@@ -2285,7 +2286,12 @@ def api_daily_issues():
         return issues
 
     def _lifecycle_new_failures(target_rid):
-        """Only failures first seen in target_rid (first_report_id == target_rid)."""
+        """Only failures first seen in the same report_date as target_rid.
+
+        When a report is re-uploaded, a new report_id is created for the same date.
+        Lifecycle rows keep their original first_report_id from the first upload,
+        so we match all report_ids sharing the same report_date.
+        """
         rows = conn.execute(
             """SELECT l.sn, l.wf_num, l.config, l.failure_type,
                       l.check_item, l.test_idx, l.cp_idx,
@@ -2295,7 +2301,7 @@ def api_daily_issues():
                  ON c.wf_num = l.wf_num AND c.cp_idx = l.cp_idx
                LEFT JOIN current_test_definitions t
                  ON t.wf_num = l.wf_num AND t.test_idx = l.test_idx
-               WHERE l.first_report_id = ?
+               WHERE l.first_report_date = (SELECT report_date FROM reports WHERE id = ?)
                  AND l.failure_type IS NOT NULL
                ORDER BY CAST(l.wf_num AS REAL), l.config, l.sn, l.cp_idx, l.check_item_idx""",
             (target_rid,),
@@ -2455,9 +2461,9 @@ def api_daily_issues():
 
     conn.close()
 
-    # 4. Cross-reference by 5-dimension key: (sn, wf, config, type, location)
-    db_map = {_key(d): d for d in db_issues}
-    fa_map = {_key(f): f for f in fa_issues}
+    # 4. Cross-reference by 5-dimension key: (sn, wf, config, type, location) with mapping
+    db_map = {_key(d, 'daily_report'): d for d in db_issues}
+    fa_map = {_key(f, 'fa_tracker'): f for f in fa_issues}
 
     matched_keys = set(db_map) & set(fa_map)
     only_db_keys = set(db_map) - set(fa_map)
@@ -2470,11 +2476,27 @@ def api_daily_issues():
         db = db_map[k]
         issues.append({
             'sn': db['sn'], 'wf': db['wf'], 'config': db['config'],
-            'type': db['type'], 'location': db['location'],
+            'type': db['type'], 'location': fa.get('location', '') or db['location'],
             'failed_test': fa.get('failed_test', ''),
             'failed_cycle': db.get('failed_cycle', '') or fa.get('failed_cycle', ''),
             'symptom': fa.get('symptom', ''),
             'source': 'matched',
+            'detail': {
+                'daily_report': {
+                    'sn': db['sn'], 'wf': db['wf'], 'config': db['config'],
+                    'type': db['type'], 'location': db['location'],
+                    'failed_cycle': db.get('failed_cycle', ''),
+                },
+                'fa_tracker': {
+                    'sn': fa['sn'], 'wf': fa['wf'], 'config': fa['config'],
+                    'type': fa['type'], 'location': fa.get('location', ''),
+                    'failed_test': fa.get('failed_test', ''),
+                    'failed_cycle': fa.get('failed_cycle', ''),
+                    'symptom': fa.get('symptom', ''),
+                    'fa_num': fa.get('fa_num', ''),
+                    'fa_status': fa.get('fa_status', ''),
+                },
+            },
         })
 
     for k in only_db_keys:

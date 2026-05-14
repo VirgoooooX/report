@@ -337,8 +337,8 @@ const popoverMatrixRows = computed(() => {
 
 function classify(status, failure_type) {
   if (status === 'pass') return 'pass'
-  if (status === 'fail' || failure_type === 'spec') return 'fail'
   if (failure_type === 'strife') return 'strife'
+  if (status === 'fail' || failure_type === 'spec') return 'fail'
   return 'skip'
 }
 
@@ -364,8 +364,8 @@ function cellLabel(sn, cpIdx) {
   const cp = getCp(sn, cpIdx)
   if (!cp) return ''
   if (cp.status === 'pass') return 'P'
+  if (cp.failure_type === 'strife') return 'SF'
   if (cp.status === 'fail' || cp.failure_type === 'spec') return 'F'
-  if (cp.failure_type === 'strife') return 'S'
   if (cp.status === 'pending') return '·'
   return ''
 }

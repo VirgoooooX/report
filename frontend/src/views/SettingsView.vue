@@ -186,6 +186,58 @@
         </label>
       </div>
 
+      <!-- Location Mapping Panel -->
+      <div class="panel location-mapping-panel">
+        <div class="panel-title">
+          <SwapOutlined />
+          <span>Location 映射规则</span>
+        </div>
+        <p class="panel-desc">配置 Daily Report 与 FA Tracker 之间 Location 字段的映射关系，用于每日问题一致性校验。</p>
+        <div class="mapping-table-wrap">
+          <table class="mapping-table">
+            <thead>
+              <tr>
+                <th>Daily Report Location</th>
+                <th>FA Tracker Location</th>
+                <th>匹配模式</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, i) in ruleDraft.matching.location_mappings" :key="i">
+                <td>
+                  <input v-model="row.daily_report" placeholder="e.g. Touch-CAL-Post" class="mapping-input" />
+                </td>
+                <td>
+                  <input v-model="row.fa_tracker" :placeholder="row.mode === 'multi' ? 'e.g. Home, TV, Play, Vol+' : 'e.g. Touch Post'" class="mapping-input" />
+                </td>
+                <td>
+                  <select v-model="row.mode" class="mapping-select">
+                    <option value="exact">精确匹配</option>
+                    <option value="contains">包含匹配</option>
+                    <option value="multi">多值匹配</option>
+                  </select>
+                </td>
+                <td>
+                  <button class="icon-btn small danger" title="删除" @click="removeMapping(i)">
+                    <DeleteOutlined />
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="!ruleDraft.matching.location_mappings.length">
+                <td colspan="4" class="empty-row">暂无映射规则</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="action-row">
+          <button class="btn-secondary" @click="addMapping">
+            <PlusOutlined />
+            <span>添加映射</span>
+          </button>
+        </div>
+      </div>
+
       <div class="panel rules-actions-panel">
         <div class="panel-title">
           <CodeOutlined />
@@ -224,9 +276,11 @@ import {
   EyeOutlined,
   FileExcelOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
   SettingOutlined,
+  SwapOutlined,
   UndoOutlined,
 } from '@ant-design/icons-vue'
 import { useAppStore } from '@/stores/app'
@@ -257,6 +311,9 @@ const emptyRules = () => ({
     hidden_wfs_text: '',
     wf_aliases_text: '',
     config_order_text: '',
+  },
+  matching: {
+    location_mappings: [],
   },
 })
 
@@ -348,6 +405,7 @@ function stringifyMap(value) {
 function hydrateRules(rules) {
   const parse = rules?.parse || {}
   const display = rules?.display || {}
+  const matching = rules?.matching || {}
   ruleDraft.parse.spec_fill_colors_text = (parse.spec_fill_colors || []).join(', ')
   ruleDraft.parse.strife_fill_colors_text = (parse.strife_fill_colors || []).join(', ')
   ruleDraft.parse.spec_font_colors_text = (parse.spec_font_colors || []).join(', ')
@@ -357,6 +415,11 @@ function hydrateRules(rules) {
   ruleDraft.display.hidden_wfs_text = (display.hidden_wfs || []).join(', ')
   ruleDraft.display.wf_aliases_text = stringifyMap(display.wf_aliases)
   ruleDraft.display.config_order_text = (display.config_order || []).join(', ')
+  ruleDraft.matching.location_mappings = (matching.location_mappings || []).map(m => ({
+    daily_report: m.daily_report || '',
+    fa_tracker: m.fa_tracker || '',
+    mode: m.mode || 'exact',
+  }))
 }
 
 function serializeRules() {
@@ -374,6 +437,15 @@ function serializeRules() {
       wf_aliases: parseMap(ruleDraft.display.wf_aliases_text),
       config_order: parseList(ruleDraft.display.config_order_text),
     },
+    matching: {
+      location_mappings: ruleDraft.matching.location_mappings
+        .filter(m => m.daily_report.trim() && m.fa_tracker.trim())
+        .map(m => ({
+          daily_report: m.daily_report.trim(),
+          fa_tracker: m.fa_tracker.trim(),
+          mode: m.mode || 'exact',
+        })),
+    },
   }
 }
 
@@ -390,6 +462,14 @@ async function parseSelected() {
   } finally {
     parsing.value = false
   }
+}
+
+function addMapping() {
+  ruleDraft.matching.location_mappings.push({ daily_report: '', fa_tracker: '', mode: 'exact' })
+}
+
+function removeMapping(index) {
+  ruleDraft.matching.location_mappings.splice(index, 1)
 }
 
 function parseFile(file) {
@@ -784,6 +864,74 @@ tr:hover td {
 
 .rules-actions-panel {
   grid-column: 1 / -1;
+}
+
+.location-mapping-panel {
+  grid-column: 1 / -1;
+}
+
+.panel-desc {
+  margin: 0 0 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.mapping-table-wrap {
+  overflow-x: auto;
+}
+
+.mapping-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.mapping-table th {
+  background: var(--bg-row-stripe);
+  padding: 8px 10px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border-light);
+  white-space: nowrap;
+}
+
+.mapping-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border-light);
+  vertical-align: middle;
+}
+
+.mapping-input {
+  width: 100%;
+  min-width: 140px;
+  height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.mapping-input:focus {
+  border-color: var(--border-focus);
+}
+
+.mapping-select {
+  height: 32px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
 }
 
 .rules-preview {

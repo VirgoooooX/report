@@ -42,30 +42,63 @@
             </tr>
           </thead>
           <tbody>
-            <tr
-              v-for="(row, i) in issues"
-              :key="i"
-              :class="{ 'row-warn': row.source !== 'matched' }"
-            >
-              <td>{{ i + 1 }}</td>
-              <td class="mono">{{ row.sn }}</td>
-              <td>WF{{ row.wf }}</td>
-              <td>{{ row.config }}</td>
-              <td>{{ row.failed_test }}</td>
-              <td :title="row.failed_cycle">{{ row.failed_cycle }}</td>
-              <td>
-                <span :class="row.type === 'spec' ? 'type-spec' : row.type === 'strife' ? 'type-strife' : ''">
-                  {{ row.type === 'spec' ? 'Spec' : row.type === 'strife' ? 'Strife' : row.type }}
-                </span>
-              </td>
-              <td :title="row.symptom">{{ row.symptom }}</td>
-              <td>{{ row.location }}</td>
-              <td>
-                <span class="source-badge" :class="'source-' + row.source">
-                  {{ sourceLabel(row.source) }}
-                </span>
-              </td>
-            </tr>
+            <template v-for="(row, i) in issues" :key="i">
+              <tr
+                :class="{
+                  'row-warn': row.source !== 'matched',
+                  'row-expandable': row.source === 'matched',
+                  'row-expanded': expandedRows.has(i),
+                }"
+                @click="row.source === 'matched' && toggleRow(i)"
+              >
+                <td>
+                  <span v-if="row.source === 'matched'" class="expand-icon" :class="{ open: expandedRows.has(i) }">▶</span>
+                  <span v-else>{{ i + 1 }}</span>
+                </td>
+                <td class="mono">{{ row.sn }}</td>
+                <td>WF{{ row.wf }}</td>
+                <td>{{ row.config }}</td>
+                <td>{{ row.failed_test }}</td>
+                <td :title="row.failed_cycle">{{ row.failed_cycle }}</td>
+                <td>
+                  <span :class="row.type === 'spec' ? 'type-spec' : row.type === 'strife' ? 'type-strife' : ''">
+                    {{ row.type === 'spec' ? 'Spec' : row.type === 'strife' ? 'Strife' : row.type }}
+                  </span>
+                </td>
+                <td :title="row.symptom">{{ row.symptom }}</td>
+                <td>{{ row.location }}</td>
+                <td>
+                  <span class="source-badge" :class="'source-' + row.source">
+                    {{ sourceLabel(row.source) }}
+                  </span>
+                </td>
+              </tr>
+              <!-- Expanded detail rows for matched issues -->
+              <tr v-if="row.source === 'matched' && expandedRows.has(i)" class="detail-row">
+                <td colspan="10">
+                  <div class="detail-grid">
+                    <div class="detail-source">
+                      <span class="detail-label">📄 Daily Report</span>
+                      <div class="detail-fields">
+                        <span class="detail-field"><b>Location:</b> {{ row.detail?.daily_report?.location }}</span>
+                        <span class="detail-field"><b>Failed Cycle:</b> {{ row.detail?.daily_report?.failed_cycle }}</span>
+                      </div>
+                    </div>
+                    <div class="detail-source">
+                      <span class="detail-label">📊 FA Tracker</span>
+                      <div class="detail-fields">
+                        <span class="detail-field"><b>Location:</b> {{ row.detail?.fa_tracker?.location }}</span>
+                        <span class="detail-field"><b>Failed Test:</b> {{ row.detail?.fa_tracker?.failed_test }}</span>
+                        <span class="detail-field"><b>Failed Cycle:</b> {{ row.detail?.fa_tracker?.failed_cycle }}</span>
+                        <span class="detail-field"><b>Symptom:</b> {{ row.detail?.fa_tracker?.symptom }}</span>
+                        <span v-if="row.detail?.fa_tracker?.fa_num" class="detail-field"><b>FA#:</b> {{ row.detail?.fa_tracker?.fa_num }}</span>
+                        <span v-if="row.detail?.fa_tracker?.fa_status" class="detail-field"><b>Status:</b> {{ row.detail?.fa_tracker?.fa_status }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -74,7 +107,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, reactive } from 'vue'
 import { useI18n } from '@/i18n/useI18n'
 
 const { t } = useI18n()
@@ -85,7 +118,17 @@ defineProps({
 })
 
 const expanded = ref(true)
+const expandedRows = reactive(new Set())
+
 const toggle = () => { expanded.value = !expanded.value }
+
+function toggleRow(index) {
+  if (expandedRows.has(index)) {
+    expandedRows.delete(index)
+  } else {
+    expandedRows.add(index)
+  }
+}
 
 function sourceLabel(s) {
   const map = {
@@ -154,6 +197,15 @@ td {
 .mono { font-family: var(--font-mono); font-size: 11px; }
 
 .row-warn td { background: #fff9e6; }
+.row-expandable { cursor: pointer; }
+.row-expandable:hover td { background: var(--bg-row-hover); }
+.row-expanded td { background: var(--bg-row-stripe); border-bottom-color: transparent; }
+
+.expand-icon {
+  display: inline-block; font-size: 9px; color: var(--text-muted);
+  transition: transform var(--duration-fast);
+}
+.expand-icon.open { transform: rotate(90deg); }
 
 .type-spec { color: var(--color-danger); font-weight: 600; }
 .type-strife { color: #d97706; font-weight: 600; }
@@ -165,4 +217,31 @@ td {
 .source-matched { background: #d4edda; color: #155724; }
 .source-only_daily_report { background: #fff3cd; color: #856404; }
 .source-only_fa_tracker { background: #f8d7da; color: #721c24; }
+
+/* Detail row */
+.detail-row td {
+  padding: 0; background: var(--bg-muted); border-bottom: 1px solid var(--border-light);
+}
+.detail-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  padding: 12px 16px;
+}
+.detail-source {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 14px; border-radius: var(--radius-sm);
+  background: var(--bg-card); border: 1px solid var(--border-light);
+}
+.detail-label {
+  font-size: 11px; font-weight: 700; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.3px;
+}
+.detail-fields {
+  display: flex; flex-direction: column; gap: 3px;
+}
+.detail-field {
+  font-size: 12px; color: var(--text-primary); white-space: normal;
+}
+.detail-field b {
+  color: var(--text-muted); font-weight: 600; margin-right: 4px;
+}
 </style>

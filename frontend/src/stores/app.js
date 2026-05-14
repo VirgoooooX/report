@@ -451,7 +451,46 @@ export const useAppStore = defineStore('app', () => {
   // Run version check on store creation (survives page reload)
   checkVersion()
 
+  function clearQueryCache(type) {
+    if (type === 'lookup') {
+      querySingleSnKey.value = ''
+      querySingleSnData.value = null
+      queryMultiSnKey.value = ''
+      queryMultiSnData.value = null
+    } else if (type === 'wcfg') {
+      queryByWfKey.value = ''
+      queryByWfData.value = null
+    } else if (type === 'failure') {
+      faLastTags.value = ''
+    }
+    if (lastQueryType.value === type) lastQueryType.value = ''
+  }
+
   function triggerRefresh() {
+    // Clear data caches so pages re-fetch from API, but preserve query state
+    // (lastQueryType, query*Key, faLastTags) so QueryCenter can restore
+    overviewData.value = null
+    summaryData.value = null
+    dailyIssues.value = []
+    dailyIssuesConsistency.value = {}
+    dailyIssuesReportDate.value = ''
+    categories.value = []
+    categoryDetail.value = null
+    categoryDetailName.value = ''
+    predictions.value = []
+    predictionsCacheKey.value = ''
+    scheduleData.value = null
+    exportData.value = null
+    exportDataKey.value = ''
+    crossData.value = null
+    faCrossDims.value = ''
+    queryByWfData.value = null
+    queryMultiSnData.value = null
+    querySingleSnData.value = null
+    queryWfList.value = null
+    faCache.value = {}
+    lastOverviewFetch.value = 0
+    lastSummaryFetch.value = 0
     refreshCounter.value++
   }
 
@@ -490,6 +529,7 @@ export const useAppStore = defineStore('app', () => {
     fetchRawdataSettings, deleteRawdataFile, parseRawdata,
     fetchSettingsRules, saveSettingsRules, resetSettingsRules,
     wfSortKey, sortedWfKeys,
-    invalidateCache, checkVersion, triggerRefresh, refreshCounter
+    invalidateCache, checkVersion, triggerRefresh, refreshCounter,
+    clearQueryCache
   }
 })

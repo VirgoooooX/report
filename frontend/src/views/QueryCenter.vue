@@ -248,7 +248,7 @@ function onLookupKeydown(e) {
 function onPaste(e) { e.preventDefault(); const text = (e.clipboardData || window.clipboardData).getData('text') || ''; const tokens = text.split(/[\s,，\n\r\t]+/).filter(Boolean); for (const tok of tokens) { if (!lookupTags.value.includes(tok)) lookupTags.value.push(tok) }; lookupInput.value = ''; lookupSuggestions.value = [] }
 function flushInput() { const tokens = lookupInput.value.trim().split(/[\s,，]+/).filter(Boolean); for (const tok of tokens) { if (!lookupTags.value.includes(tok)) lookupTags.value.push(tok) }; lookupInput.value = ''; lookupSuggestions.value = [] }
 function removeTag(i) { lookupTags.value.splice(i, 1) }
-function clearLookup() { lookupTags.value = []; lookupInput.value = ''; lookupResults.value = []; lookupError.value = ''; availableCheckItems.value = []; checkItemFilter.value = null; router.replace({ name: 'sn', query: { mode: 'lookup' } }) }
+function clearLookup() { lookupTags.value = []; lookupInput.value = ''; lookupResults.value = []; lookupError.value = ''; availableCheckItems.value = []; checkItemFilter.value = null; store.clearQueryCache('lookup'); router.replace({ name: 'sn', query: { mode: 'lookup' } }) }
 function selectSuggestion(s) { if (!lookupTags.value.includes(s.sn)) lookupTags.value.push(s.sn); lookupInput.value = ''; lookupSuggestions.value = []; nextTick(() => focusTagInput()) }
 function submitLookup() { flushInput(); if (!lookupTags.value.length) return; pushState({ mode: 'lookup', tags: lookupTags.value.join(',') }) }
 
@@ -281,7 +281,7 @@ const summarySegments = computed(() => { const s = wcfgData.value?.summary || {}
 const inProgressCount = computed(() => { const s = wcfgData.value?.summary || {}; return Math.max(0, (s.total_sns || 0) - (s.completed || 0) - (s.spec_fails || 0) - (s.strife_fails || 0)) })
 const wcfgGroups = computed(() => { if (!wcfgData.value) return []; const d = wcfgData.value; const cpColumns = []; const seen = new Set(); for (const sn of d.sns) for (const cp of sn.cpList) { if (!seen.has(cp.cp_idx)) { seen.add(cp.cp_idx); cpColumns.push({ cp_idx: cp.cp_idx, cp_name: cp.cp_name }) } }; cpColumns.sort((a, b) => a.cp_idx - b.cp_idx); let checkItems = d.check_items || []; if (!checkItems.length) { const nameSet = new Set(); for (const sn of d.sns) for (const cp of sn.cpList) for (const ci of cp.checkItems || []) if (ci.name) nameSet.add(ci.name); checkItems = [...nameSet] }; return [{ wf_num: d.wf_num, test_name: d.wf_name || '', check_items: checkItems, total_cps: d.total_cps, cpColumns, sns: d.sns.map(s => ({ sn: s.sn, unit_num: s.unit_num || '', config: s.config, current_cp_idx: s.current_cp_idx, cpList: s.cpList, cpByIdx: Object.fromEntries(s.cpList.map(c => [c.cp_idx, c])) })) }] })
 function onWfChange() { wcfgSelectedConfig.value = ''; wcfgData.value = null }
-function clearWcfg() { wcfgWfSelection.value = []; wcfgConfigSelection.value = []; wcfgSelectedWf.value = ''; wcfgSelectedConfig.value = ''; wcfgData.value = null; wcfgError.value = ''; availableCheckItems.value = []; checkItemFilter.value = null; router.replace({ name: 'sn', query: { mode: 'wcfg' } }) }
+function clearWcfg() { wcfgWfSelection.value = []; wcfgConfigSelection.value = []; wcfgSelectedWf.value = ''; wcfgSelectedConfig.value = ''; wcfgData.value = null; wcfgError.value = ''; availableCheckItems.value = []; checkItemFilter.value = null; store.clearQueryCache('wcfg'); router.replace({ name: 'sn', query: { mode: 'wcfg' } }) }
 function doWfCfgSearch() {
   // Extract WF number from display string "WF10 — Drop 1m PB"
   const wfDisplay = wcfgWfSelection.value[0] || ''
@@ -309,7 +309,7 @@ function onFaKeydown(e) { if (e.key === 'Enter') { if (faInput.value.trim()) flu
 function onFaPaste(e) { e.preventDefault(); const text = (e.clipboardData || window.clipboardData).getData('text') || ''; const tokens = text.split(/[\s,，\n\r\t]+/).filter(Boolean); for (const tok of tokens) { if (!faTags.value.includes(tok)) faTags.value.push(tok) }; faInput.value = '' }
 function flushFaInput() { const tokens = faInput.value.trim().split(/[\s,，]+/).filter(Boolean); for (const tok of tokens) { if (!faTags.value.includes(tok)) faTags.value.push(tok) }; faInput.value = '' }
 function removeFaTag(i) { faTags.value.splice(i, 1) }
-function clearFa() { faTags.value = []; faInput.value = ''; faResults.value = []; faError.value = ''; faExpanded.value = {}; faFilterSymptom.value = []; faFilterLocation.value = []; faFilterWf.value = []; faFilterConfig.value = []; faFilterTest.value = []; router.replace({ name: 'sn', query: { mode: 'failure' } }) }
+function clearFa() { faTags.value = []; faInput.value = ''; faResults.value = []; faError.value = ''; faExpanded.value = {}; faFilterSymptom.value = []; faFilterLocation.value = []; faFilterWf.value = []; faFilterConfig.value = []; faFilterTest.value = []; store.clearQueryCache('failure'); router.replace({ name: 'sn', query: { mode: 'failure' } }) }
 
 // FA expand state
 const faExpanded = ref({})

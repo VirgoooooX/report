@@ -92,7 +92,7 @@
 </template>
 
 <script setup>
-import { ref, onUnmounted } from 'vue'
+import { ref, watch, onUnmounted } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n/useI18n'
 import { MenuOutlined, SettingOutlined } from '@ant-design/icons-vue'
@@ -106,8 +106,14 @@ const refreshing = ref(false)
 function onRefresh() {
   refreshing.value = true
   store.triggerRefresh()
-  setTimeout(() => { refreshing.value = false }, 600)
+  // Safety fallback: stop spinning after 5s even if loading state doesn't change
+  setTimeout(() => { refreshing.value = false }, 5000)
 }
+
+// Stop spinning when store finishes loading
+watch(() => store.loading, (val) => {
+  if (!val && refreshing.value) refreshing.value = false
+})
 
 // Upload
 const uploadState = ref('idle')

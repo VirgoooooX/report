@@ -628,14 +628,22 @@ def save_sn_check_state_history(conn, report_id, report_date, rows):
             ))
     
     # 3. Close rows not observed in this import (disappeared from report)
+    # Only close missing rows when this import is for the latest (or newer) date.
+    # Re-uploading a historical date should NOT close rows from later dates.
+    latest_date_row = conn.execute(
+        "SELECT MAX(report_date) as d FROM reports WHERE is_active = 1"
+    ).fetchone()
+    latest_date = latest_date_row['d'] if latest_date_row else ''
+
     missing_closures = []
-    for identity, row in open_by_identity.items():
-        if identity not in observed and row.get('first_report_id', 0) < report_id:
-            missing_closures.append((
-                report_id,
-                report_date,
-                row['id'],
-            ))
+    if report_date >= (latest_date or ''):
+        for identity, row in open_by_identity.items():
+            if identity not in observed and row.get('first_report_id', 0) < report_id:
+                missing_closures.append((
+                    report_id,
+                    report_date,
+                    row['id'],
+                ))
     
     # 4. Execute batched writes
     # 4a. Update last_seen for unchanged rows
@@ -829,11 +837,44 @@ def get_sn_check_details(report_id, wf_num, config, sn, cp_idx):
 
 
 def get_cell_failures(report_id, wf_num, config, test_idx, sns):
-    """Return check-item-level failure details for the given SNs in a cell."""
+    """Return check-item-level failure details for the given SNs in a cell.
+
+    Only returns failures from the LAST CP of the test (consistent with
+    the summary cell statistics which only count last-CP failures).
+    """
     if not sns:
         return []
     conn = get_conn()
+
+    # Determine the last CP for this test_idx (matches summary logic)
+    last_cp_row = conn.execute(
+        """SELECT MAX(cp_idx) AS last_cp FROM report_cps
+           WHERE report_id = ? AND wf_num = ? AND test_idx = ?""",
+        (report_id, wf_num, test_idx),
+    ).fetchone()
+    last_cp = last_cp_row['last_cp'] if last_cp_row and last_cp_row['last_cp'] is not None else None
+
+    if last_cp is None:
+        # Fallback: try current_cp_definitions
+        last_cp_row = conn.execute(
+            """SELECT MAX(cp_idx) AS last_cp FROM current_cp_definitions
+               WHERE wf_num = ? AND test_idx = ?""",
+            (wf_num, test_idx),
+        ).fetchone()
+        last_cp = last_cp_row['last_cp'] if last_cp_row and last_cp_row['last_cp'] is not None else None
+
     placeholders = ','.join(['?' for _ in sns])
+
+    if last_cp is not None:
+        cp_filter = "AND sci.cp_idx = ?"
+        params_history = (report_id, wf_num, config, test_idx, last_cp, *sns, report_id, report_id)
+        params_results = (report_id, wf_num, config, test_idx, last_cp, *sns)
+    else:
+        # If we can't determine last_cp, fall back to no cp filter (original behavior)
+        cp_filter = ""
+        params_history = (report_id, wf_num, config, test_idx, *sns, report_id, report_id)
+        params_results = (report_id, wf_num, config, test_idx, *sns)
+
     rows = conn.execute(
         f"""SELECT sci.sn, sci.cp_idx, rcp.cp_name, sci.check_item_idx,
                    sci.check_item, sci.raw_value, sci.normalized_value,
@@ -846,12 +887,13 @@ def get_cell_failures(report_id, wf_num, config, test_idx, sns):
             WHERE sci.wf_num = ?
               AND sci.config = ?
               AND sci.test_idx = ?
+              {cp_filter}
               AND sci.sn IN ({placeholders})
               AND sci.failure_type IS NOT NULL
               AND sci.first_report_id <= ?
               AND (sci.closed_before_report_id IS NULL OR sci.closed_before_report_id > ?)
             ORDER BY sci.sn, sci.cp_idx, sci.check_item_idx""",
-        (report_id, wf_num, config, test_idx, *sns, report_id, report_id),
+        params_history,
     ).fetchall()
     if rows:
         conn.close()
@@ -870,10 +912,11 @@ def get_cell_failures(report_id, wf_num, config, test_idx, sns):
               AND sci.wf_num = ?
               AND sci.config = ?
               AND sci.test_idx = ?
+              {cp_filter}
               AND sci.sn IN ({placeholders})
               AND sci.failure_type IS NOT NULL
             ORDER BY sci.sn, sci.cp_idx, sci.check_item_idx""",
-        (report_id, wf_num, config, test_idx, *sns),
+        params_results,
     ).fetchall()
     conn.close()
     return rows
