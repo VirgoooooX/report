@@ -67,7 +67,11 @@ export const messages = {
       topFailures: '主要失效',
       dailyUpdates: '每日更新',
       crossAnalysis: '交叉分析热力图',
-      snQuickSearch: 'SN 快捷查询'
+      snQuickSearch: 'SN 快捷查询',
+      overallCompletion: '整体完成率',
+      completedMetric: '已完成',
+      remainingMetric: '剩余',
+      cpsCompleted: '个 CP 已完成'
     },
     testSummary: {
       title: '测试汇总',
@@ -140,6 +144,17 @@ export const messages = {
       symptom: '症状',
       location: '位置',
       failedTest: '失效测试',
+      snOrMarkLabel: 'SN / Mark',
+      faActionsTitle: '跟进措施与根因',
+      faFollowUpLabel: '跟进措施',
+      faRootCauseLabel: '根因',
+      faCaLabel: 'CA',
+      faCategoryILabel: 'Category I',
+      faCategoryIILabel: 'Category II',
+      faOtherInfoTitle: '其他信息',
+      faColCycle: 'Cycle',
+      faColType: '类型',
+      faColStatus: '状态',
     },
     failureAnalysis: {
       title: '失效分析',
@@ -169,7 +184,15 @@ export const messages = {
       strifeFailureRateLabel: '争议失效率:',
       percentage: '百分比:',
       failureDetail: '失效详情',
-      noRecordsFound: '未找到记录'
+      noRecordsFound: '未找到记录',
+      tabByTestItem: '按测试项',
+      tabByConfig: '按配置',
+      tabByWf: '按 Waterfall',
+      tabTopN: 'Top N',
+      colDimension: '维度',
+      colSpecFail: 'Spec 失效',
+      colStrifeFail: 'Strife 失效',
+      colFailureRate: '失效率'
     },
     predictions: {
       title: '预测',
@@ -248,7 +271,33 @@ export const messages = {
       cpsCompleted: '个 CP 已完成',
       waterfalls: 'Waterfall',
       noWaterfallData: '暂无 Waterfall 数据',
-      loadingCategory: '正在加载分类...'
+      loadingCategory: '正在加载分类...',
+      manageCategories: '管理分类',
+      deleteCategory: '删除分类',
+      deleteConfirm: '确认删除分类 "{{ name }}"？',
+      name: '名称',
+      noWfs: '该分类下无 WF',
+      addWf: '添加 WF',
+      newCategory: '新建分类',
+      wfPlaceholder: 'WFxx',
+      newCatPlaceholder: '新分类名称',
+      loadFailed: '加载分类失败'
+    },
+    failureMatrix: {
+      dimSymptom: '失效症状',
+      dimLocation: '失效位置',
+      dimTest: '失效测试项',
+      dimWf: 'WF',
+      dimConfig: 'Config',
+      colFaNum: 'FA#',
+      colSn: 'SN',
+      colWf: 'WF',
+      colConfig: 'Config',
+      colTest: 'Failed Test',
+      colType: '类型',
+      colSymptom: '症状',
+      colLocation: '位置',
+      colFaStatus: 'FA Status'
     },
     dailyUpdate: {
       title: '每日更新',
@@ -268,6 +317,32 @@ export const messages = {
       issueCount: '个问题',
       expand: '展开',
       collapse: '收起'
+    },
+    dailyIssues: {
+      dataInconsistent: '检测到数据不一致',
+      dataConsistent: '数据一致',
+      onlyInDaily: '{{ count }} 项仅存在于 Daily Report',
+      onlyInFa: '{{ count }} 项仅存在于 FA Tracker',
+      allConfirmed: '全部 {{ count }} 项已在两个数据源中确认',
+      dailyReportLabel: 'Daily Report',
+      faTrackerLabel: 'FA Tracker',
+      consistent: '一致',
+      dailyReportOnly: '仅 Daily Report',
+      faTrackerOnly: '仅 FA Tracker'
+    },
+    charts: {
+      noTrendData: '暂无趋势数据',
+      noFailureData: '暂无失效数据',
+      failureRate: '失效率'
+    },
+    statusBadge: {
+      pass: 'PASS',
+      specFail: 'SPEC FAIL',
+      strife: 'STRIFE',
+      auto: '自动发报',
+      manual: '手动',
+      done: '已完成',
+      pending: '待处理'
     },
     upload: {
       title: '上传报告',
@@ -364,7 +439,21 @@ export const messages = {
       brainstormTemplateTitle: '规则模板',
       brainstormTemplateBody: '把常见项目阶段的颜色、WF 别名、隐藏项和 Config 顺序保存成模板，一键切换。',
       brainstormInboxTitle: '异常数据收件箱',
-      brainstormInboxBody: '把无法识别的 WF、未知 Config、空 SN、重复 SN 聚合成待处理队列，设置页里逐条处理。'
+      brainstormInboxBody: '把无法识别的 WF、未知 Config、空 SN、重复 SN 聚合成待处理队列，设置页里逐条处理。',
+      locationMapping: 'Location 映射规则',
+      locationMappingDesc: '配置 Daily Report 与 FA Tracker 之间 Location 字段的映射关系，用于每日问题一致性校验。',
+      colDailyReport: 'Daily Report Location',
+      colFaTracker: 'FA Tracker Location',
+      matchMode: '匹配模式',
+      exactMatch: '精确匹配',
+      containsMatch: '包含匹配',
+      multiMatch: '多值匹配',
+      deleteMapping: '删除',
+      noMappings: '暂无映射规则',
+      addMapping: '添加映射',
+      dailyReportPlaceholder: 'e.g. Touch-CAL-Post',
+      faTrackerPlaceholder: 'e.g. Touch Post',
+      faTrackerPlaceholderMulti: 'e.g. Home, TV, Play, Vol+'
     }
   },
   'en-US': {
@@ -435,7 +524,11 @@ export const messages = {
       topFailures: 'Top Failures',
       dailyUpdates: 'Daily Updates',
       crossAnalysis: 'Cross-Analysis Heatmap',
-      snQuickSearch: 'SN Quick Search'
+      snQuickSearch: 'SN Quick Search',
+      overallCompletion: 'Overall Completion',
+      completedMetric: 'Completed',
+      remainingMetric: 'Remaining',
+      cpsCompleted: 'CPs completed'
     },
     testSummary: {
       title: 'Test Summary',
@@ -508,6 +601,17 @@ export const messages = {
       symptom: 'Symptom',
       location: 'Location',
       failedTest: 'Failed Test',
+      snOrMarkLabel: 'SN / Mark',
+      faActionsTitle: 'Actions & Root Cause',
+      faFollowUpLabel: 'Follow Up Actions',
+      faRootCauseLabel: 'Root Cause',
+      faCaLabel: 'CA',
+      faCategoryILabel: 'Category I',
+      faCategoryIILabel: 'Category II',
+      faOtherInfoTitle: 'Other Info',
+      faColCycle: 'Cycle',
+      faColType: 'Type',
+      faColStatus: 'Status',
     },
     failureAnalysis: {
       title: 'Failure Analysis',
@@ -537,7 +641,15 @@ export const messages = {
       strifeFailureRateLabel: 'Strife Failure Rate:',
       percentage: 'Percentage:',
       failureDetail: 'Failure Detail',
-      noRecordsFound: 'No records found'
+      noRecordsFound: 'No records found',
+      tabByTestItem: 'By Test Item',
+      tabByConfig: 'By Config',
+      tabByWf: 'By Waterfall',
+      tabTopN: 'Top N',
+      colDimension: 'Dimension',
+      colSpecFail: 'Spec Fail',
+      colStrifeFail: 'Strife Fail',
+      colFailureRate: 'Failure Rate'
     },
     predictions: {
       title: 'Predictions',
@@ -616,7 +728,33 @@ export const messages = {
       cpsCompleted: 'CPs completed',
       waterfalls: 'Waterfalls',
       noWaterfallData: 'No waterfall data available',
-      loadingCategory: 'Loading category...'
+      loadingCategory: 'Loading category...',
+      manageCategories: 'Manage Categories',
+      deleteCategory: 'Delete Category',
+      deleteConfirm: 'Delete category "{{ name }}"?',
+      name: 'Name',
+      noWfs: 'No WFs in this category',
+      addWf: 'Add WF',
+      newCategory: 'New Category',
+      wfPlaceholder: 'WFxx',
+      newCatPlaceholder: 'New category name',
+      loadFailed: 'Failed to load categories'
+    },
+    failureMatrix: {
+      dimSymptom: 'Failure Symptom',
+      dimLocation: 'Failed Location',
+      dimTest: 'Failed Test',
+      dimWf: 'WF',
+      dimConfig: 'Config',
+      colFaNum: 'FA#',
+      colSn: 'SN',
+      colWf: 'WF',
+      colConfig: 'Config',
+      colTest: 'Failed Test',
+      colType: 'Type',
+      colSymptom: 'Symptom',
+      colLocation: 'Location',
+      colFaStatus: 'FA Status'
     },
     dailyUpdate: {
       title: 'Daily Update',
@@ -636,6 +774,32 @@ export const messages = {
       issueCount: 'issue(s)',
       expand: 'Expand',
       collapse: 'Collapse'
+    },
+    dailyIssues: {
+      dataInconsistent: 'Data Inconsistency Detected',
+      dataConsistent: 'Data Consistent',
+      onlyInDaily: '{{ count }} item(s) only in Daily Report',
+      onlyInFa: '{{ count }} item(s) only in FA Tracker',
+      allConfirmed: 'All {{ count }} issue(s) confirmed in both sources',
+      dailyReportLabel: 'Daily Report',
+      faTrackerLabel: 'FA Tracker',
+      consistent: 'Consistent',
+      dailyReportOnly: 'Daily Report only',
+      faTrackerOnly: 'FA Tracker only'
+    },
+    charts: {
+      noTrendData: 'No trend data available',
+      noFailureData: 'No failure data',
+      failureRate: 'Failure Rate'
+    },
+    statusBadge: {
+      pass: 'PASS',
+      specFail: 'SPEC FAIL',
+      strife: 'STRIFE',
+      auto: 'Auto',
+      manual: 'Manual',
+      done: 'Done',
+      pending: 'Pending'
     },
     upload: {
       title: 'Upload Report',
@@ -732,7 +896,21 @@ export const messages = {
       brainstormTemplateTitle: 'Rule Templates',
       brainstormTemplateBody: 'Save common project-stage colors, WF aliases, hidden items, and config order as templates for one-click switching.',
       brainstormInboxTitle: 'Exception Inbox',
-      brainstormInboxBody: 'Collect unknown WFs, unknown configs, empty SNs, and duplicate SNs into a queue for review directly in Settings.'
+      brainstormInboxBody: 'Collect unknown WFs, unknown configs, empty SNs, and duplicate SNs into a queue for review directly in Settings.',
+      locationMapping: 'Location Mapping Rules',
+      locationMappingDesc: 'Configure Location field mappings between Daily Report and FA Tracker for daily issue consistency checks.',
+      colDailyReport: 'Daily Report Location',
+      colFaTracker: 'FA Tracker Location',
+      matchMode: 'Match Mode',
+      exactMatch: 'Exact Match',
+      containsMatch: 'Contains Match',
+      multiMatch: 'Multi-Value Match',
+      deleteMapping: 'Delete',
+      noMappings: 'No mapping rules',
+      addMapping: 'Add Mapping',
+      dailyReportPlaceholder: 'e.g. Touch-CAL-Post',
+      faTrackerPlaceholder: 'e.g. Touch Post',
+      faTrackerPlaceholderMulti: 'e.g. Home, TV, Play, Vol+'
     }
   }
 }

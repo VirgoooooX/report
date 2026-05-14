@@ -74,19 +74,45 @@ function buildFaRecordMap(faRecords, testName) {
     faBySn.get(sn).push(record)
   }
 
-  const selected = new Map()
-  for (const [sn, records] of faBySn.entries()) {
-    const matched = targetTest
-      ? records.find(record => normalizeTestName(getField(record, ['Failed Test'])) === targetTest)
-      : null
-    selected.set(sn, matched || records[0])
+  return { faBySn, targetTest }
+}
+
+function findFaForCheckItem(faBySn, targetTest, sn, checkItem) {
+  const records = faBySn.get(sn)
+  if (!records || !records.length) return null
+
+  const normItem = checkItem ? checkItem.toLowerCase().replace(/[^a-z0-9]+/g, '') : ''
+
+  // 1. Best match: same test + same location (check item)
+  if (normItem) {
+    const byLocation = records.find(r => {
+      const loc = getField(r, ['Failed Location', 'Location']).toLowerCase().replace(/[^a-z0-9]+/g, '')
+      const test = normalizeTestName(getField(r, ['Failed Test']))
+      return loc === normItem && (!targetTest || test === targetTest)
+    })
+    if (byLocation) return byLocation
   }
 
-  return selected
+  // 2. Match by location only (ignore test name)
+  if (normItem) {
+    const byLocationOnly = records.find(r => {
+      const loc = getField(r, ['Failed Location', 'Location']).toLowerCase().replace(/[^a-z0-9]+/g, '')
+      return loc === normItem
+    })
+    if (byLocationOnly) return byLocationOnly
+  }
+
+  // 3. Fallback: match by test name, or first record
+  if (targetTest) {
+    const byTest = records.find(r => normalizeTestName(getField(r, ['Failed Test'])) === targetTest)
+    if (byTest) return byTest
+  }
+
+  return records[0]
 }
 
 export function buildCellIssueRows({ cellFailures = [], faRecords = [], testName = '' } = {}) {
-  const faBySn = buildFaRecordMap(faRecords, testName)
+  const { faBySn, targetTest } = buildFaRecordMap(faRecords, testName)
   const dailyReportSns = new Set()
   const rows = []
 
@@ -95,21 +121,21 @@ export function buildCellIssueRows({ cellFailures = [], faRecords = [], testName
     if (!sn) continue
     dailyReportSns.add(sn)
 
-    const faRecord = faBySn.get(sn)
     const cps = Array.isArray(snFailure?.cps) ? snFailure.cps : []
     for (const cp of cps) {
       const checkItems = Array.isArray(cp?.check_items) ? cp.check_items : []
       for (const item of checkItems) {
+        const faRecord = findFaForCheckItem(faBySn, targetTest, sn, item?.check_item)
         rows.push({
           sn,
           cp_name: cp?.cp_name || '',
           check_item: item?.check_item || '',
           value: item?.raw_value || item?.normalized_value || '',
           type: normalizeType(item?.failure_type || getField(faRecord, ['Failure Type  (Spec. or Strife)', 'Failure Type'])),
-          failed_test: getField(faRecord, ['Failed Test']),
+          failed_test: getField(faRecord, ['Failed Test']) || testName || '',
           symptom: getField(faRecord, ['Failure Symptom / Failure Message', 'Failure Symptom', 'Symptom']),
-          location: getField(faRecord, ['Failed Location', 'Location']),
-          failed_cycle: getField(faRecord, ['Failed Cycle Count', 'Failed Cycle']),
+          location: item?.check_item || getField(faRecord, ['Failed Location', 'Location']),
+          failed_cycle: cp?.cp_name || getField(faRecord, ['Failed Cycle Count', 'Failed Cycle']),
           source: faRecord ? 'matched' : 'only_daily_report',
         })
       }

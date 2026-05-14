@@ -16,11 +16,11 @@
         <thead>
           <tr>
             <th>#</th>
-            <th>Dimension</th>
-            <th>Spec Fail</th>
-            <th>Strife Fail</th>
-            <th>Total</th>
-            <th>Failure Rate</th>
+            <th>{{ t('failureAnalysis.colDimension') }}</th>
+            <th>{{ t('failureAnalysis.colSpecFail') }}</th>
+            <th>{{ t('failureAnalysis.colStrifeFail') }}</th>
+            <th>{{ t('failureAnalysis.colTotal') }}</th>
+            <th>{{ t('failureAnalysis.colFailureRate') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -64,10 +64,10 @@ const props = defineProps({
 const emit = defineEmits(['drill-down'])
 
 const tabs = [
-  { key: 'top_failures', label: 'By Test Item' },
-  { key: 'by_config', label: 'By Config' },
-  { key: 'by_wf', label: 'By Waterfall' },
-  { key: 'top_n', label: 'Top N' }
+  { key: 'top_failures', label: t('failureAnalysis.tabByTestItem') },
+  { key: 'by_config', label: t('failureAnalysis.tabByConfig') },
+  { key: 'by_wf', label: t('failureAnalysis.tabByWf') },
+  { key: 'top_n', label: t('failureAnalysis.tabTopN') }
 ]
 
 const activeTab = ref('top_failures')

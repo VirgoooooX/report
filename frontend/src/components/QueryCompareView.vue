@@ -372,8 +372,8 @@ function cellLabel(sn, cpIdx) {
 
 function cellTitle(sn, cpIdx) {
   const cp = getCp(sn, cpIdx)
-  if (!cp) return 'No data'
-  if (!cp.has_data) return `${cp.cp_name}: no data`
+  if (!cp) return t('common.noData')
+  if (!cp.has_data) return `${cp.cp_name}: ${t('common.noData')}`
   return `${cp.cp_name} · ${cp.status}${cp.failure_type ? ' (' + cp.failure_type + ')' : ''}`
 }
 

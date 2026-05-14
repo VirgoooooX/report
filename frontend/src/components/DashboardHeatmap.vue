@@ -94,8 +94,8 @@ const props = defineProps({
 
 const { t } = useI18n()
 
-const dim1Label = 'Failed Location'
-const dim2Label = 'Config'
+const dim1Label = t('failureMatrix.dimLocation')
+const dim2Label = t('failureMatrix.dimConfig')
 const displayMode = 'spec'
 const theme = computed(() => document.documentElement.dataset.theme || 'light')
 const failureTheme = computed(() => getFailureTheme(theme.value))
@@ -110,15 +110,15 @@ const detailError = ref(null)
 const detailRecords = ref([])
 
 const detailColumns = [
-  { title: 'FA#', dataIndex: 'fa_num', width: 50 },
-  { title: 'SN', dataIndex: 'sn', width: 110 },
-  { title: 'WF', dataIndex: 'wf', width: 50 },
-  { title: 'Config', dataIndex: 'config', width: 70 },
-  { title: 'Failed Test', dataIndex: 'failed_test', width: 140, ellipsis: true },
-  { title: 'Type', dataIndex: 'failure_type', width: 60 },
-  { title: 'Symptom', dataIndex: 'symptom', width: 110, ellipsis: true },
-  { title: 'Location', dataIndex: 'location', width: 90 },
-  { title: 'FA Status', dataIndex: 'fa_status', width: 90 },
+  { title: t('failureMatrix.colFaNum'), dataIndex: 'fa_num', width: 50 },
+  { title: t('failureMatrix.colSn'), dataIndex: 'sn', width: 110 },
+  { title: t('failureMatrix.colWf'), dataIndex: 'wf', width: 50 },
+  { title: t('failureMatrix.colConfig'), dataIndex: 'config', width: 70 },
+  { title: t('failureMatrix.colTest'), dataIndex: 'failed_test', width: 140, ellipsis: true },
+  { title: t('failureMatrix.colType'), dataIndex: 'failure_type', width: 60 },
+  { title: t('failureMatrix.colSymptom'), dataIndex: 'symptom', width: 110, ellipsis: true },
+  { title: t('failureMatrix.colLocation'), dataIndex: 'location', width: 90 },
+  { title: t('failureMatrix.colFaStatus'), dataIndex: 'fa_status', width: 90 },
 ]
 
 const matrixMap = computed(() => {

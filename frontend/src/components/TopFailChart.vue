@@ -6,13 +6,15 @@
       :options="chartOptions"
       :height="280"
     />
-    <div v-else class="empty-state">No failure data</div>
+    <div v-else class="empty-state">{{ t('charts.noFailureData') }}</div>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 import { Bar } from 'vue-chartjs'
+import { useI18n } from '@/i18n/useI18n'
+const { t } = useI18n()
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -59,7 +61,7 @@ const chartData = computed(() => {
     ),
     datasets: [
       {
-        label: 'Failure Rate',
+        label: t('charts.failureRate'),
         data: top5.map(d => d.rate ?? 0),
         backgroundColor: colors.map(c => c.bg),
         borderColor: colors.map(c => c.border),

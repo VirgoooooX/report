@@ -13,13 +13,13 @@ const props = defineProps({
 })
 
 const labelMap = {
-  pass: 'PASS',
-  spec_fail: 'SPEC FAIL',
-  strife_fail: 'STRIFE',
-  auto: 'Auto',
-  manual: 'Manual',
-  done: 'Done',
-  pending: 'Pending'
+  pass: t('statusBadge.pass'),
+  spec_fail: t('statusBadge.specFail'),
+  strife_fail: t('statusBadge.strife'),
+  auto: t('statusBadge.auto'),
+  manual: t('statusBadge.manual'),
+  done: t('statusBadge.done'),
+  pending: t('statusBadge.pending')
 }
 
 const label = computed(() => {
@@ -28,8 +28,8 @@ const label = computed(() => {
   if (raw === 'PASS') return t('common.pass')
   if (raw === 'SPEC FAIL') return t('common.spec')
   if (raw === 'STRIFE') return t('common.strife')
-  if (raw === 'Auto') return 'Auto'
-  if (raw === 'Manual') return 'Manual'
+  if (raw === 'Auto') return t('statusBadge.auto')
+  if (raw === 'Manual') return t('statusBadge.manual')
   if (raw === 'Done') return t('common.done')
   return raw
 })

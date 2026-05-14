@@ -128,7 +128,7 @@ async function loadAll(force = false) {
       store.fetchFaCross('location', 'config', force)
     ])
   } catch (e) {
-    error.value = e.message || 'Failed to load dashboard'
+    error.value = e.message || t('common.error')
   } finally {
     loading.value = false
   }

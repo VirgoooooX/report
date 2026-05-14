@@ -314,7 +314,7 @@ const barOptions = computed(() => {
           label: (ctx) => {
             const display = ctx.dataset.displayData?.[ctx.dataIndex]
             const rate = ctx.dataset.specRateData?.[ctx.dataIndex]
-            return rate !== undefined ? `${display} (Spec ${Number(rate || 0).toFixed(2)}%)` : (display || ctx.raw)
+            return rate !== undefined ? `${display} (${t('common.spec')} ${Number(rate || 0).toFixed(2)}%)` : (display || ctx.raw)
           }
         }
       },
@@ -364,11 +364,11 @@ const crossLoading = ref(false)
 const crossError = ref(null)
 
 const dimOptions = [
-  { label: 'Failure Symptom', value: 'symptom' },
-  { label: 'Failed Location', value: 'location' },
-  { label: 'Failed Test', value: 'failed_test' },
-  { label: 'WF', value: 'wf' },
-  { label: 'Config', value: 'config' },
+  { label: t('failureMatrix.dimSymptom'), value: 'symptom' },
+  { label: t('failureMatrix.dimLocation'), value: 'location' },
+  { label: t('failureMatrix.dimTest'), value: 'failed_test' },
+  { label: t('failureMatrix.dimWf'), value: 'wf' },
+  { label: t('failureMatrix.dimConfig'), value: 'config' },
 ]
 
 const dim1 = ref('location')
@@ -458,15 +458,15 @@ const detailError = ref(null)
 const detailRecords = ref([])
 
 const detailColumns = [
-  { title: 'FA#', dataIndex: 'fa_num', width: 50 },
-  { title: 'SN', dataIndex: 'sn', width: 110 },
-  { title: 'WF', dataIndex: 'wf', width: 50 },
-  { title: 'Config', dataIndex: 'config', width: 70 },
-  { title: 'Failed Test', dataIndex: 'failed_test', width: 140, ellipsis: true },
-  { title: 'Type', dataIndex: 'failure_type', width: 60 },
-  { title: 'Symptom', dataIndex: 'symptom', width: 110, ellipsis: true },
-  { title: 'Location', dataIndex: 'location', width: 90 },
-  { title: 'FA Status', dataIndex: 'fa_status', width: 90 },
+  { title: t('failureMatrix.colFaNum'), dataIndex: 'fa_num', width: 50 },
+  { title: t('failureMatrix.colSn'), dataIndex: 'sn', width: 110 },
+  { title: t('failureMatrix.colWf'), dataIndex: 'wf', width: 50 },
+  { title: t('failureMatrix.colConfig'), dataIndex: 'config', width: 70 },
+  { title: t('failureMatrix.colTest'), dataIndex: 'failed_test', width: 140, ellipsis: true },
+  { title: t('failureMatrix.colType'), dataIndex: 'failure_type', width: 60 },
+  { title: t('failureMatrix.colSymptom'), dataIndex: 'symptom', width: 110, ellipsis: true },
+  { title: t('failureMatrix.colLocation'), dataIndex: 'location', width: 90 },
+  { title: t('failureMatrix.colFaStatus'), dataIndex: 'fa_status', width: 90 },
 ]
 
 async function openDetail(filters) {

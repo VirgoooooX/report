@@ -11,15 +11,15 @@
       <div v-if="!consistency?.is_consistent && issues.length" class="banner banner-warn">
         <span class="banner-icon">⚠️</span>
         <div class="banner-text">
-          <strong>Data Inconsistency Detected</strong>
-          <span>{{ consistency.only_daily_report }} item(s) only in Daily Report, {{ consistency.only_fa_tracker }} item(s) only in FA Tracker</span>
+          <strong>{{ t('dailyIssues.dataInconsistent') }}</strong>
+          <span>{{ t('dailyIssues.onlyInDaily', { count: consistency.only_daily_report }) }}, {{ t('dailyIssues.onlyInFa', { count: consistency.only_fa_tracker }) }}</span>
         </div>
       </div>
       <div v-else-if="consistency?.is_consistent && issues.length" class="banner banner-ok">
         <span class="banner-icon">✅</span>
         <div class="banner-text">
-          <strong>Data Consistent</strong>
-          <span>All {{ issues.length }} issue(s) confirmed in both sources</span>
+          <strong>{{ t('dailyIssues.dataConsistent') }}</strong>
+          <span>{{ t('dailyIssues.allConfirmed', { count: issues.length }) }}</span>
         </div>
       </div>
       <div v-if="!issues.length" class="daily-empty">{{ t('common.empty') }}</div>
@@ -78,14 +78,14 @@
                 <td colspan="10">
                   <div class="detail-grid">
                     <div class="detail-source">
-                      <span class="detail-label">📄 Daily Report</span>
+                      <span class="detail-label">📄 {{ t('dailyIssues.dailyReportLabel') }}</span>
                       <div class="detail-fields">
                         <span class="detail-field"><b>Location:</b> {{ row.detail?.daily_report?.location }}</span>
                         <span class="detail-field"><b>Failed Cycle:</b> {{ row.detail?.daily_report?.failed_cycle }}</span>
                       </div>
                     </div>
                     <div class="detail-source">
-                      <span class="detail-label">📊 FA Tracker</span>
+                      <span class="detail-label">📊 {{ t('dailyIssues.faTrackerLabel') }}</span>
                       <div class="detail-fields">
                         <span class="detail-field"><b>Location:</b> {{ row.detail?.fa_tracker?.location }}</span>
                         <span class="detail-field"><b>Failed Test:</b> {{ row.detail?.fa_tracker?.failed_test }}</span>
@@ -132,9 +132,9 @@ function toggleRow(index) {
 
 function sourceLabel(s) {
   const map = {
-    matched: 'Consistent',
-    only_daily_report: 'Daily Report only',
-    only_fa_tracker: 'FA Tracker only',
+    matched: t('dailyIssues.consistent'),
+    only_daily_report: t('dailyIssues.dailyReportOnly'),
+    only_fa_tracker: t('dailyIssues.faTrackerOnly'),
   }
   return map[s] || s
 }

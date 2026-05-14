@@ -4,18 +4,18 @@
     <div class="card overall-card" :style="{ '--overall-progress': `${clampedOverallPct}%` }">
       <div class="overall-card-fill" aria-hidden="true"></div>
       <div class="overall-summary">
-        <div class="overall-kicker">Overall Completion</div>
+        <div class="overall-kicker">{{ t('dashboard.overallCompletion') }}</div>
         <div class="overall-value">{{ overallPct.toFixed(1) }}%</div>
-        <div class="overall-sublabel">{{ completed }}/{{ total }} CPs completed</div>
+        <div class="overall-sublabel">{{ completed }}/{{ total }} {{ t('dashboard.cpsCompleted') }}</div>
       </div>
 
       <div class="overall-breakdown">
         <div class="overall-metric">
-          <span class="metric-label">Completed</span>
+          <span class="metric-label">{{ t('dashboard.completedMetric') }}</span>
           <span class="metric-value">{{ completed }}</span>
         </div>
         <div class="overall-metric">
-          <span class="metric-label">Remaining</span>
+          <span class="metric-label">{{ t('dashboard.remainingMetric') }}</span>
           <span class="metric-value">{{ remaining }}</span>
         </div>
       </div>
@@ -38,7 +38,7 @@
       </div>
       <div class="config-meta">
         <div class="config-label">{{ cfg.key }}</div>
-        <div class="config-sublabel">{{ cfg.sublabel }} CPs</div>
+        <div class="config-sublabel">{{ cfg.sublabel }} {{ t('dashboard.cpsCompleted') }}</div>
       </div>
     </div>
   </div>
@@ -46,7 +46,10 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from '@/i18n/useI18n'
 import RingProgress from '@/components/RingProgress.vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   overviewData: { type: Object, default: () => ({}) }

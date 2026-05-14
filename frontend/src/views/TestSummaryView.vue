@@ -12,6 +12,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from '@/i18n/useI18n'
 import { useAppStore } from '@/stores/app'
 import TestSummary from '@/components/TestSummary.vue'
 import FAModal from '@/components/FAModal.vue'
@@ -19,6 +20,7 @@ import LoadingState from '@/components/LoadingState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 
 const store = useAppStore()
+const { t } = useI18n()
 const loading = ref(false)
 const error = ref('')
 
@@ -77,7 +79,7 @@ async function load(force = false) {
   loading.value = true; error.value = ''
   try {
     await Promise.all([store.fetchOverview(force), store.fetchSummary(force)])
-  } catch { error.value = 'Failed to load data' }
+  } catch { error.value = t('common.error') }
   finally { loading.value = false }
 }
 

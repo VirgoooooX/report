@@ -97,7 +97,7 @@ const store = useAppStore()
 const route = useRoute()
 const { t } = useI18n()
 
-const categoryName = computed(() => route.params.name || 'Unknown')
+const categoryName = computed(() => route.params.name || t('common.error'))
 const expandedWfs = ref({})
 const CONFIG_ORDER = ['R1FNF', 'R2CNM', 'R3', 'R4']
 const CONFIG_COLORS = ['#4f6f8f', '#0891b2', '#d97706', '#059669']
@@ -171,7 +171,7 @@ async function load(force = false) {
   try {
     await store.fetchCategoryDetail(categoryName.value, force)
   } catch (e) {
-    error.value = e.message || 'Failed to load category'
+    error.value = e.message || t('common.error')
   } finally {
     loading.value = false
   }

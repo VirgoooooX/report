@@ -149,7 +149,7 @@ async function previewData() {
       sn: filters.value.sn || null
     })
   } catch (e) {
-    store.error = e.message || 'Failed to preview export data'
+    store.error = e.message || t('common.error')
   }
 }
 
@@ -186,7 +186,7 @@ async function downloadJSON() {
     a.click()
     URL.revokeObjectURL(url)
   } catch (e) {
-    store.error = e.message || 'Download failed'
+    store.error = e.message || t('common.error')
   }
 }
 </script>

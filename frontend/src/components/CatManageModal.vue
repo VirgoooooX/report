@@ -3,7 +3,7 @@
     <div v-if="show" class="cat-overlay" @click.self="close" @keydown.esc="close" tabindex="-1">
       <div class="cat-modal" :class="{ show: visible }">
         <div class="cat-modal-header">
-          <h2 class="cat-modal-title">Manage Categories</h2>
+          <h2 class="cat-modal-title">{{ t('categories.manageCategories') }}</h2>
           <button class="cat-close-btn" @click="close">&times;</button>
         </div>
 
@@ -17,12 +17,12 @@
         <div class="cat-modal-body" v-if="activeTab">
           <!-- Delete category -->
           <div class="cat-delete-row">
-            <button class="cat-delete-btn" @click="deleteCategory">Delete "{{ activeTab }}"</button>
+            <button class="cat-delete-btn" @click="deleteCategory">{{ t('categories.deleteCategory') }}</button>
           </div>
 
           <!-- WF table -->
           <table v-if="currentCategoryWfs.length" class="cat-wf-table">
-            <thead><tr><th>WF</th><th>Name</th><th></th></tr></thead>
+            <thead><tr><th>WF</th><th>{{ t('categories.name') }}</th><th></th></tr></thead>
             <tbody>
               <tr v-for="wf in currentCategoryWfs" :key="wf">
                 <td class="cell-wf">{{ wf }}</td>
@@ -33,21 +33,21 @@
               </tr>
             </tbody>
           </table>
-          <div v-else class="cat-empty-wfs">No WFs in this category</div>
+          <div v-else class="cat-empty-wfs">{{ t('categories.noWfs') }}</div>
 
           <!-- Add WF -->
           <div class="cat-add-area">
             <input v-model="newWfInput" type="text" class="cat-add-input"
-                   placeholder="WFxx" @keydown.enter="addWf" />
-            <button class="cat-add-btn" :disabled="!newWfInput.trim()" @click="addWf">Add WF</button>
+                   :placeholder="t('categories.wfPlaceholder')" @keydown.enter="addWf" />
+            <button class="cat-add-btn" :disabled="!newWfInput.trim()" @click="addWf">{{ t('categories.addWf') }}</button>
           </div>
 
           <!-- Divider + New category -->
           <div class="cat-divider"></div>
           <div class="cat-add-cat-area">
             <input v-model="newCatInput" type="text" class="cat-add-input"
-                   placeholder="New category name" @keydown.enter="addCategory" />
-            <button class="cat-add-btn" :disabled="!newCatInput.trim()" @click="addCategory">New Category</button>
+                   :placeholder="t('categories.newCatPlaceholder')" @keydown.enter="addCategory" />
+            <button class="cat-add-btn" :disabled="!newCatInput.trim()" @click="addCategory">{{ t('categories.newCategory') }}</button>
           </div>
         </div>
       </div>
@@ -59,7 +59,9 @@
 import { ref, computed, watch, nextTick } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { requestJson } from '@/composables/useApi'
+import { useI18n } from '@/i18n/useI18n'
 
+const { t } = useI18n()
 const props = defineProps({ show: Boolean })
 const emit = defineEmits(['close', 'updated'])
 const store = useAppStore()
@@ -97,7 +99,7 @@ async function loadCategories() {
     error.value = ''
   } catch (e) {
     categories.value = []
-    error.value = e.message || 'Failed to load categories'
+    error.value = e.message || t('categories.loadFailed')
   }
 }
 
@@ -138,7 +140,7 @@ async function addCategory() {
 
 async function deleteCategory() {
   if (!activeTab.value) return
-  if (!confirm(`Delete category "${activeTab.value}"?`)) return
+  if (!confirm(t('categories.deleteConfirm', { name: activeTab.value }))) return
   await requestJson(`/api/categories/${encodeURIComponent(activeTab.value)}`, { method: 'DELETE' })
   await loadCategories()
   emit('updated')

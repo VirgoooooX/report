@@ -73,7 +73,7 @@
               <template v-if="wf.byConfig[cfg]?.length">
                 <div v-for="row in wf.byConfig[cfg]" :key="row.test_idx" class="test-row" @click="openEdit(row)">
                   <span class="col-cfg"><span class="cfg-badge" :style="badgeStyle(cfg)">{{ cfg }}</span></span>
-                  <span class="test-name">{{ row.test_name || 'Test' + ((row.test_idx || 0) + 1) }}</span>
+                  <span class="test-name">{{ row.test_name || t('predictions.colTest') + ((row.test_idx || 0) + 1) }}</span>
                   <div class="test-progress">
                     <div class="test-bar-track">
                       <div class="test-bar-fill" :style="{ width: predProgress(row) + '%' }"></div>
@@ -103,7 +103,7 @@
         </div>
         <div class="modal-body">
           <div class="modal-field">
-            <strong>{{ t('predictions.editTest') }}</strong> WF{{ editRow?.wf_num }} / {{ editRow?.config }} / {{ editRow?.test_name || 'Test' + ((editRow?.test_idx || 0) + 1) }}
+            <strong>{{ t('predictions.editTest') }}</strong> WF{{ editRow?.wf_num }} / {{ editRow?.config }} / {{ editRow?.test_name || t('predictions.colTest') + ((editRow?.test_idx || 0) + 1) }}
           </div>
           <div class="modal-field">
             <label class="field-label">{{ t('predictions.editDate') }}</label>
@@ -206,7 +206,7 @@ async function loadData(force = false) {
       store.fetchPredictions(filterWf.value || null, filterConfig.value || null, force)
     ])
   } catch (e) {
-    store.error = e.message || 'Failed to load predictions'
+    store.error = e.message || t('common.error')
   } finally {
     loading.value = false
   }
@@ -234,7 +234,7 @@ async function saveEdit() {
     await loadData()
     editModal.value = false
   } catch (e) {
-    store.error = e.message || 'Update failed'
+    store.error = e.message || t('common.error')
   }
 }
 

@@ -5,13 +5,15 @@
       :data="chartData"
       :options="chartOptions"
     />
-    <div v-else class="empty-state">No trend data available</div>
+    <div v-else class="empty-state">{{ t('charts.noTrendData') }}</div>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
 import { Line } from 'vue-chartjs'
+import { useI18n } from '@/i18n/useI18n'
+const { t } = useI18n()
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -45,7 +47,7 @@ const chartData = computed(() => {
     labels: props.trendData.map(d => d.date?.slice(5) ?? ''),
     datasets: [
       {
-        label: 'Spec',
+        label: t('common.spec'),
         data: props.trendData.map(d => d.spec ?? 0),
         borderColor: '#ef4444',
         backgroundColor: 'rgba(239,68,68,0.08)',
@@ -56,7 +58,7 @@ const chartData = computed(() => {
         fill: true
       },
       {
-        label: 'Strife',
+        label: t('common.strife'),
         data: props.trendData.map(d => d.strife ?? 0),
         borderColor: '#f59e0b',
         backgroundColor: 'rgba(245,158,11,0.08)',

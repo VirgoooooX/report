@@ -81,6 +81,9 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useI18n } from '@/i18n/useI18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -88,7 +91,9 @@ const props = defineProps({
   title: { type: String, default: '' },
   subtitle: { type: String, default: '' },
   loading: { type: Boolean, default: false },
+  // prop default — cannot use t() here (setup-time constraint)
   loadingText: { type: String, default: 'Loading…' },
+  // prop default — cannot use t() here (setup-time constraint)
   emptyText: { type: String, default: 'No data' },
   mode: { type: String, default: 'chips' }, // 'chips' | 'matrix'
   // chips mode

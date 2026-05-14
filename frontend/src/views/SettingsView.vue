@@ -190,42 +190,42 @@
       <div class="panel location-mapping-panel">
         <div class="panel-title">
           <SwapOutlined />
-          <span>Location 映射规则</span>
+          <span>{{ t('settings.locationMapping') }}</span>
         </div>
-        <p class="panel-desc">配置 Daily Report 与 FA Tracker 之间 Location 字段的映射关系，用于每日问题一致性校验。</p>
+        <p class="panel-desc">{{ t('settings.locationMappingDesc') }}</p>
         <div class="mapping-table-wrap">
           <table class="mapping-table">
             <thead>
               <tr>
-                <th>Daily Report Location</th>
-                <th>FA Tracker Location</th>
-                <th>匹配模式</th>
+                <th>{{ t('settings.colDailyReport') }}</th>
+                <th>{{ t('settings.colFaTracker') }}</th>
+                <th>{{ t('settings.matchMode') }}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(row, i) in ruleDraft.matching.location_mappings" :key="i">
                 <td>
-                  <input v-model="row.daily_report" placeholder="e.g. Touch-CAL-Post" class="mapping-input" />
+                  <input v-model="row.daily_report" :placeholder="t('settings.dailyReportPlaceholder')" class="mapping-input" />
                 </td>
                 <td>
-                  <input v-model="row.fa_tracker" :placeholder="row.mode === 'multi' ? 'e.g. Home, TV, Play, Vol+' : 'e.g. Touch Post'" class="mapping-input" />
+                  <input v-model="row.fa_tracker" :placeholder="row.mode === 'multi' ? t('settings.faTrackerPlaceholderMulti') : t('settings.faTrackerPlaceholder')" class="mapping-input" />
                 </td>
                 <td>
                   <select v-model="row.mode" class="mapping-select">
-                    <option value="exact">精确匹配</option>
-                    <option value="contains">包含匹配</option>
-                    <option value="multi">多值匹配</option>
+                    <option value="exact">{{ t('settings.exactMatch') }}</option>
+                    <option value="contains">{{ t('settings.containsMatch') }}</option>
+                    <option value="multi">{{ t('settings.multiMatch') }}</option>
                   </select>
                 </td>
                 <td>
-                  <button class="icon-btn small danger" title="删除" @click="removeMapping(i)">
+                  <button class="icon-btn small danger" :title="t('settings.deleteMapping')" @click="removeMapping(i)">
                     <DeleteOutlined />
                   </button>
                 </td>
               </tr>
               <tr v-if="!ruleDraft.matching.location_mappings.length">
-                <td colspan="4" class="empty-row">暂无映射规则</td>
+                <td colspan="4" class="empty-row">{{ t('settings.noMappings') }}</td>
               </tr>
             </tbody>
           </table>
@@ -233,7 +233,7 @@
         <div class="action-row">
           <button class="btn-secondary" @click="addMapping">
             <PlusOutlined />
-            <span>添加映射</span>
+            <span>{{ t('settings.addMapping') }}</span>
           </button>
         </div>
       </div>

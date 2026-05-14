@@ -55,7 +55,7 @@ async function loadAll(force = false) {
       store.fetchDailyIssues(force)
     ])
   } catch (e) {
-    store.error = e.message || 'Failed to load daily update'
+    store.error = e.message || t('common.error')
   } finally {
     loading.value = false
   }

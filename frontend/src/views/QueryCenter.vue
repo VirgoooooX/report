@@ -12,7 +12,7 @@
       <div class="card search-card">
         <div class="search-bar">
           <div class="bar-filter-item bar-filter-grow">
-            <label>SN / Mark</label>
+            <label>{{ t('queryCenter.snOrMarkLabel') }}</label>
             <div class="tag-input-box" @click="focusTagInput">
               <span v-for="(tag, i) in lookupTags" :key="tag + '_' + i" class="input-tag"><span class="tag-label">{{ tag }}</span><button class="tag-remove" @click.stop="removeTag(i)" aria-label="remove">×</button></span>
               <input ref="tagInputRef" v-model="lookupInput" type="text" class="tag-input-field" :placeholder="lookupTags.length ? '' : t('queryCenter.snOrMarkPlaceholder')" @input="onLookupInput" @keydown="onLookupKeydown" @paste="onPaste" @blur="flushInput" />
@@ -83,7 +83,7 @@
       <div class="card search-card">
         <div class="search-bar">
           <div class="bar-filter-item bar-filter-grow">
-            <label>SN / Mark</label>
+            <label>{{ t('queryCenter.snOrMarkLabel') }}</label>
             <div class="tag-input-box" @click="focusFaInput">
               <span v-for="(tag, i) in faTags" :key="tag + '_' + i" class="input-tag"><span class="tag-label">{{ tag }}</span><button class="tag-remove" @click.stop="removeFaTag(i)" aria-label="remove">×</button></span>
               <input ref="faInputRef" v-model="faInput" type="text" class="tag-input-field" :placeholder="faTags.length ? '' : t('queryCenter.faPlaceholder')" @keydown="onFaKeydown" @paste="onFaPaste" @blur="flushFaInput" />
@@ -124,13 +124,13 @@
               <th>SN</th>
               <th>Mark</th>
               <th>WF</th>
-              <th>Config</th>
-              <th>Failed Test</th>
-              <th>Symptom</th>
-              <th>Location</th>
-              <th>Cycle</th>
-              <th>Type</th>
-              <th>Status</th>
+              <th>{{ t('common.configs') }}</th>
+              <th>{{ t('queryCenter.failedTest') }}</th>
+              <th>{{ t('queryCenter.symptom') }}</th>
+              <th>{{ t('queryCenter.location') }}</th>
+              <th>{{ t('queryCenter.faColCycle') }}</th>
+              <th>{{ t('queryCenter.faColType') }}</th>
+              <th>{{ t('queryCenter.faColStatus') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -151,32 +151,32 @@
                 <td colspan="10">
                   <div class="fa-detail-panel">
                     <div class="fa-detail-section fa-action-section">
-                      <div class="fa-detail-section-title">Actions & Root Cause</div>
+                      <div class="fa-detail-section-title">{{ t('queryCenter.faActionsTitle') }}</div>
                       <div class="fa-action-grid">
                         <div class="fa-action-item">
-                          <span class="fa-action-label">Follow Up Actions</span>
+                          <span class="fa-action-label">{{ t('queryCenter.faFollowUpLabel') }}</span>
                           <span class="fa-action-val" :class="{ empty: !hasVal(row.fa, 'Follow Up Actions') }">{{ getVal(row.fa, 'Follow Up Actions') }}</span>
                         </div>
                         <div class="fa-action-item">
-                          <span class="fa-action-label">Root Cause</span>
+                          <span class="fa-action-label">{{ t('queryCenter.faRootCauseLabel') }}</span>
                           <span class="fa-action-val" :class="{ empty: !hasVal(row.fa, 'Root Cause') }">{{ getVal(row.fa, 'Root Cause') }}</span>
                         </div>
                         <div class="fa-action-item">
-                          <span class="fa-action-label">CA</span>
+                          <span class="fa-action-label">{{ t('queryCenter.faCaLabel') }}</span>
                           <span class="fa-action-val" :class="{ empty: !hasVal(row.fa, 'CA') }">{{ getVal(row.fa, 'CA') }}</span>
                         </div>
                         <div class="fa-action-item">
-                          <span class="fa-action-label">Category I</span>
+                          <span class="fa-action-label">{{ t('queryCenter.faCategoryILabel') }}</span>
                           <span class="fa-action-val" :class="{ empty: !hasVal(row.fa, 'Root Cause Category I') }">{{ getVal(row.fa, 'Root Cause Category I') }}</span>
                         </div>
                         <div class="fa-action-item">
-                          <span class="fa-action-label">Category II</span>
+                          <span class="fa-action-label">{{ t('queryCenter.faCategoryIILabel') }}</span>
                           <span class="fa-action-val" :class="{ empty: !hasVal(row.fa, 'Root Cause Category II') }">{{ getVal(row.fa, 'Root Cause Category II') }}</span>
                         </div>
                       </div>
                     </div>
                     <div v-if="Object.keys(otherFaFields(row.fa)).length" class="fa-detail-section fa-other-section">
-                      <div class="fa-detail-section-title">Other Info</div>
+                      <div class="fa-detail-section-title">{{ t('queryCenter.faOtherInfoTitle') }}</div>
                       <div class="fa-other-grid">
                         <div v-for="(val, key) in otherFaFields(row.fa)" :key="key" class="fa-other-item">
                           <span class="fa-other-label">{{ key }}</span>
@@ -277,7 +277,7 @@ const wcfgConfigSelection = ref([])
 const wfOptions = computed(() => store.queryWfList?.wfs || [])
 const wfDisplayOptions = computed(() => wfOptions.value.map(w => `WF${w.wf_num} — ${w.wf_name}`))
 const configOptions = computed(() => store.queryWfList?.configs || [])
-const summarySegments = computed(() => { const s = wcfgData.value?.summary || {}; const total = s.total_sns || 0; const done = s.completed || 0; const spec = s.spec_fails || 0; const strife = s.strife_fails || 0; const inProg = Math.max(0, total - done - spec - strife); return [{ kind: 'pass', value: done, label: 'Completed' }, { kind: 'fail', value: spec, label: 'Spec' }, { kind: 'strife', value: strife, label: 'Strife' }, { kind: 'progress', value: inProg, label: 'In progress' }] })
+const summarySegments = computed(() => { const s = wcfgData.value?.summary || {}; const total = s.total_sns || 0; const done = s.completed || 0; const spec = s.spec_fails || 0; const strife = s.strife_fails || 0; const inProg = Math.max(0, total - done - spec - strife); return [{ kind: 'pass', value: done, label: t('common.completed') }, { kind: 'fail', value: spec, label: t('common.spec') }, { kind: 'strife', value: strife, label: t('common.strife') }, { kind: 'progress', value: inProg, label: t('common.inProgress') }] })
 const inProgressCount = computed(() => { const s = wcfgData.value?.summary || {}; return Math.max(0, (s.total_sns || 0) - (s.completed || 0) - (s.spec_fails || 0) - (s.strife_fails || 0)) })
 const wcfgGroups = computed(() => { if (!wcfgData.value) return []; const d = wcfgData.value; const cpColumns = []; const seen = new Set(); for (const sn of d.sns) for (const cp of sn.cpList) { if (!seen.has(cp.cp_idx)) { seen.add(cp.cp_idx); cpColumns.push({ cp_idx: cp.cp_idx, cp_name: cp.cp_name }) } }; cpColumns.sort((a, b) => a.cp_idx - b.cp_idx); let checkItems = d.check_items || []; if (!checkItems.length) { const nameSet = new Set(); for (const sn of d.sns) for (const cp of sn.cpList) for (const ci of cp.checkItems || []) if (ci.name) nameSet.add(ci.name); checkItems = [...nameSet] }; return [{ wf_num: d.wf_num, test_name: d.wf_name || '', check_items: checkItems, total_cps: d.total_cps, cpColumns, sns: d.sns.map(s => ({ sn: s.sn, unit_num: s.unit_num || '', config: s.config, current_cp_idx: s.current_cp_idx, cpList: s.cpList, cpByIdx: Object.fromEntries(s.cpList.map(c => [c.cp_idx, c])) })) }] })
 function onWfChange() { wcfgSelectedConfig.value = ''; wcfgData.value = null }

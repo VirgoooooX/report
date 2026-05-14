@@ -35,11 +35,15 @@
 
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { useI18n } from '@/i18n/useI18n'
+
+const { t } = useI18n()
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
   options: { type: Array, default: () => [] },
-  placeholder: { type: String, default: 'Select...' },
+  // prop default — cannot use t() here; let parent pass placeholder
+  placeholder: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:modelValue'])

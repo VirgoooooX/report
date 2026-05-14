@@ -15,7 +15,7 @@
         <div class="fa-modal-body">
           <!-- Cross-checked issue table: Daily Report + FA Tracker -->
           <div v-if="issueRows.length" class="fa-cell-failures">
-            <div class="fa-cell-detail-title">Cross-checked Failure Table</div>
+            <div class="fa-cell-detail-title">{{ t('failureAnalysis.failureDetail') }}</div>
             <table class="fa-issue-table">
               <thead>
                 <tr>
@@ -117,16 +117,16 @@ function close() {
 
 function sourceLabel(s) {
   const map = {
-    matched: 'Consistent',
-    only_daily_report: 'Daily Report only',
-    only_fa_tracker: 'FA Tracker only',
+    matched: t('dailyIssues.consistent'),
+    only_daily_report: t('dailyIssues.dailyReportOnly'),
+    only_fa_tracker: t('dailyIssues.faTrackerOnly'),
   }
   return map[s] || s
 }
 
 function typeLabel(type) {
-  if (type === 'spec') return 'Spec'
-  if (type === 'strife') return 'Strife'
+  if (type === 'spec') return t('common.spec')
+  if (type === 'strife') return t('common.strife')
   return type || '—'
 }
 

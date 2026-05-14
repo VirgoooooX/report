@@ -70,7 +70,7 @@ async function loadData(force = false) {
       store.fetchSchedule(force)
     ])
   } catch (e) {
-    store.error = e.message || 'Failed to load schedule'
+    store.error = e.message || t('common.error')
   } finally {
     loading.value = false
   }

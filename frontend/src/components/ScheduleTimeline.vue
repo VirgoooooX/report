@@ -4,7 +4,7 @@
       <table>
         <thead>
           <tr>
-            <th class="sticky-col test-col">Config</th>
+            <th class="sticky-col test-col">{{ t('common.configs') }}</th>
             <th
               v-for="column in dateColumns"
               :key="column.date"
@@ -115,12 +115,15 @@
 <script setup>
 import { nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { summarizeDailyCpMarkers } from '@/views/scheduleDisplay'
+import { useI18n } from '@/i18n/useI18n'
 
 const props = defineProps({
   groups: { type: Array, default: () => [] },
   dateColumns: { type: Array, default: () => [] },
   configColors: { type: Object, default: () => ({}) }
 })
+
+const { t } = useI18n()
 
 const expandedWfs = reactive({})
 const sheetScroll = ref(null)
@@ -243,7 +246,7 @@ function cellTitle(row, column) {
   const details = [column.date]
   if (tests) details.push(tests || row.test_name)
   if (isActualProgressEndDate(row, column.date)) {
-    details.push(`Completed: ${row.actual_progress?.current_cp_name || `CP${row.actual_progress?.current_cp_idx ?? ''}`}`)
+    details.push(`${t('common.completed')}: ${row.actual_progress?.current_cp_name || `CP${row.actual_progress?.current_cp_idx ?? ''}`}`)
   }
   return details.filter(Boolean).join('\n')
 }
