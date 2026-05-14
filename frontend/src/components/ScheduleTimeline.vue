@@ -673,9 +673,8 @@ thead .sticky-col {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 50%;
+  right: 0;
   width: 2px;
-  transform: translateX(-50%);
   background: var(--today-color);
   z-index: 7;
   pointer-events: none;

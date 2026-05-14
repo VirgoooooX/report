@@ -7,14 +7,14 @@ BASE_DIR = os.path.dirname(BACKEND_DIR)
 
 RAWDATA_DIR = os.environ.get('REPORT_RAWDATA_DIR') or os.path.join(BASE_DIR, 'rawdata')
 DB_DIR = os.environ.get('REPORT_DB_DIR') or os.path.join(BASE_DIR, 'db')
-UPLOAD_DIR = os.environ.get('REPORT_UPLOAD_DIR') or os.path.join(RAWDATA_DIR, 'uploads')
+PARSED_DIR = os.path.join(RAWDATA_DIR, 'parsed')
 DB_PATH = os.environ.get('REPORT_DB_PATH') or os.path.join(DB_DIR, 'report.db')
 
 
 def ensure_runtime_dirs():
     os.makedirs(RAWDATA_DIR, exist_ok=True)
     os.makedirs(DB_DIR, exist_ok=True)
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
+    os.makedirs(PARSED_DIR, exist_ok=True)
 
 
 def iter_rawdata_files():

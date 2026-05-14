@@ -5,10 +5,10 @@ Usage: python backend/api.py
 Access: http://localhost:5050
 """
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
-import os, sys, json, io, csv, datetime, re, logging
+import os, sys, json, io, csv, datetime, re, logging, shutil
 
 sys.path.insert(0, os.path.dirname(__file__))
-from app_paths import RAWDATA_DIR, UPLOAD_DIR, ensure_runtime_dirs, iter_rawdata_files, find_rawdata_file
+from app_paths import RAWDATA_DIR, PARSED_DIR, ensure_runtime_dirs, iter_rawdata_files, find_rawdata_file
 from custom_rules import DEFAULT_RULES, load_rules, save_rules
 from engine import (
     analyze, build_summary_table, build_failure_detail, extract_test_schedule_segments,
@@ -40,7 +40,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 VUE_STATIC = os.path.join(BASE_DIR, 'static')
 VUE_INDEX = os.path.join(VUE_STATIC, 'index.html')
 
-app = Flask(__name__, static_folder=VUE_STATIC, static_url_path='')
+app = Flask(__name__, static_folder=None)
 DATA_DIR = RAWDATA_DIR
 logger = logging.getLogger(__name__)
 
@@ -2609,6 +2609,14 @@ def api_settings_rawdata_parse():
     if not result:
         return jsonify({'success': False, 'error': 'Selected file failed to parse'}), 500
 
+    # Move successfully parsed files to parsed/ folder
+    parsed_dir_abs = os.path.abspath(PARSED_DIR)
+    if os.path.abspath(os.path.dirname(daily_path)) != parsed_dir_abs:
+        shutil.move(daily_path, os.path.join(PARSED_DIR, daily_name))
+    if fa_path and os.path.isfile(fa_path):
+        if os.path.abspath(os.path.dirname(fa_path)) != parsed_dir_abs:
+            shutil.move(fa_path, os.path.join(PARSED_DIR, os.path.basename(fa_path)))
+
     try:
         compute_auto_predictions()
     except Exception:
@@ -2619,8 +2627,8 @@ def api_settings_rawdata_parse():
         'report_date': result.get('date', report_date),
         'report_id': result.get('report_id'),
         'wf_count': result.get('wfs', 0),
-        'daily_path': _rawdata_relpath(daily_path),
-        'fa_path': _rawdata_relpath(fa_path) if fa_path else '',
+        'daily_path': 'parsed/' + daily_name,
+        'fa_path': ('parsed/' + os.path.basename(fa_path)) if fa_path else '',
     })
 
 
@@ -2676,15 +2684,12 @@ def upload_report():
     else:
         fa_name = ''
 
-    # Save uploaded raw files by report date under rawdata/uploads/.
-    upload_dir = os.path.join(UPLOAD_DIR, report_date)
-    os.makedirs(upload_dir, exist_ok=True)
-
-    daily_path = os.path.join(upload_dir, daily_name)
+    # Save uploaded raw files directly to rawdata/.
+    daily_path = os.path.join(RAWDATA_DIR, daily_name)
     daily_file.save(daily_path)
 
     if fa_file and fa_name:
-        fa_path = os.path.join(upload_dir, fa_name)
+        fa_path = os.path.join(RAWDATA_DIR, fa_name)
         fa_file.save(fa_path)
     else:
         fa_path = None
@@ -2722,6 +2727,12 @@ def upload_report():
             return _validation_response(result.get('validation_errors'), 400)
         if not result:
             return jsonify({'success': False, 'error': 'No report file found to process'}), 500
+
+        # Move successfully parsed files to parsed/ folder
+        parsed_daily = os.path.join(PARSED_DIR, daily_name)
+        shutil.move(daily_path, parsed_daily)
+        if fa_path and os.path.isfile(fa_path):
+            shutil.move(fa_path, os.path.join(PARSED_DIR, fa_name))
 
         return jsonify({
             'success': True,
