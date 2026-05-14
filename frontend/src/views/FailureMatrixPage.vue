@@ -152,17 +152,17 @@
     </div>
 
     <!-- Detail Popup -->
-    <a-modal v-model:open="detailVisible" :title="detailTitle" width="850px" :footer="null" @cancel="detailVisible=false">
+    <a-modal v-model:open="detailVisible" :title="detailTitle" width="900px" :footer="null" @cancel="detailVisible=false">
       <div v-if="detailLoading" class="modal-loading"><a-spin /></div>
       <div v-else-if="detailError" class="modal-error">{{ detailError }}</div>
       <div v-else-if="!detailRecords.length" class="modal-empty">{{ t('failureAnalysis.noRecordsFound') }}</div>
-      <a-table v-else :data-source="detailRecords" :columns="detailColumns" row-key="fa_num" size="small" :pagination="false" :scroll="{ y: 400 }" />
+      <a-table v-else :data-source="sortedDetailRecords" :columns="detailColumns" row-key="fa_num" size="small" :pagination="false" :scroll="{ y: detailScrollHeight }" />
     </a-modal>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, reactive } from 'vue'
+import { ref, computed, onMounted, watch, reactive, h } from 'vue'
 import { Bar } from 'vue-chartjs'
 import { useI18n } from '@/i18n/useI18n'
 import { useAppStore } from '@/stores/app'
@@ -178,6 +178,7 @@ import ASelect from 'ant-design-vue/es/select'
 import ARadio from 'ant-design-vue/es/radio'
 import AModal from 'ant-design-vue/es/modal'
 import ATable from 'ant-design-vue/es/table'
+import ATag from 'ant-design-vue/es/tag'
 import BugOutlined from '@ant-design/icons-vue/es/icons/BugOutlined'
 import CalendarOutlined from '@ant-design/icons-vue/es/icons/CalendarOutlined'
 import ExperimentOutlined from '@ant-design/icons-vue/es/icons/ExperimentOutlined'
@@ -463,11 +464,45 @@ const detailColumns = [
   { title: t('failureMatrix.colWf'), dataIndex: 'wf', width: 50 },
   { title: t('failureMatrix.colConfig'), dataIndex: 'config', width: 70 },
   { title: t('failureMatrix.colTest'), dataIndex: 'failed_test', width: 140, ellipsis: true },
-  { title: t('failureMatrix.colType'), dataIndex: 'failure_type', width: 60 },
+  {
+    title: t('failureMatrix.colType'),
+    dataIndex: 'failure_type',
+    width: 80,
+    customRender: ({ text }) => {
+      const val = (text || '').toLowerCase()
+      let color = 'default'
+      if (val.includes('spec')) color = 'red'
+      else if (val.includes('strife')) color = 'orange'
+      return h(ATag, { color, style: 'margin:0;font-weight:600' }, () => text || '-')
+    },
+  },
   { title: t('failureMatrix.colSymptom'), dataIndex: 'symptom', width: 110, ellipsis: true },
   { title: t('failureMatrix.colLocation'), dataIndex: 'location', width: 90 },
   { title: t('failureMatrix.colFaStatus'), dataIndex: 'fa_status', width: 90 },
 ]
+
+// Sort detail records: spec first, then strife, then others
+const sortedDetailRecords = computed(() => {
+  const records = [...detailRecords.value]
+  const typeOrder = (type) => {
+    const val = (type || '').toLowerCase()
+    if (val.includes('spec')) return 0
+    if (val.includes('strife')) return 1
+    return 2
+  }
+  records.sort((a, b) => typeOrder(a.failure_type) - typeOrder(b.failure_type))
+  return records
+})
+
+// Smart modal height based on record count
+const detailScrollHeight = computed(() => {
+  const count = detailRecords.value.length
+  const rowHeight = 40
+  const minHeight = 200
+  const maxHeight = Math.min(600, Math.round(window.innerHeight * 0.6))
+  const calculated = count * rowHeight
+  return Math.max(minHeight, Math.min(calculated, maxHeight))
+})
 
 async function openDetail(filters) {
   detailVisible.value = true
