@@ -40,6 +40,12 @@ const antTheme = computed(() => ({
 }))
 </script>
 
+<style>
+html {
+  scrollbar-gutter: stable;
+}
+</style>
+
 <style scoped>
 .main--test-summary {
   max-width: 1680px;

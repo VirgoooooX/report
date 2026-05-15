@@ -114,6 +114,7 @@
             <span class="mono">{{ report.report_date }}</span>
             <span>v{{ report.version }}</span>
             <span class="report-file">{{ report.source_file_name }}</span>
+            <span class="mono imported-at">{{ formatDateTime(report.imported_at) }}</span>
             <span class="active-pill" :class="{ muted: !report.is_active }">
               {{ report.is_active ? t('settings.active') : t('settings.history') }}
             </span>
@@ -843,13 +844,18 @@ tr:hover td {
 
 .report-row {
   display: grid;
-  grid-template-columns: 110px 52px minmax(0, 1fr) 78px;
+  grid-template-columns: 110px 52px minmax(0, 1fr) 130px 78px;
   align-items: center;
   gap: 12px;
   min-height: 38px;
   padding: 8px 10px;
   border: 1px solid var(--border-light);
   border-radius: var(--radius-sm);
+}
+
+.imported-at {
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .active-pill {

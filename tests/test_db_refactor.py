@@ -482,6 +482,8 @@ class VacuumTests(unittest.TestCase):
         fd, path = tempfile.mkstemp(suffix='.db')
         os.close(fd)
         conn = None
+        import db as dbmod
+        old_db_path = dbmod.DB_PATH
         try:
             conn = sqlite3.connect(path)
             conn.row_factory = db._dict_factory
@@ -491,7 +493,6 @@ class VacuumTests(unittest.TestCase):
             conn.close()
             conn = None
             # Switch to the module's connection for vacuum
-            import db as dbmod
             dbmod.DB_PATH = path
             dbmod.vacuum_db()
             # Verify file still exists and is valid
@@ -500,6 +501,7 @@ class VacuumTests(unittest.TestCase):
             self.assertTrue(len(tables) > 0)
             conn2.close()
         finally:
+            dbmod.DB_PATH = old_db_path
             if conn:
                 try:
                     conn.close()

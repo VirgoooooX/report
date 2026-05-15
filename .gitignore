@@ -23,3 +23,5 @@ report.before-state-history.db
 /frontend/dist-check/
 /frontend/dist/
 .kiro
+/R2 data
+/Checkitem data

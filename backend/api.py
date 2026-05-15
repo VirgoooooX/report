@@ -6,6 +6,7 @@ Access: http://localhost:5050
 """
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory
 import os, sys, json, io, csv, datetime, re, logging, shutil
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(__file__))
 from app_paths import RAWDATA_DIR, PARSED_DIR, ensure_runtime_dirs, iter_rawdata_files, find_rawdata_file
@@ -2553,7 +2554,7 @@ def api_settings_rawdata():
             'kind': _classify_rawdata_file(fname),
             'date': _rawdata_date(fname),
             'size': stat.st_size,
-            'modified_at': datetime.datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            'modified_at': datetime.datetime.fromtimestamp(stat.st_mtime, tz=ZoneInfo('Asia/Shanghai')).isoformat(),
         })
     files.sort(key=lambda item: (item.get('date') or '', item['name']), reverse=True)
 
@@ -2568,13 +2569,23 @@ def api_settings_rawdata():
 
     reports = []
     for row in rows:
+        # Convert imported_at from UTC (SQLite CURRENT_TIMESTAMP) to Beijing time (UTC+8)
+        imported_at_raw = row['imported_at']
+        if imported_at_raw:
+            try:
+                utc_dt = datetime.datetime.strptime(imported_at_raw, '%Y-%m-%d %H:%M:%S')
+                utc_dt = utc_dt.replace(tzinfo=ZoneInfo('UTC'))
+                beijing_dt = utc_dt.astimezone(ZoneInfo('Asia/Shanghai'))
+                imported_at_raw = beijing_dt.strftime('%Y-%m-%d %H:%M:%S')
+            except (ValueError, TypeError):
+                pass
         reports.append({
             'id': row['id'],
             'report_date': row['report_date'],
             'version': row['version'],
             'is_active': bool(row['is_active']),
             'source_file_name': row['source_file_name'] or os.path.basename(row['excel_path'] or ''),
-            'imported_at': row['imported_at'],
+            'imported_at': imported_at_raw,
         })
 
     return jsonify({'files': files, 'reports': reports})
@@ -2625,6 +2636,7 @@ def api_settings_rawdata_parse():
 
     raw_date = match.group(1)
     report_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
+    _delete_report_data_by_date(report_date)
     result = process_report_file(report_date, daily_path, fa_path=fa_path)
     if result and result.get('validation_failed'):
         return _validation_response(result.get('validation_errors'), 400)
@@ -2733,10 +2745,13 @@ def upload_report():
             conn.execute(f"DELETE FROM {table} WHERE report_id IN ({p})", old_ids)
         for table in ['sn_cp_results', 'sn_check_results']:
             conn.execute(f"DELETE FROM {table} WHERE report_date = ?", (report_date,))
-        # Close lifecycle rows introduced by old reports so they don't leak into the new import
+        # Delete lifecycle rows associated with old reports so they don't conflict on re-import
         conn.execute(
-            f"UPDATE sn_check_state_history SET closed_before_report_id = first_report_id, closed_before_report_date = ? WHERE first_report_id IN ({p})",
-            (report_date,),
+            f"""DELETE FROM sn_check_state_history
+                WHERE first_report_id IN ({p})
+                   OR last_seen_report_id IN ({p})
+                   OR closed_before_report_id IN ({p})""",
+            old_ids * 3,
         )
         conn.execute(f"DELETE FROM reports WHERE id IN ({p})", old_ids)
         conn.commit()
@@ -2755,6 +2770,11 @@ def upload_report():
         shutil.move(daily_path, parsed_daily)
         if fa_path and os.path.isfile(fa_path):
             shutil.move(fa_path, os.path.join(PARSED_DIR, fa_name))
+
+        try:
+            compute_auto_predictions()
+        except Exception:
+            logger.exception("Failed to recompute predictions after upload")
 
         return jsonify({
             'success': True,

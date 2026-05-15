@@ -279,7 +279,69 @@ const wfDisplayOptions = computed(() => wfOptions.value.map(w => `WF${w.wf_num} 
 const configOptions = computed(() => store.queryWfList?.configs || [])
 const summarySegments = computed(() => { const s = wcfgData.value?.summary || {}; const total = s.total_sns || 0; const done = s.completed || 0; const spec = s.spec_fails || 0; const strife = s.strife_fails || 0; const inProg = Math.max(0, total - done - spec - strife); return [{ kind: 'pass', value: done, label: t('common.completed') }, { kind: 'fail', value: spec, label: t('common.spec') }, { kind: 'strife', value: strife, label: t('common.strife') }, { kind: 'progress', value: inProg, label: t('common.inProgress') }] })
 const inProgressCount = computed(() => { const s = wcfgData.value?.summary || {}; return Math.max(0, (s.total_sns || 0) - (s.completed || 0) - (s.spec_fails || 0) - (s.strife_fails || 0)) })
-const wcfgGroups = computed(() => { if (!wcfgData.value) return []; const d = wcfgData.value; const cpColumns = []; const seen = new Set(); for (const sn of d.sns) for (const cp of sn.cpList) { if (!seen.has(cp.cp_idx)) { seen.add(cp.cp_idx); cpColumns.push({ cp_idx: cp.cp_idx, cp_name: cp.cp_name }) } }; cpColumns.sort((a, b) => a.cp_idx - b.cp_idx); let checkItems = d.check_items || []; if (!checkItems.length) { const nameSet = new Set(); for (const sn of d.sns) for (const cp of sn.cpList) for (const ci of cp.checkItems || []) if (ci.name) nameSet.add(ci.name); checkItems = [...nameSet] }; return [{ wf_num: d.wf_num, test_name: d.wf_name || '', check_items: checkItems, total_cps: d.total_cps, cpColumns, sns: d.sns.map(s => ({ sn: s.sn, unit_num: s.unit_num || '', config: s.config, current_cp_idx: s.current_cp_idx, cpList: s.cpList, cpByIdx: Object.fromEntries(s.cpList.map(c => [c.cp_idx, c])) })) }] })
+const wcfgGroups = computed(() => {
+  if (!wcfgData.value) return []
+  const d = wcfgData.value
+
+  // Group SNs by config field
+  const configMap = new Map()
+  for (const sn of d.sns) {
+    const cfg = sn.config || ''
+    if (!configMap.has(cfg)) configMap.set(cfg, [])
+    configMap.get(cfg).push(sn)
+  }
+
+  // Sort config keys for consistent display order
+  const sortedConfigs = [...configMap.keys()].sort()
+
+  return sortedConfigs.map(cfg => {
+    const groupSns = configMap.get(cfg)
+
+    // Build cpColumns from only this group's SNs
+    const cpColumns = []
+    const seen = new Set()
+    for (const sn of groupSns) {
+      for (const cp of sn.cpList) {
+        if (!seen.has(cp.cp_idx)) {
+          seen.add(cp.cp_idx)
+          cpColumns.push({ cp_idx: cp.cp_idx, cp_name: cp.cp_name })
+        }
+      }
+    }
+    cpColumns.sort((a, b) => a.cp_idx - b.cp_idx)
+
+    // Build check_items from only this group's SNs
+    let checkItems = d.check_items || []
+    if (!checkItems.length) {
+      const nameSet = new Set()
+      for (const sn of groupSns) {
+        for (const cp of sn.cpList) {
+          for (const ci of cp.checkItems || []) {
+            if (ci.name) nameSet.add(ci.name)
+          }
+        }
+      }
+      checkItems = [...nameSet]
+    }
+
+    return {
+      wf_num: d.wf_num,
+      config: cfg,
+      test_name: d.wf_name || '',
+      check_items: checkItems,
+      total_cps: d.total_cps,
+      cpColumns,
+      sns: groupSns.map(s => ({
+        sn: s.sn,
+        unit_num: s.unit_num || '',
+        config: s.config,
+        current_cp_idx: s.current_cp_idx,
+        cpList: s.cpList,
+        cpByIdx: Object.fromEntries(s.cpList.map(c => [c.cp_idx, c]))
+      }))
+    }
+  })
+})
 function onWfChange() { wcfgSelectedConfig.value = ''; wcfgData.value = null }
 function clearWcfg() { wcfgWfSelection.value = []; wcfgConfigSelection.value = []; wcfgSelectedWf.value = ''; wcfgSelectedConfig.value = ''; wcfgData.value = null; wcfgError.value = ''; availableCheckItems.value = []; checkItemFilter.value = null; store.clearQueryCache('wcfg'); router.replace({ name: 'sn', query: { mode: 'wcfg' } }) }
 function doWfCfgSearch() {
@@ -291,8 +353,11 @@ function doWfCfgSearch() {
   wcfgSelectedWf.value = wf
   wcfgSelectedConfig.value = wcfgConfigSelection.value.join(',')
   pushState({ mode: 'wcfg', wf, config: wcfgSelectedConfig.value || undefined })
+  // Always execute search directly with force=true to bypass cache,
+  // in case route params didn't change and the watch doesn't fire
+  runWfCfgSearch(true)
 }
-async function runWfCfgSearch() { if (!wcfgSelectedWf.value) { wcfgData.value = null; availableCheckItems.value = []; return }; wcfgError.value = ''; const cfgParam = wcfgSelectedConfig.value.split(',')[0] || ''; try { const data = await store.fetchQueryByWf(wcfgSelectedWf.value, cfgParam); const sns = (data.sns || []).map(s => s.sn); const byIdx = {}; if (sns.length) { try { const timelineNorm = await store.fetchSnTimeline(sns.slice(0, 50)); for (const r of timelineNorm) for (const w of r.wfs) { if (w.wf_num !== data.wf_num) continue; for (const cp of w.cpList) byIdx[`${r.sn}|${w.config}|${cp.cp_idx}`] = cp } } catch {} }; for (const sn of data.sns || []) for (const cp of sn.cpList) { const hit = byIdx[`${sn.sn}|${sn.config}|${cp.cp_idx}`]; if (hit && Array.isArray(hit.checkItems)) cp.checkItems = hit.checkItems }; wcfgData.value = data; const nameSet = new Set(data.check_items || []); for (const key in byIdx) for (const ci of byIdx[key].checkItems || []) nameSet.add(ci.name); availableCheckItems.value = [...nameSet]; if (checkItemFilter.value && !availableCheckItems.value.includes(checkItemFilter.value)) checkItemFilter.value = null; store.lastQueryType = 'wcfg' } catch (e) { wcfgError.value = e.message || t('common.error'); wcfgData.value = null } }
+async function runWfCfgSearch(force = false) { if (!wcfgSelectedWf.value) { wcfgData.value = null; availableCheckItems.value = []; return }; wcfgError.value = ''; const cfgParam = wcfgSelectedConfig.value.split(',')[0] || ''; try { const data = await store.fetchQueryByWf(wcfgSelectedWf.value, cfgParam, force); const sns = (data.sns || []).map(s => s.sn); const byIdx = {}; if (sns.length) { try { const timelineNorm = await store.fetchSnTimeline(sns.slice(0, 50)); for (const r of timelineNorm) for (const w of r.wfs) { if (w.wf_num !== data.wf_num) continue; for (const cp of w.cpList) byIdx[`${r.sn}|${w.config}|${cp.cp_idx}`] = cp } } catch {} }; for (const sn of data.sns || []) for (const cp of sn.cpList) { const hit = byIdx[`${sn.sn}|${sn.config}|${cp.cp_idx}`]; if (hit && Array.isArray(hit.checkItems)) cp.checkItems = hit.checkItems }; wcfgData.value = data; const nameSet = new Set(data.check_items || []); for (const key in byIdx) for (const ci of byIdx[key].checkItems || []) nameSet.add(ci.name); availableCheckItems.value = [...nameSet]; if (checkItemFilter.value && !availableCheckItems.value.includes(checkItemFilter.value)) checkItemFilter.value = null; store.lastQueryType = 'wcfg' } catch (e) { wcfgError.value = e.message || t('common.error'); wcfgData.value = null } }
 
 // ── Failure mode (FA Tracker) ───────────────────────────────────────
 const faTags = ref([]); const faInput = ref(''); const faInputRef = ref(null)

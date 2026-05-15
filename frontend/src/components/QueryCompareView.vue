@@ -1,8 +1,9 @@
 <template>
   <div class="compare-wrap">
-    <div v-for="g in sortedGroups" :key="g.wf_num" class="card compare-group">
+    <div v-for="g in sortedGroups" :key="g.config ? `${g.wf_num}_${g.config}` : g.wf_num" class="card compare-group">
       <div class="group-header">
         <span class="wf-pill">WF{{ g.wf_num }}</span>
+        <span v-if="g.config" class="config-pill">{{ g.config }}</span>
         <span class="wf-name">{{ wfNames[g.wf_num] || g.test_name || '' }}</span>
         <span class="sn-count">· {{ g.sns.length }} {{ t('queryCenter.snsCount') }}</span>
       </div>
@@ -22,7 +23,7 @@
               class="cp-col-head"
               :class="{
                 clickable: canExpand(g, col.cp_idx) && !checkItemFilter,
-                active: active.kind === 'group' && active.wf === g.wf_num && active.cpIdx === col.cp_idx,
+                active: active.kind === 'group' && active.wf === g.wf_num && active.config === (g.config || null) && active.cpIdx === col.cp_idx,
               }"
               :title="col.cp_name"
               @click="canExpand(g, col.cp_idx) && !checkItemFilter && openGroupPopover(g, col.cp_idx, $event)"
@@ -132,6 +133,7 @@ function hasFaForGroup() { return false }
 const active = reactive({
   kind: null,
   wf: null,
+  config: null,
   cpIdx: null,
   snKey: null, // only for row
   anchor: null, // DOMRect
@@ -193,6 +195,7 @@ function ensureCiLoaded(g, sn, cpIdx) {
 function closePopover() {
   active.kind = null
   active.wf = null
+  active.config = null
   active.cpIdx = null
   active.snKey = null
   active.anchor = null
@@ -211,6 +214,7 @@ function openRowPopover(g, sn, cpIdx, event) {
   if (
     active.kind === 'row' &&
     active.wf === g.wf_num &&
+    active.config === (g.config || null) &&
     active.cpIdx === cpIdx &&
     active.snKey === rowKeyOf(sn)
   ) {
@@ -219,6 +223,7 @@ function openRowPopover(g, sn, cpIdx, event) {
   }
   active.kind = 'row'
   active.wf = g.wf_num
+  active.config = g.config || null
   active.cpIdx = cpIdx
   active.snKey = rowKeyOf(sn)
   active.anchor = rectOf(event)
@@ -226,12 +231,13 @@ function openRowPopover(g, sn, cpIdx, event) {
 }
 
 function openGroupPopover(g, cpIdx, event) {
-  if (active.kind === 'group' && active.wf === g.wf_num && active.cpIdx === cpIdx) {
+  if (active.kind === 'group' && active.wf === g.wf_num && active.config === (g.config || null) && active.cpIdx === cpIdx) {
     closePopover()
     return
   }
   active.kind = 'group'
   active.wf = g.wf_num
+  active.config = g.config || null
   active.cpIdx = cpIdx
   active.snKey = null
   active.anchor = rectOf(event)
@@ -242,13 +248,14 @@ function isActiveRowCell(g, sn, cpIdx) {
   return (
     active.kind === 'row' &&
     active.wf === g.wf_num &&
+    active.config === (g.config || null) &&
     active.cpIdx === cpIdx &&
     active.snKey === rowKeyOf(sn)
   )
 }
 
 // ── Popover content (derived from `active`) ──────────────────────────
-const activeGroup = computed(() => props.groups.find(x => x.wf_num === active.wf) || null)
+const activeGroup = computed(() => props.groups.find(x => x.wf_num === active.wf && (x.config || null) === active.config) || null)
 
 const activeSn = computed(() => {
   if (active.kind !== 'row' || !activeGroup.value) return null
@@ -406,6 +413,12 @@ watch(() => props.groups, () => closePopover())
 .wf-pill {
   padding: 2px 8px;
   background: var(--text-primary); color: var(--bg-card);
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  border-radius: var(--radius-sm);
+}
+.config-pill {
+  padding: 2px 8px;
+  background: var(--primary-light, #e6f4ff); color: var(--primary, #1677ff);
   font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   border-radius: var(--radius-sm);
 }
