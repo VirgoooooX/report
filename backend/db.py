@@ -1192,6 +1192,9 @@ def init_db(drop_all=False, conn=None):
         conn = get_conn()
     if drop_all:
         conn.executescript("""
+            DROP TABLE IF EXISTS raw_check_item_records;
+            DROP TABLE IF EXISTS import_batches;
+            DROP TABLE IF EXISTS base_file_meta;
             DROP TABLE IF EXISTS sn_check_state_history;
             DROP TABLE IF EXISTS sn_check_results;
             DROP TABLE IF EXISTS sn_cp_results;
@@ -1489,6 +1492,46 @@ def init_db(drop_all=False, conn=None):
             detail_json TEXT DEFAULT '{}',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS base_file_meta (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            file_type TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            stored_path TEXT NOT NULL,
+            uploaded_at TEXT NOT NULL,
+            parsed_summary TEXT
+        );
+
+        CREATE TABLE IF NOT EXISTS import_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_date TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            file_count INTEGER,
+            record_count INTEGER,
+            valid_sn_count INTEGER,
+            status TEXT DEFAULT 'completed'
+        );
+
+        CREATE TABLE IF NOT EXISTS raw_check_item_records (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            import_batch_id INTEGER NOT NULL,
+            import_date TEXT NOT NULL,
+            serial_number TEXT NOT NULL,
+            rel_event TEXT NOT NULL,
+            effective_cp TEXT,
+            item TEXT NOT NULL,
+            status TEXT,
+            end_time TEXT,
+            failing_tests TEXT,
+            station_id TEXT,
+            version TEXT,
+            test_params TEXT,
+            source_file TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_raw_records_sn ON raw_check_item_records(serial_number);
+        CREATE INDEX IF NOT EXISTS idx_raw_records_batch ON raw_check_item_records(import_batch_id);
+        CREATE INDEX IF NOT EXISTS idx_raw_records_cp ON raw_check_item_records(serial_number, effective_cp, item);
 
         CREATE INDEX IF NOT EXISTS idx_wf_results_report ON wf_results(report_id);
         CREATE INDEX IF NOT EXISTS idx_wf_results_wf ON wf_results(wf_num, config, test_idx);

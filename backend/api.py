@@ -2788,6 +2788,274 @@ def upload_report():
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  API: Base File Management
+# ═══════════════════════════════════════════════════════════════════════
+
+import base_manager
+
+# Filename keywords → file_type mapping for auto-detection
+_BASE_FILE_TYPE_KEYWORDS = [
+    (['Serial Numbers', 'sn_mapping'], 'sn_mapping'),
+    (['WaterfallCheckpointSchedule', 'checkpoint_schedule'], 'checkpoint_schedule'),
+    (['WaterfallTestPlan', 'test_plan'], 'test_plan'),
+    (['Test Schedule', 'test_schedule'], 'test_schedule'),
+]
+
+
+def _detect_base_file_type(filename):
+    """Detect base file type from filename keywords.
+
+    Returns file_type string or None if unrecognized.
+    """
+    for keywords, file_type in _BASE_FILE_TYPE_KEYWORDS:
+        for kw in keywords:
+            if kw.lower() in filename.lower():
+                return file_type
+    return None
+
+
+@app.route('/api/base-files', methods=['POST'])
+def api_base_files_upload():
+    """Upload one or more Base files. Auto-detect type from filename or use file_type field."""
+    files = request.files.getlist('files')
+    if not files or all(not f.filename for f in files):
+        return jsonify({'success': False, 'error': 'No files provided'}), 400
+
+    # Check for explicit file_type in form data
+    explicit_file_type = request.form.get('file_type', '').strip()
+
+    results = {}
+    errors = []
+
+    for file in files:
+        if not file.filename:
+            continue
+
+        # Determine file type
+        file_type = explicit_file_type or _detect_base_file_type(file.filename)
+        if not file_type:
+            errors.append(f"Cannot identify file type for: {file.filename}")
+            continue
+
+        if file_type not in base_manager.FILE_TYPE_NAMES:
+            errors.append(f"Unknown file type '{file_type}' for: {file.filename}")
+            continue
+
+        try:
+            parsed_summary = base_manager.upload_base_file(file, file_type)
+            results[file_type] = parsed_summary
+        except (ValueError, Exception) as e:
+            errors.append(f"Error parsing {file.filename}: {str(e)}")
+
+    if not results and errors:
+        return jsonify({'success': False, 'error': '; '.join(errors)}), 400
+
+    # Build aggregated summary
+    parsed = {
+        'sn_count': results.get('sn_mapping', {}).get('sn_count', 0),
+        'wf_count': (
+            results.get('checkpoint_schedule', {}).get('wf_count', 0)
+            or results.get('test_plan', {}).get('wf_count', 0)
+        ),
+        'cp_count': results.get('checkpoint_schedule', {}).get('cp_count', 0),
+    }
+
+    response = {'success': True, 'parsed': parsed}
+    if errors:
+        response['warnings'] = errors
+    return jsonify(response)
+
+
+@app.route('/api/base-files', methods=['GET'])
+def api_base_files_list():
+    """Return list of uploaded Base files with metadata."""
+    files = base_manager.get_base_status()
+    return jsonify({'files': files})
+
+
+@app.route('/api/base-files/<filename>', methods=['DELETE'])
+def api_base_files_delete(filename):
+    """Delete a Base file by its stored filename."""
+    # Find the file in base_file_meta by matching stored_path or file_type
+    conn = get_conn()
+    try:
+        # Try matching by standardized filename in stored_path
+        row = conn.execute(
+            "SELECT id, file_type, stored_path FROM base_file_meta WHERE stored_path LIKE ?",
+            (f'%{filename}%',)
+        ).fetchone()
+
+        if not row:
+            # Try matching by file_type directly (e.g., 'sn_mapping')
+            row = conn.execute(
+                "SELECT id, file_type, stored_path FROM base_file_meta WHERE file_type = ?",
+                (filename,)
+            ).fetchone()
+
+        if not row:
+            return jsonify({'success': False, 'error': f'File not found: {filename}'}), 404
+
+        # Delete the physical file
+        stored_path = row['stored_path']
+        if not os.path.isabs(stored_path):
+            stored_path = os.path.join(BASE_DIR, stored_path)
+        if os.path.exists(stored_path):
+            os.remove(stored_path)
+
+        # Delete metadata from DB
+        conn.execute("DELETE FROM base_file_meta WHERE id = ?", (row['id'],))
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({'success': True})
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  API: Check Item CSV Import — Generate Daily Report
+# ═══════════════════════════════════════════════════════════════════════
+
+import checkitem_generator
+
+
+@app.route('/api/checkitem/generate', methods=['POST'])
+def api_checkitem_generate():
+    """Generate Daily Report Excel from uploaded CSV files."""
+    files = request.files.getlist('files')
+    if not files or all(not f.filename for f in files):
+        return jsonify({'success': False, 'error': 'No files provided'}), 400
+
+    try:
+        excel_bytes, filename, summary = checkitem_generator.generate_daily_report(files)
+    except ValueError as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+    except Exception as e:
+        logger.exception("Error generating daily report from CSV")
+        return jsonify({'success': False, 'error': f'Internal error: {str(e)}'}), 500
+
+    # Return Excel as downloadable file stream
+    output = io.BytesIO(excel_bytes)
+    output.seek(0)
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  API: Raw Check Item Records Query
+# ═══════════════════════════════════════════════════════════════════════
+
+@app.route('/api/raw-records', methods=['GET'])
+def api_raw_records():
+    """Query raw check item records for a specific SN or unit.
+
+    Query params:
+        sn   — serial number (exact match)
+        unit — unit number (resolves to SN via SN mapping)
+        item — filter by check item type (e.g., FACT, ISB)
+        from — start date filter (YYYY-MM-DD), inclusive
+        to   — end date filter (YYYY-MM-DD), inclusive
+
+    Returns JSON with SN metadata + records array.
+    """
+    sn = request.args.get('sn', '').strip()
+    unit = request.args.get('unit', '').strip()
+    item_filter = request.args.get('item', '').strip()
+    date_from = request.args.get('from', '').strip()
+    date_to = request.args.get('to', '').strip()
+
+    if not sn and not unit:
+        return jsonify({'error': 'Either sn or unit parameter is required'}), 400
+
+    # Load SN mapping for metadata resolution
+    sn_data = base_manager.get_sn_mapping_from_db()
+
+    # Resolve unit → SN if needed
+    if not sn and unit:
+        if not sn_data:
+            return jsonify({'error': 'SN mapping not available. Please upload Base files first.'}), 400
+        # Find SN by unit_number
+        for serial, info in sn_data['sn_mapping'].items():
+            if info.get('unit_number') == unit:
+                sn = serial
+                break
+        if not sn:
+            return jsonify({'error': f'No SN found for unit number: {unit}'}), 404
+
+    # Get SN metadata
+    unit_number = ''
+    config = ''
+    wf_id = ''
+    if sn_data and sn in sn_data['sn_mapping']:
+        meta = sn_data['sn_mapping'][sn]
+        unit_number = meta.get('unit_number', '')
+        config = meta.get('config', '')
+        wf_id = meta.get('wf_id', '')
+
+    # Build query
+    sql = """SELECT id, end_time, rel_event, effective_cp, item, status,
+                    version, station_id, failing_tests, test_params
+             FROM raw_check_item_records
+             WHERE serial_number = ?"""
+    params = [sn]
+
+    if item_filter:
+        sql += " AND item = ?"
+        params.append(item_filter)
+
+    if date_from:
+        sql += " AND end_time >= ?"
+        params.append(date_from)
+
+    if date_to:
+        # Include the entire end date (up to end of day)
+        sql += " AND end_time <= ?"
+        params.append(date_to + ' 23:59:59')
+
+    sql += " ORDER BY end_time DESC"
+
+    conn = get_conn()
+    try:
+        rows = conn.execute(sql, params).fetchall()
+    finally:
+        conn.close()
+
+    # Format records
+    records = []
+    for row in rows:
+        record = {
+            'id': row['id'],
+            'end_time': row['end_time'],
+            'rel_event': row['rel_event'],
+            'effective_cp': row['effective_cp'],
+            'item': row['item'],
+            'status': row['status'],
+            'version': row['version'],
+            'station_id': row['station_id'],
+            'failing_tests': row['failing_tests'] or None,
+            'test_params': None,
+        }
+        # Parse test_params JSON for FAIL records
+        if row['test_params']:
+            try:
+                record['test_params'] = json.loads(row['test_params'])
+            except (json.JSONDecodeError, TypeError):
+                record['test_params'] = row['test_params']
+        records.append(record)
+
+    return jsonify({
+        'sn': sn,
+        'unit_number': unit_number,
+        'config': config,
+        'wf_id': wf_id,
+        'records': records,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  Main
 # ═══════════════════════════════════════════════════════════════════════
 

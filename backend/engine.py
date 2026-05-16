@@ -1749,22 +1749,50 @@ class DailyReportParseResult:
         self.test_names_by_wf = {}
 
 
-def parse_daily_report(path, report_date=None, source_file_name=None):
+def parse_daily_report(path, report_date=None, source_file_name=None, conn=None):
     """Parse a Daily Report excel file, opening the workbook only once.
+
+    Definition priority:
+    - If the workbook has a Test Summary sheet, use it (backward compatibility).
+    - If no Test Summary sheet but DB has definitions, use DB.
+    - If no Test Summary sheet and no DB definitions, raise ValueError.
 
     Returns a DailyReportParseResult with all extracted data.
     """
     import os as _os
+    import db as _db
 
     result = DailyReportParseResult()
     result.path = path
     result.source_file_name = source_file_name or _os.path.basename(path)
 
+    # Obtain a DB connection for definition lookups
+    owns_conn = conn is None
+    if conn is None:
+        conn = _db.get_conn()
+
     wb = load_workbook(path, data_only=True)
     try:
-        # 1. Read Test Summary (needed early for ts_test_names)
-        result.ts_data, result.ts_qty, result.ts_test_names, result.ts_num_tests = \
-            read_test_summary_from_workbook(wb)
+        # 1. ts_test_names: Test Summary sheet takes priority (backward compat),
+        #    then DB definitions, then error if neither available.
+        has_test_summary = 'Test Summary' in wb.sheetnames
+
+        if has_test_summary:
+            # Requirement 7.5: workbook has Test Summary → use it regardless of DB state
+            result.ts_data, result.ts_qty, result.ts_test_names, result.ts_num_tests = \
+                read_test_summary_from_workbook(wb)
+        else:
+            # No Test Summary sheet — try DB definitions
+            db_test_defs = _db.get_current_test_definitions(conn)
+            if db_test_defs:
+                # Requirement 7.3: no Test Summary + DB has definitions → proceed normally
+                result.ts_test_names = db_test_defs
+                result.ts_data = {}
+                result.ts_qty = {}
+                result.ts_num_tests = {wf: len(names) for wf, names in db_test_defs.items()}
+            else:
+                # Requirement 7.4: no Test Summary + no DB definitions → error
+                raise ValueError("请先上传 Base 文件")
 
         # 2. Extract report date from TS data if not provided
         if not result.report_date:
@@ -1790,8 +1818,21 @@ def parse_daily_report(path, report_date=None, source_file_name=None):
         if validation_errors:
             raise RawDataValidationError(validation_errors)
 
-        # 3. Read Test Schedule → WF names
-        result.wf_names = read_test_schedule_from_workbook(wb)
+        # 3. wf_names: Test Schedule sheet takes priority, then DB, then derive from test names
+        has_test_schedule = 'Test Schedule' in wb.sheetnames
+
+        if has_test_schedule:
+            # Backward compatibility: workbook has Test Schedule → use it
+            result.wf_names = read_test_schedule_from_workbook(wb)
+        else:
+            # No Test Schedule sheet — try DB definitions
+            db_wf_defs = _db.get_current_wf_definitions(conn)
+            if db_wf_defs:
+                result.wf_names = db_wf_defs
+            else:
+                # No Test Schedule sheet and no DB definitions — use empty dict
+                # (wf_names is non-critical; ts_test_names error above catches the real issue)
+                result.wf_names = {}
 
         # 4. Extract CP structures
         result.cp_structures = extract_all_cp_structures_from_workbook(wb)
@@ -1799,10 +1840,8 @@ def parse_daily_report(path, report_date=None, source_file_name=None):
         # 5. Map CPs to tests
         result.mapped_cps = attach_test_idx_to_cps(result.cp_structures, result.ts_test_names)
 
-        # 6. Extract schedule segments
-        result.schedule_segments = extract_test_schedule_segments_from_workbook(
-            wb, result.ts_test_names, result.mapped_cps
-        )
+        # 6. Schedule segments: read exclusively from DB
+        result.schedule_segments = _db.get_current_schedule_segments(conn)
 
         # 7. Build test names dict for current definitions
         result.test_names_by_wf = result.ts_test_names.copy()
@@ -1831,6 +1870,8 @@ def parse_daily_report(path, report_date=None, source_file_name=None):
 
     finally:
         wb.close()
+        if owns_conn:
+            conn.close()
 
     return result
 

@@ -193,6 +193,104 @@
       </div>
       <div v-else-if="!faLoading && faResults.length && !faFlatEntries.length" class="empty-result">{{ t('queryCenter.noFaRecords') }}</div>
     </div>
+
+    <!-- ═══════════ SN Test History (Raw Data) ═══════════ -->
+    <div v-if="activeMode === 'rawHistory'" class="mode-content">
+      <div class="card search-card">
+        <div class="search-bar">
+          <div class="bar-filter-item bar-filter-grow">
+            <label>{{ t('queryCenter.snOrMarkLabel') }}</label>
+            <input v-model="rawHistoryInput" type="text" class="raw-history-input" :placeholder="t('queryCenter.rawHistoryPlaceholder')" @keydown.enter="submitRawHistory" />
+          </div>
+          <div class="bar-filter-item">
+            <label>{{ t('queryCenter.rawHistoryItem') }}</label>
+            <select v-model="rawHistoryItem" class="filter-select inline-filter">
+              <option :value="null">{{ t('queryCenter.rawHistoryAllItems') }}</option>
+              <option v-for="item in rawHistoryItems" :key="item" :value="item">{{ item }}</option>
+            </select>
+          </div>
+          <div class="bar-filter-item">
+            <label>{{ t('queryCenter.rawHistoryFrom') }}</label>
+            <input v-model="rawHistoryFrom" type="date" class="filter-date-input" />
+          </div>
+          <div class="bar-filter-item">
+            <label>{{ t('queryCenter.rawHistoryTo') }}</label>
+            <input v-model="rawHistoryTo" type="date" class="filter-date-input" />
+          </div>
+          <div class="bar-actions">
+            <button class="search-btn" :disabled="rawHistoryLoading || !rawHistoryInput.trim()" @click="submitRawHistory">{{ rawHistoryLoading ? t('common.loading') : t('actions.search') }}</button>
+            <button v-if="rawHistoryData || rawHistoryInput" class="clear-btn" @click="clearRawHistory" :title="t('queryCenter.clear')">✕</button>
+          </div>
+        </div>
+        <ErrorState v-if="rawHistoryError" :message="rawHistoryError" @retry="doRawHistorySearch" />
+      </div>
+
+      <LoadingState v-if="rawHistoryLoading && !rawHistoryData" />
+
+      <template v-if="rawHistoryData && rawHistoryData.records">
+        <div v-if="rawHistoryData.sn" class="raw-history-header">
+          <span class="raw-history-sn">{{ rawHistoryData.sn }}</span>
+          <span v-if="rawHistoryData.unit_number" class="raw-history-unit">({{ rawHistoryData.unit_number }})</span>
+          <span v-if="rawHistoryData.config" class="raw-history-meta">Config: {{ rawHistoryData.config }}</span>
+          <span v-if="rawHistoryData.wf_id" class="raw-history-meta">WF: {{ rawHistoryData.wf_id }}</span>
+          <span class="raw-history-count">{{ rawHistoryData.records.length }} {{ t('queryCenter.faRecordCount') }}</span>
+        </div>
+
+        <div v-if="rawHistoryData.records.length" class="raw-history-results">
+          <table class="raw-history-table">
+            <thead>
+              <tr>
+                <th>{{ t('queryCenter.rawHistoryEndTime') }}</th>
+                <th>{{ t('queryCenter.rawHistoryCp') }}</th>
+                <th>{{ t('queryCenter.rawHistoryItemCol') }}</th>
+                <th>{{ t('queryCenter.rawHistoryStatus') }}</th>
+                <th>{{ t('queryCenter.rawHistoryVersion') }}</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="(rec, ri) in rawHistoryData.records" :key="ri">
+                <tr class="raw-history-row" :class="{ 'row-fail': rec.status === 'FAIL', expanded: rawHistoryExpanded[ri] }" @click="rec.status === 'FAIL' && toggleRawHistoryRow(ri)">
+                  <td class="raw-td-time">{{ rec.end_time }}</td>
+                  <td class="raw-td-cp">{{ rec.effective_cp || rec.rel_event }}</td>
+                  <td>{{ rec.item }}</td>
+                  <td><span class="raw-status-badge" :class="rec.status === 'PASS' ? 'badge-pass' : 'badge-fail'">{{ rec.status }}</span></td>
+                  <td class="raw-td-version">{{ rec.version || '' }}</td>
+                  <td class="raw-td-expand"><span v-if="rec.status === 'FAIL'" class="expand-icon">{{ rawHistoryExpanded[ri] ? '▼' : '📋' }}</span></td>
+                </tr>
+                <tr v-if="rawHistoryExpanded[ri] && rec.status === 'FAIL'" class="raw-history-detail-row">
+                  <td colspan="6">
+                    <div class="raw-detail-panel">
+                      <div v-if="rec.failing_tests" class="raw-detail-item">
+                        <span class="raw-detail-label">{{ t('queryCenter.rawHistoryFailingTests') }}</span>
+                        <span class="raw-detail-val">{{ rec.failing_tests }}</span>
+                      </div>
+                      <div v-if="rec.station_id" class="raw-detail-item">
+                        <span class="raw-detail-label">{{ t('queryCenter.rawHistoryStation') }}</span>
+                        <span class="raw-detail-val raw-detail-mono">{{ rec.station_id }}</span>
+                      </div>
+                      <div v-if="parseTestParams(rec.test_params)" class="raw-detail-params">
+                        <span class="raw-detail-label">{{ t('queryCenter.rawHistoryParams') }}</span>
+                        <table class="raw-params-table">
+                          <thead><tr><th>{{ t('queryCenter.rawHistoryParamName') }}</th><th>{{ t('queryCenter.rawHistoryParamValue') }}</th></tr></thead>
+                          <tbody>
+                            <tr v-for="(val, key) in parseTestParams(rec.test_params)" :key="key">
+                              <td>{{ key }}</td>
+                              <td class="raw-param-val">{{ val }}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+        <div v-else class="empty-result">{{ t('queryCenter.rawHistoryNoRecords') }}</div>
+      </template>
+    </div>
   </div>
 </template>
 
@@ -216,6 +314,7 @@ const modes = [
   { key: 'lookup', i18n: 'queryCenter.lookupMode' },
   { key: 'wcfg', i18n: 'queryCenter.wfCfg' },
   { key: 'failure', i18n: 'queryCenter.failureMode' },
+  { key: 'rawHistory', i18n: 'queryCenter.rawHistory' },
 ]
 const activeMode = ref('lookup')
 const loading = computed(() => store.loading)
@@ -487,6 +586,73 @@ async function doFaSearch() {
   finally { faLoading.value = false }
 }
 
+// ── Raw History mode (SN Test History) ──────────────────────────────
+const rawHistoryInput = ref('')
+const rawHistoryItem = ref(null)
+const rawHistoryFrom = ref('')
+const rawHistoryTo = ref('')
+const rawHistoryLoading = ref(false)
+const rawHistoryError = ref('')
+const rawHistoryData = ref(null)
+const rawHistoryExpanded = ref({})
+
+const rawHistoryItems = ['BT-OTA', 'Charging', 'FACT', 'ISB', 'Touch-CAL-Post', 'Cosmetic']
+
+function clearRawHistory() {
+  rawHistoryInput.value = ''
+  rawHistoryItem.value = null
+  rawHistoryFrom.value = ''
+  rawHistoryTo.value = ''
+  rawHistoryData.value = null
+  rawHistoryError.value = ''
+  rawHistoryExpanded.value = {}
+  router.replace({ name: 'sn', query: { mode: 'rawHistory' } })
+}
+
+function submitRawHistory() {
+  const q = rawHistoryInput.value.trim()
+  if (!q) return
+  pushState({ mode: 'rawHistory', q, item: rawHistoryItem.value || undefined, from: rawHistoryFrom.value || undefined, to: rawHistoryTo.value || undefined })
+}
+
+async function doRawHistorySearch() {
+  const q = rawHistoryInput.value.trim()
+  if (!q) { rawHistoryData.value = null; return }
+  rawHistoryLoading.value = true
+  rawHistoryError.value = ''
+  rawHistoryExpanded.value = {}
+  try {
+    const params = {}
+    // Determine if input looks like a unit number (starts with ER) or SN
+    if (isMarkLike(q)) {
+      params.unit = q
+    } else {
+      params.sn = q
+    }
+    if (rawHistoryItem.value) params.item = rawHistoryItem.value
+    if (rawHistoryFrom.value) params.from = rawHistoryFrom.value
+    if (rawHistoryTo.value) params.to = rawHistoryTo.value
+    const data = await store.fetchRawRecords(params)
+    rawHistoryData.value = data
+    store.lastQueryType = 'rawHistory'
+  } catch (e) {
+    rawHistoryError.value = e.message || t('common.error')
+    rawHistoryData.value = null
+  } finally {
+    rawHistoryLoading.value = false
+  }
+}
+
+function toggleRawHistoryRow(idx) {
+  rawHistoryExpanded.value[idx] = !rawHistoryExpanded.value[idx]
+}
+
+function parseTestParams(paramsJson) {
+  if (!paramsJson) return null
+  if (typeof paramsJson === 'object') return paramsJson
+  try { return JSON.parse(paramsJson) } catch { return null }
+}
+
 // ── Routing ─────────────────────────────────────────────────────────
 function pushState(q) { const query = { ...q }; for (const k of Object.keys(query)) { if (query[k] === '' || query[k] == null) delete query[k] }; router.push({ name: 'sn', query }) }
 function switchMode(key) { if (activeMode.value === key) return; pushState({ mode: key }) }
@@ -526,10 +692,11 @@ async function applyRoute() {
     return
   }
   const mode = q.mode || (hasLookupTags ? 'lookup' : 'wcfg')
-  activeMode.value = ['lookup', 'wcfg', 'failure'].includes(mode) ? mode : 'lookup'
+  activeMode.value = ['lookup', 'wcfg', 'failure', 'rawHistory'].includes(mode) ? mode : 'lookup'
   if (activeMode.value === 'lookup') { const tagsParam = q.tags || legacyQ || ''; const tags = String(tagsParam).split(',').map(s => s.trim()).filter(Boolean); const same = tags.length === lookupTags.value.length && tags.every((t2, i) => t2 === lookupTags.value[i]); if (!same) { lookupTags.value = tags; await doLookup() } else if (tags.length && !lookupResults.value.length) { await doLookup() } }
   else if (activeMode.value === 'wcfg') { const wf = String(q.wf || ''); const cfg = String(q.config || ''); const changed = wf !== wcfgSelectedWf.value || cfg !== wcfgSelectedConfig.value; wcfgSelectedWf.value = wf; wcfgSelectedConfig.value = cfg; /* Restore tag selections */ if (wf) { const wfOpt = wfDisplayOptions.value.find(o => o.startsWith(`WF${wf}`)); if (wfOpt && !wcfgWfSelection.value.includes(wfOpt)) wcfgWfSelection.value = [wfOpt] } if (cfg) { wcfgConfigSelection.value = cfg.split(',').filter(Boolean) } if (wf && (changed || !wcfgData.value || wcfgData.value.wf_num !== wf)) await runWfCfgSearch() }
   else if (activeMode.value === 'failure') { const tagsParam = q.tags || ''; const tags = String(tagsParam).split(',').map(s => s.trim()).filter(Boolean); if (tags.length) { faTags.value = tags; await doFaSearch() } }
+  else if (activeMode.value === 'rawHistory') { const qVal = String(q.q || ''); if (qVal) { rawHistoryInput.value = qVal; rawHistoryItem.value = q.item || null; rawHistoryFrom.value = q.from || ''; rawHistoryTo.value = q.to || ''; await doRawHistorySearch() } }
 }
 
 async function handleRequestCi({ group, sn, cpIdx, resolve }) { try { const res = await store.fetchSnCheckDetails(sn.sn, group.wf_num, sn.config, cpIdx); resolve((res?.check_items || []).map(i => ({ name: i.check_item || i.name, status: i.status, failure_type: i.failure_type || null }))) } catch { resolve([]) } }
@@ -539,6 +706,7 @@ const canExport = computed(() => {
   if (activeMode.value === 'lookup') return lookupResults.value.length > 0
   if (activeMode.value === 'wcfg') return !!(wcfgData.value && wcfgData.value.sns.length)
   if (activeMode.value === 'failure') return faFlatEntries.value.length > 0
+  if (activeMode.value === 'rawHistory') return !!(rawHistoryData.value && rawHistoryData.value.records && rawHistoryData.value.records.length > 0)
   return false
 })
 
@@ -546,6 +714,7 @@ function doExport() {
   if (activeMode.value === 'lookup') exportLookup()
   else if (activeMode.value === 'wcfg') exportWcfg()
   else if (activeMode.value === 'failure') exportFa()
+  else if (activeMode.value === 'rawHistory') exportRawHistory()
 }
 function downloadCsv(filename, csvContent) {
   const bom = '\uFEFF'
@@ -602,6 +771,21 @@ function exportFa() {
   }
   const csv = rows.map(r => r.map(escapeCsv).join(',')).join('\n')
   downloadCsv(`query-failure-${new Date().toISOString().slice(0,10)}.csv`, csv)
+}
+
+function exportRawHistory() {
+  if (!rawHistoryData.value || !rawHistoryData.value.records) return
+  const rows = [['SN', 'Unit Number', 'Config', 'WF', 'End Time', 'CP', 'Item', 'Status', 'Version', 'Station', 'Failing Tests']]
+  for (const r of rawHistoryData.value.records) {
+    rows.push([
+      rawHistoryData.value.sn || '', rawHistoryData.value.unit_number || '',
+      rawHistoryData.value.config || '', rawHistoryData.value.wf_id || '',
+      r.end_time || '', r.effective_cp || r.rel_event || '', r.item || '',
+      r.status || '', r.version || '', r.station_id || '', r.failing_tests || ''
+    ])
+  }
+  const csv = rows.map(r => r.map(escapeCsv).join(',')).join('\n')
+  downloadCsv(`query-raw-history-${new Date().toISOString().slice(0,10)}.csv`, csv)
 }
 
 watch(() => route.fullPath, () => { if (route.name === 'sn') applyRoute() })
@@ -771,4 +955,82 @@ onMounted(async () => { await store.fetchWfList().catch(() => {}); await applyRo
 .fa-other-val { font-size: 12px; color: var(--text-secondary); white-space: pre-wrap; word-break: break-word; }
 
 .empty-result { padding: 40px 20px; text-align: center; color: var(--text-muted); font-size: 14px; }
+
+/* ── Raw History mode ── */
+.raw-history-input {
+  width: 100%; padding: 8px 12px; min-height: 40px;
+  font-family: var(--font-mono); font-size: 14px;
+  border: 1px solid var(--border-input); border-radius: var(--radius-md);
+  background: var(--bg-input); color: var(--text-primary);
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+}
+.raw-history-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 14%, transparent); outline: none; }
+.filter-date-input {
+  padding: 8px 12px; min-height: 40px; font-size: 13px;
+  border: 1px solid var(--border-input); border-radius: var(--radius-md);
+  background: var(--bg-input); color: var(--text-primary);
+}
+.raw-history-header {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 0; margin-bottom: 8px;
+}
+.raw-history-sn { font-family: var(--font-mono); font-weight: 700; font-size: 15px; color: var(--accent-steel); }
+.raw-history-unit { font-family: var(--font-mono); font-size: 13px; color: var(--color-info); }
+.raw-history-meta { font-size: 12px; color: var(--text-muted); padding: 2px 8px; background: var(--bg-tag); border-radius: var(--radius-sm); }
+.raw-history-count { margin-left: auto; font-size: 12px; color: var(--text-muted); font-weight: 600; }
+
+.raw-history-results { overflow-x: auto; }
+.raw-history-table {
+  width: 100%; border-collapse: collapse; font-size: 12px;
+  background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-md);
+}
+.raw-history-table th {
+  padding: 8px 10px; text-align: left; font-size: 11px; font-weight: 600;
+  color: var(--text-muted); background: var(--bg-row-stripe);
+  border-bottom: 1px solid var(--border-light); text-transform: uppercase; letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.raw-history-table td {
+  padding: 8px 10px; border-bottom: 1px solid var(--border-light);
+  font-size: 12px; color: var(--text-primary); vertical-align: top;
+}
+.raw-history-row { transition: background var(--duration-fast); }
+.raw-history-row.row-fail { cursor: pointer; }
+.raw-history-row.row-fail:hover { background: var(--bg-row-hover); }
+.raw-history-row.expanded { background: color-mix(in srgb, var(--accent-steel) 6%, var(--bg-card)); }
+.raw-td-time { font-family: var(--font-mono); font-size: 11px; white-space: nowrap; color: var(--text-secondary); }
+.raw-td-cp { font-family: var(--font-mono); font-size: 11px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.raw-td-version { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
+.raw-td-expand { width: 30px; text-align: center; }
+.expand-icon { cursor: pointer; font-size: 14px; }
+.raw-status-badge { padding: 2px 6px; border-radius: var(--radius-sm); font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.badge-pass { background: #C6EFCE; color: #006100; }
+.badge-fail { background: var(--color-danger-bg); color: var(--color-danger); }
+
+.raw-history-detail-row td { padding: 0; }
+.raw-detail-panel {
+  padding: 14px 20px;
+  display: flex; flex-direction: column; gap: 12px;
+  background: linear-gradient(180deg, var(--bg-row-stripe) 0%, var(--bg-card) 100%);
+  border-top: 2px solid var(--accent-steel);
+}
+.raw-detail-item { display: flex; flex-direction: column; gap: 4px; }
+.raw-detail-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; }
+.raw-detail-val { font-size: 13px; color: var(--text-primary); }
+.raw-detail-mono { font-family: var(--font-mono); font-size: 12px; }
+.raw-detail-params { display: flex; flex-direction: column; gap: 6px; }
+.raw-params-table {
+  width: 100%; max-width: 500px; border-collapse: collapse; font-size: 12px;
+  border: 1px solid var(--border-light); border-radius: var(--radius-sm);
+}
+.raw-params-table th {
+  padding: 6px 10px; text-align: left; font-size: 10px; font-weight: 600;
+  color: var(--text-muted); background: var(--bg-row-stripe);
+  border-bottom: 1px solid var(--border-light); text-transform: uppercase;
+}
+.raw-params-table td {
+  padding: 5px 10px; border-bottom: 1px solid var(--border-light);
+  font-size: 12px; color: var(--text-primary);
+}
+.raw-param-val { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 </style>

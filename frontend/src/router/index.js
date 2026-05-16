@@ -44,6 +44,11 @@ const routes = [
     component: () => import('@/views/DailyUpdateView.vue')
   },
   {
+    path: '/checkitem',
+    name: 'checkitem',
+    component: () => import('@/views/CheckItemView.vue')
+  },
+  {
     path: '/settings',
     name: 'settings',
     component: () => import('@/views/SettingsView.vue')

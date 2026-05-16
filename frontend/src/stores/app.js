@@ -406,6 +406,17 @@ export const useAppStore = defineStore('app', () => {
     return faOptions.value
   }
 
+  // ── Raw Records (SN Test History) ──
+  async function fetchRawRecords(params = {}) {
+    const qs = new URLSearchParams()
+    if (params.sn) qs.set('sn', params.sn)
+    if (params.unit) qs.set('unit', params.unit)
+    if (params.item) qs.set('item', params.item)
+    if (params.from) qs.set('from', params.from)
+    if (params.to) qs.set('to', params.to)
+    return await requestJson(`/api/raw-records?${qs.toString()}`)
+  }
+
   // ── Cache layer ──
 
   function invalidateCache() {
@@ -522,6 +533,7 @@ export const useAppStore = defineStore('app', () => {
     fetchCategoryDetail, searchSn, fetchExportData, uploadReport, fetchFaCross,
     crossData,
     fetchWfList, fetchQueryByWf, fetchSnTimeline, fetchSnCheckDetails, resolveMark, fetchSnFa, fetchFaOptions,
+    fetchRawRecords,
     queryWfList, queryByWfData, queryMultiSnData, querySingleSnData,
     queryByWfKey, queryMultiSnKey, querySingleSnKey,
     settingsRawdata, settingsRules,
