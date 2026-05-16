@@ -12,23 +12,10 @@
         <router-link to="/predictions">{{ t('nav.predictions') }}</router-link>
         <router-link to="/schedule">{{ t('nav.schedule') }}</router-link>
         <router-link to="/sn">{{ t('nav.queryCenter') }}</router-link>
-        <button
-          class="nav-upload-btn"
-          :class="{ uploading: uploadState === 'uploading', done: uploadState === 'done' }"
-          :disabled="uploadState === 'uploading'"
-          @click="showUploadDialog = true"
-        >
-          <span class="upload-icon" aria-hidden="true">
-            <span v-if="uploadState === 'uploading'" class="upload-spinner"></span>
-            <template v-else-if="uploadState === 'done'">&#10003;</template>
-            <template v-else>↑</template>
-          </span>
-          <span class="upload-label">
-            <template v-if="uploadState === 'done'">{{ t('upload.done') }}</template>
-            <template v-else-if="uploadState === 'uploading'">{{ t('upload.uploading') }}</template>
-            <template v-else>{{ t('upload.idle') }}</template>
-          </span>
-        </button>
+        <router-link to="/checkitem" class="nav-upload-btn">
+          <span class="upload-icon" aria-hidden="true">↑</span>
+          <span class="upload-label">{{ t('upload.idle') }}</span>
+        </router-link>
       </div>
       <div class="nav-controls">
         <button
@@ -88,15 +75,14 @@
       </router-link>
     </div>
   </nav>
-  <UploadDialog :visible="showUploadDialog" @close="showUploadDialog = false" @done="onUploadDone" />
+  <!-- UploadDialog moved to CheckItemView -->
 </template>
 
 <script setup>
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n/useI18n'
 import { MenuOutlined, SettingOutlined } from '@ant-design/icons-vue'
-import UploadDialog from '@/components/UploadDialog.vue'
 
 const store = useAppStore()
 const { t } = useI18n()
@@ -114,28 +100,6 @@ function onRefresh() {
 watch(() => store.loading, (val) => {
   if (!val && refreshing.value) refreshing.value = false
 })
-
-// Upload
-const uploadState = ref('idle')
-const showUploadDialog = ref(false)
-let doneTimer = null
-
-async function onUploadDone(formData) {
-  showUploadDialog.value = false
-  uploadState.value = 'uploading'
-  try {
-    await store.uploadReport(formData)
-    store.invalidateCache()
-    store.checkVersion()
-    uploadState.value = 'done'
-    doneTimer = setTimeout(() => { uploadState.value = 'idle' }, 3000)
-  } catch (e) {
-    uploadState.value = 'idle'
-    alert(e.message)
-  }
-}
-
-onUnmounted(() => { if (doneTimer) clearTimeout(doneTimer) })
 
 const navLinks = [
   { to: '/', label: t('nav.dashboard') },
@@ -195,6 +159,14 @@ function toggleLanguage() {
   height: 2px;
   background: var(--accent-steel);
   border-radius: 1px;
+}
+.nav-links a.nav-upload-btn.router-link-active::after {
+  display: none;
+}
+.nav-links a.nav-upload-btn.router-link-active {
+  color: var(--accent-steel);
+  background: color-mix(in srgb, var(--accent-steel) 8%, transparent);
+  font-weight: 500;
 }
 /* ── Upload button ── */
 .nav-upload-btn {

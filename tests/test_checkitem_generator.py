@@ -1032,21 +1032,24 @@ class TestCreateWfSheet:
         assert m.group(1) == "14.1"
 
     def test_fixed_header_columns(self):
-        """Row 1 should have %, Completion%, Config, Unit#, S/N in columns 1-5."""
+        """Row 2 should have %, Completion%, Config, Unit#, S/N in columns 1-5, merged with row 3."""
         from checkitem_generator import create_wf_sheet
         from openpyxl import Workbook
 
         wb = Workbook()
         ws = create_wf_sheet(wb, 1, "Test", ["CP1"], [])
 
-        assert ws.cell(row=1, column=1).value == "%"
-        assert ws.cell(row=1, column=2).value == "Completion%"
-        assert ws.cell(row=1, column=3).value == "Config"
-        assert ws.cell(row=1, column=4).value == "Unit#"
-        assert ws.cell(row=1, column=5).value == "S/N"
+        # Row 1 has Report Date in A1
+        assert "Report Date" in str(ws.cell(row=1, column=1).value)
+        # Row 2 has %, Completion%, Config, Unit#, S/N (merged with row 3)
+        assert ws.cell(row=2, column=1).value == "%"
+        assert ws.cell(row=2, column=2).value == "Completion%"
+        assert ws.cell(row=2, column=3).value == "Config"
+        assert ws.cell(row=2, column=4).value == "Unit #"
+        assert ws.cell(row=2, column=5).value == "S/N"
 
     def test_cp_group_merged_header(self):
-        """Each CP name should be merged across 6 columns in row 1."""
+        """Each CP name should be merged across 6 columns in row 2, starting at col 6."""
         from checkitem_generator import create_wf_sheet, CHECK_ITEMS
         from openpyxl import Workbook
 
@@ -1055,21 +1058,21 @@ class TestCreateWfSheet:
         ws = create_wf_sheet(wb, 1, "Test", cp_list, [])
 
         # First CP starts at column 6 (after 5 fixed headers)
-        assert ws.cell(row=1, column=6).value == "T0"
+        assert ws.cell(row=2, column=6).value == "T0"
         # Second CP starts at column 12 (6 + 6)
-        assert ws.cell(row=1, column=12).value == "BC_CWCB_SHORT"
+        assert ws.cell(row=2, column=12).value == "BC_CWCB_SHORT"
 
     def test_check_item_sub_headers(self):
-        """Row 2 should have check item names under each CP group."""
+        """Row 3 should have check item names under each CP group."""
         from checkitem_generator import create_wf_sheet, CHECK_ITEMS
         from openpyxl import Workbook
 
         wb = Workbook()
         ws = create_wf_sheet(wb, 1, "Test", ["T0"], [])
 
-        # Check items start at column 6 (after 5 fixed headers)
+        # Check items start at column 6 (after 5 fixed headers: %, Completion%, Config, Unit#, S/N)
         for i, item_name in enumerate(CHECK_ITEMS):
-            assert ws.cell(row=2, column=6 + i).value == item_name
+            assert ws.cell(row=3, column=6 + i).value == item_name
 
     def test_check_item_order_is_correct(self):
         """Check items must be in the fixed order."""
@@ -1087,15 +1090,15 @@ class TestCreateWfSheet:
 
         # CP1 sub-headers at columns 6-11
         for i, item_name in enumerate(CHECK_ITEMS):
-            assert ws.cell(row=2, column=6 + i).value == item_name
+            assert ws.cell(row=3, column=6 + i).value == item_name
 
         # CP2 sub-headers at columns 12-17
         for i, item_name in enumerate(CHECK_ITEMS):
-            assert ws.cell(row=2, column=12 + i).value == item_name
+            assert ws.cell(row=3, column=12 + i).value == item_name
 
         # CP3 sub-headers at columns 18-23
         for i, item_name in enumerate(CHECK_ITEMS):
-            assert ws.cell(row=2, column=18 + i).value == item_name
+            assert ws.cell(row=3, column=18 + i).value == item_name
 
     def test_chemical_wf_has_extra_column(self):
         """Chemical WFs (29.x, 30) should have a 'Chemical' column before CP groups."""
@@ -1105,13 +1108,13 @@ class TestCreateWfSheet:
         wb = Workbook()
         ws = create_wf_sheet(wb, 29, "Chemical Test", ["T0"], [])
 
-        # Chemical column at position 6 (after S/N)
-        assert ws.cell(row=1, column=6).value == "Chemical"
+        # Chemical column at position 6 (after 5 fixed headers), merged vertically
+        assert ws.cell(row=2, column=6).value == "Chemical"
         # First CP starts at column 7
-        assert ws.cell(row=1, column=7).value == "T0"
-        # Check items start at column 7
+        assert ws.cell(row=2, column=7).value == "T0"
+        # Check items start at column 7 in row 3
         for i, item_name in enumerate(CHECK_ITEMS):
-            assert ws.cell(row=2, column=7 + i).value == item_name
+            assert ws.cell(row=3, column=7 + i).value == item_name
 
     def test_chemical_wf_29_1(self):
         """WF 29.1 should also be treated as chemical."""
@@ -1121,8 +1124,8 @@ class TestCreateWfSheet:
         wb = Workbook()
         ws = create_wf_sheet(wb, 29.1, "Chemical Sub", ["T0"], [])
 
-        assert ws.cell(row=1, column=6).value == "Chemical"
-        assert ws.cell(row=1, column=7).value == "T0"
+        assert ws.cell(row=2, column=6).value == "Chemical"
+        assert ws.cell(row=2, column=7).value == "T0"
 
     def test_chemical_wf_30(self):
         """WF 30 should also be treated as chemical."""
@@ -1132,8 +1135,8 @@ class TestCreateWfSheet:
         wb = Workbook()
         ws = create_wf_sheet(wb, 30, "Chemical 30", ["T0"], [])
 
-        assert ws.cell(row=1, column=6).value == "Chemical"
-        assert ws.cell(row=1, column=7).value == "T0"
+        assert ws.cell(row=2, column=6).value == "Chemical"
+        assert ws.cell(row=2, column=7).value == "T0"
 
     def test_non_chemical_wf_no_extra_column(self):
         """Non-chemical WFs should NOT have a Chemical column."""
@@ -1144,10 +1147,10 @@ class TestCreateWfSheet:
         ws = create_wf_sheet(wb, 10, "Normal WF", ["T0"], [])
 
         # Column 6 should be the first CP, not "Chemical"
-        assert ws.cell(row=1, column=6).value == "T0"
+        assert ws.cell(row=2, column=6).value == "T0"
 
     def test_sn_data_written_to_data_rows(self):
-        """SN data should be written starting from row 3."""
+        """SN data should be written starting from row 4."""
         from checkitem_generator import create_wf_sheet
         from openpyxl import Workbook
 
@@ -1159,20 +1162,20 @@ class TestCreateWfSheet:
         ]
         ws = create_wf_sheet(wb, 1, "Test", ["T0"], sn_data)
 
-        # Row 3: first SN
-        assert ws.cell(row=3, column=3).value == "R2CNM"
-        assert ws.cell(row=3, column=4).value == "ER2-1-1"
-        assert ws.cell(row=3, column=5).value == "SN001"
-
-        # Row 4: second SN
+        # Row 4: first SN — Config(3), Unit#(4), S/N(5)
         assert ws.cell(row=4, column=3).value == "R2CNM"
-        assert ws.cell(row=4, column=4).value == "ER2-1-2"
-        assert ws.cell(row=4, column=5).value == "SN002"
+        assert ws.cell(row=4, column=4).value == "ER2-1-1"
+        assert ws.cell(row=4, column=5).value == "SN001"
 
-        # Row 5: third SN
-        assert ws.cell(row=5, column=3).value == "R1FNF"
-        assert ws.cell(row=5, column=4).value == "ER1-1-1"
-        assert ws.cell(row=5, column=5).value == "SN003"
+        # Row 5: second SN
+        assert ws.cell(row=5, column=3).value == "R2CNM"
+        assert ws.cell(row=5, column=4).value == "ER2-1-2"
+        assert ws.cell(row=5, column=5).value == "SN002"
+
+        # Row 6: third SN
+        assert ws.cell(row=6, column=3).value == "R1FNF"
+        assert ws.cell(row=6, column=4).value == "ER1-1-1"
+        assert ws.cell(row=6, column=5).value == "SN003"
 
     def test_empty_cp_list(self):
         """Sheet should still be created with just fixed headers if no CPs."""
@@ -1182,10 +1185,13 @@ class TestCreateWfSheet:
         wb = Workbook()
         ws = create_wf_sheet(wb, 1, "Empty", [], [])
 
-        assert ws.cell(row=1, column=1).value == "%"
-        assert ws.cell(row=1, column=5).value == "S/N"
+        # Row 1 has Report Date
+        assert "Report Date" in str(ws.cell(row=1, column=1).value)
+        # Row 2 has %, Completion%, Config, Unit#, S/N
+        assert ws.cell(row=2, column=1).value == "%"
+        assert ws.cell(row=2, column=5).value == "S/N"
         # No CP headers beyond column 5
-        assert ws.cell(row=1, column=6).value is None
+        assert ws.cell(row=2, column=6).value is None
 
     def test_empty_sn_data(self):
         """Sheet should still have headers even with no SN data."""
@@ -1195,9 +1201,9 @@ class TestCreateWfSheet:
         wb = Workbook()
         ws = create_wf_sheet(wb, 1, "NoData", ["T0"], [])
 
-        assert ws.cell(row=1, column=6).value == "T0"
-        # Row 3 should be empty
-        assert ws.cell(row=3, column=3).value is None
+        assert ws.cell(row=2, column=6).value == "T0"
+        # Row 4 should be empty (data starts at row 4)
+        assert ws.cell(row=4, column=3).value is None
 
     def test_is_chemical_override(self):
         """is_chemical parameter should override auto-detection."""
@@ -1207,12 +1213,12 @@ class TestCreateWfSheet:
         # Force chemical on a non-chemical WF
         wb = Workbook()
         ws = create_wf_sheet(wb, 10, "Forced Chemical", ["T0"], [], is_chemical=True)
-        assert ws.cell(row=1, column=6).value == "Chemical"
+        assert ws.cell(row=2, column=6).value == "Chemical"
 
         # Force non-chemical on a chemical WF
         wb2 = Workbook()
         ws2 = create_wf_sheet(wb2, 29, "Forced Normal", ["T0"], [], is_chemical=False)
-        assert ws2.cell(row=1, column=6).value == "T0"
+        assert ws2.cell(row=2, column=6).value == "T0"
 
     def test_sheet_name_truncated_to_31_chars(self):
         """Excel sheet names are limited to 31 characters."""
@@ -1238,7 +1244,7 @@ class TestCreateWfSheet:
         assert ws in wb.worksheets
 
     def test_merged_cells_for_cp_header(self):
-        """CP headers should be merged across 6 columns."""
+        """CP headers should be merged across 6 columns in row 2."""
         from checkitem_generator import create_wf_sheet
         from openpyxl import Workbook
 
@@ -1247,10 +1253,10 @@ class TestCreateWfSheet:
 
         # Check that merged cell ranges exist
         merged = [str(m) for m in ws.merged_cells.ranges]
-        # T0 should be merged from F1:K1 (columns 6-11)
-        assert "F1:K1" in merged
-        # CP2 should be merged from L1:Q1 (columns 12-17)
-        assert "L1:Q1" in merged
+        # T0 should be merged from F2:K2 (columns 6-11, row 2)
+        assert "F2:K2" in merged
+        # CP2 should be merged from L2:Q2 (columns 12-17, row 2)
+        assert "L2:Q2" in merged
 
 
 class TestPopulateWfData:
@@ -1275,7 +1281,7 @@ class TestPopulateWfData:
         ws = create_wf_sheet(wb, 1, "Test", cp_list, sn_data, records_by_sn=records_by_sn)
 
         # Cosmetic is the first check item, at column 6 (after 5 fixed headers)
-        cell = ws.cell(row=3, column=6)
+        cell = ws.cell(row=4, column=6)
         assert cell.value == "PASS"
         assert cell.fill == PASS_FILL
         assert cell.font == PASS_FONT
@@ -1299,7 +1305,7 @@ class TestPopulateWfData:
         ws = create_wf_sheet(wb, 1, "Test", cp_list, sn_data, records_by_sn=records_by_sn)
 
         # FACT is the 3rd check item (index 2), at column 8
-        cell = ws.cell(row=3, column=8)
+        cell = ws.cell(row=4, column=8)
         assert cell.value == "FAIL"
         assert cell.fill == SPEC_FAIL_FILL
 
@@ -1322,7 +1328,7 @@ class TestPopulateWfData:
         ws = create_wf_sheet(wb, 1, "Test", cp_list, sn_data, records_by_sn=records_by_sn)
 
         # ISB is the 2nd check item (index 1), at column 7
-        cell = ws.cell(row=3, column=7)
+        cell = ws.cell(row=4, column=7)
         assert cell.value == "FAIL"
         assert cell.fill == STRIFE_FAIL_FILL
         assert cell.font == STRIFE_FAIL_FONT
@@ -1346,7 +1352,7 @@ class TestPopulateWfData:
         ws = create_wf_sheet(wb, 1, "Test", cp_list, sn_data, records_by_sn=records_by_sn)
 
         # ISB is at column 7 — should be empty
-        cell = ws.cell(row=3, column=7)
+        cell = ws.cell(row=4, column=7)
         assert cell.value is None
         # Default fill (no fill applied)
         assert cell.fill == PatternFill()
@@ -1377,21 +1383,21 @@ class TestPopulateWfData:
 
         ws = create_wf_sheet(wb, 1, "Test", cp_list, sn_data, records_by_sn=records_by_sn)
 
-        # SN001 row 3: T0/Cosmetic at col 6 = PASS
-        assert ws.cell(row=3, column=6).value == "PASS"
-        assert ws.cell(row=3, column=6).fill == PASS_FILL
+        # SN001 row 4: T0/Cosmetic at col 6 = PASS
+        assert ws.cell(row=4, column=6).value == "PASS"
+        assert ws.cell(row=4, column=6).fill == PASS_FILL
 
-        # SN001 row 3: CP2/FACT at col 12+2=14 (CP2 starts at col 12, FACT is index 2)
-        assert ws.cell(row=3, column=14).value == "FAIL"
-        assert ws.cell(row=3, column=14).fill == SPEC_FAIL_FILL
+        # SN001 row 4: CP2/FACT at col 12+2=14 (CP2 starts at col 12, FACT is index 2)
+        assert ws.cell(row=4, column=14).value == "FAIL"
+        assert ws.cell(row=4, column=14).fill == SPEC_FAIL_FILL
 
-        # SN002 row 4: T0/ISB at col 7 = strife FAIL
-        assert ws.cell(row=4, column=7).value == "FAIL"
-        assert ws.cell(row=4, column=7).fill == STRIFE_FAIL_FILL
+        # SN002 row 5: T0/ISB at col 7 = strife FAIL
+        assert ws.cell(row=5, column=7).value == "FAIL"
+        assert ws.cell(row=5, column=7).fill == STRIFE_FAIL_FILL
 
-        # SN002 row 4: CP2/Charging at col 12+5=17 (Charging is index 5)
-        assert ws.cell(row=4, column=17).value == "PASS"
-        assert ws.cell(row=4, column=17).fill == PASS_FILL
+        # SN002 row 5: CP2/Charging at col 12+5=17 (Charging is index 5)
+        assert ws.cell(row=5, column=17).value == "PASS"
+        assert ws.cell(row=5, column=17).fill == PASS_FILL
 
     def test_chemical_wf_shifts_columns(self):
         """Chemical WF should shift CP data columns by 1 (Chemical column at col 6)."""
@@ -1411,12 +1417,12 @@ class TestPopulateWfData:
 
         # Chemical WF: Chemical col at 6, CP starts at 7
         # Cosmetic (index 0) should be at column 7
-        cell = ws.cell(row=3, column=7)
+        cell = ws.cell(row=4, column=7)
         assert cell.value == "PASS"
         assert cell.fill == PASS_FILL
 
         # Column 6 should be empty (Chemical column, user fills manually)
-        assert ws.cell(row=3, column=6).value is None
+        assert ws.cell(row=4, column=6).value is None
 
     def test_sn_not_in_records_gets_empty_cells(self):
         """SNs not present in records_by_sn should have empty data cells."""
@@ -1439,10 +1445,10 @@ class TestPopulateWfData:
         ws = create_wf_sheet(wb, 1, "Test", cp_list, sn_data, records_by_sn=records_by_sn)
 
         # SN001 has data
-        assert ws.cell(row=3, column=6).value == "PASS"
-        # SN002 row 4 should be empty
-        assert ws.cell(row=4, column=6).value is None
-        assert ws.cell(row=4, column=7).value is None
+        assert ws.cell(row=4, column=6).value == "PASS"
+        # SN002 row 5 should be empty
+        assert ws.cell(row=5, column=6).value is None
+        assert ws.cell(row=5, column=7).value is None
 
     def test_no_records_by_sn_skips_population(self):
         """When records_by_sn is None, no data population occurs."""
@@ -1456,7 +1462,7 @@ class TestPopulateWfData:
         ws = create_wf_sheet(wb, 1, "Test", cp_list, sn_data, records_by_sn=None)
 
         # Data cells should be empty (no population)
-        assert ws.cell(row=3, column=6).value is None
+        assert ws.cell(row=4, column=6).value is None
 
     def test_populate_wf_data_directly(self):
         """Test calling populate_wf_data directly on an existing worksheet."""
@@ -1486,18 +1492,18 @@ class TestPopulateWfData:
         populate_wf_data(ws, sn_data, cp_list, records_by_sn, is_chemical=False)
 
         # Cosmetic (col 6) = PASS green
-        assert ws.cell(row=3, column=6).value == "PASS"
-        assert ws.cell(row=3, column=6).fill == PASS_FILL
-        assert ws.cell(row=3, column=6).font == PASS_FONT
+        assert ws.cell(row=4, column=6).value == "PASS"
+        assert ws.cell(row=4, column=6).fill == PASS_FILL
+        assert ws.cell(row=4, column=6).font == PASS_FONT
 
         # ISB (col 7) = spec_fail red
-        assert ws.cell(row=3, column=7).value == "FAIL"
-        assert ws.cell(row=3, column=7).fill == SPEC_FAIL_FILL
+        assert ws.cell(row=4, column=7).value == "FAIL"
+        assert ws.cell(row=4, column=7).fill == SPEC_FAIL_FILL
 
         # BT-OTA (col 9) = strife_fail yellow
-        assert ws.cell(row=3, column=9).value == "FAIL"
-        assert ws.cell(row=3, column=9).fill == STRIFE_FAIL_FILL
-        assert ws.cell(row=3, column=9).font == STRIFE_FAIL_FONT
+        assert ws.cell(row=4, column=9).value == "FAIL"
+        assert ws.cell(row=4, column=9).fill == STRIFE_FAIL_FILL
+        assert ws.cell(row=4, column=9).font == STRIFE_FAIL_FONT
 
     def test_all_six_check_items_correct_columns(self):
         """Verify all 6 check items map to correct columns for a single CP."""
@@ -1518,7 +1524,7 @@ class TestPopulateWfData:
 
         # All 6 items should be PASS at columns 6-11
         for i, item in enumerate(CHECK_ITEMS):
-            cell = ws.cell(row=3, column=6 + i)
+            cell = ws.cell(row=4, column=6 + i)
             assert cell.value == "PASS", f"Item {item} at col {6+i} should be PASS"
             assert cell.fill == PASS_FILL, f"Item {item} at col {6+i} should have PASS fill"
 

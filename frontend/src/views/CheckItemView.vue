@@ -134,27 +134,160 @@
       </div>
     </section>
 
-    <!-- Section 3: Upload Corrected Report -->
+    <!-- Section 3: Rawdata Management -->
     <section class="section">
       <div class="card section-card">
         <div class="section-header">
-          <h2 class="section-title">{{ t('checkitem.uploadCorrectedTitle') }}</h2>
+          <h2 class="section-title">{{ t('settings.tabRawdata') }} 管理</h2>
           <p class="section-desc">{{ t('checkitem.uploadCorrectedDesc') }}</p>
         </div>
-        <div class="placeholder-content">
-          <p class="placeholder-text">{{ t('checkitem.uploadCorrectedPlaceholder') }}</p>
+
+        <!-- Parse panel -->
+        <div class="rawdata-panel-group">
+          <div class="panel parse-panel">
+            <div class="panel-title">
+              <PlayCircleOutlined />
+              <span>{{ t('settings.parseSection') }}</span>
+            </div>
+            <div class="field-grid">
+              <label class="field">
+                <span>{{ t('settings.dailyReport') }}</span>
+                <select v-model="selectedDaily">
+                  <option value="">{{ t('settings.selectFile') }}</option>
+                  <option v-for="file in dailyFiles" :key="file.path" :value="file.path">
+                    {{ file.date || t('settings.noDate') }} · {{ file.name }}
+                  </option>
+                </select>
+              </label>
+              <label class="field">
+                <span>{{ t('settings.faTracker') }}</span>
+                <select v-model="selectedFa">
+                  <option value="">{{ t('settings.autoMatch') }}</option>
+                  <option v-for="file in faFiles" :key="file.path" :value="file.path">
+                    {{ file.date || t('settings.noDate') }} · {{ file.name }}
+                  </option>
+                </select>
+              </label>
+            </div>
+            <div class="action-row">
+              <label class="toggle-switch" :class="{ active: skipValidation }">
+                <input type="checkbox" v-model="skipValidation" />
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-label">Skip Validation</span>
+              </label>
+              <button class="btn-primary" :disabled="!selectedDaily || parsing" @click="parseSelected">
+                <PlayCircleOutlined />
+                <span>{{ parsing ? t('settings.parsing') : t('settings.parseSelected') }}</span>
+              </button>
+              <button
+                class="btn-secondary"
+                :disabled="uploadState === 'uploading'"
+                @click="showUploadDialog = true"
+              >
+                <template v-if="uploadState === 'done'">✓ {{ t('upload.done') }}</template>
+                <template v-else-if="uploadState === 'uploading'">{{ t('upload.uploading') }}</template>
+                <template v-else>{{ t('upload.idle') }}</template>
+              </button>
+              <span class="status-text" :class="{ error: rawdataStatusType === 'error' }">{{ rawdataStatusText }}</span>
+            </div>
+          </div>
+
+          <!-- Rawdata file list -->
+          <div class="panel rawdata-panel">
+            <div class="panel-title">
+              <FileExcelOutlined />
+              <span>{{ t('settings.rawdataFiles') }}</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{{ t('settings.kind') }}</th>
+                    <th>{{ t('settings.date') }}</th>
+                    <th>{{ t('settings.file') }}</th>
+                    <th>{{ t('settings.size') }}</th>
+                    <th>{{ t('settings.modifiedAt') }}</th>
+                    <th>{{ t('settings.actions') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="file in rawdataFiles" :key="file.path">
+                    <td><span class="kind-badge" :class="file.kind">{{ kindLabel(file.kind) }}</span></td>
+                    <td class="mono">{{ file.date || '-' }}</td>
+                    <td class="file-name" :title="file.path">{{ file.name }}</td>
+                    <td class="mono">{{ formatSize(file.size) }}</td>
+                    <td class="mono">{{ formatDateTime(file.modified_at) }}</td>
+                    <td>
+                      <div class="row-actions">
+                        <button
+                          v-if="file.kind === 'daily_report'"
+                          class="icon-btn small"
+                          :title="t('settings.parseFile')"
+                          :aria-label="t('settings.parseFile')"
+                          @click="parseFile(file)"
+                        >
+                          <PlayCircleOutlined />
+                        </button>
+                        <button class="icon-btn small danger" :title="t('settings.deleteFile')" :aria-label="t('settings.deleteFile')" @click="deleteFile(file)">
+                          <DeleteOutlined />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr v-if="!rawdataFiles.length">
+                    <td colspan="6" class="empty-row">{{ t('settings.noRawdataFiles') }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <label class="purge-toggle">
+              <input v-model="purgeDbOnDelete" type="checkbox" />
+              <span>{{ t('settings.purgeDb') }}</span>
+            </label>
+          </div>
+
+          <!-- Imported reports -->
+          <div class="panel reports-panel">
+            <div class="panel-title">
+              <DatabaseOutlined />
+              <span>{{ t('settings.importedReports') }}</span>
+            </div>
+            <div class="report-list">
+              <div v-for="report in rawdataReports" :key="report.id" class="report-row">
+                <span class="mono">{{ report.report_date }}</span>
+                <span>v{{ report.version }}</span>
+                <span class="report-file">{{ report.source_file_name }}</span>
+                <span class="mono imported-at">{{ formatDateTime(report.imported_at) }}</span>
+                <span class="active-pill" :class="{ muted: !report.is_active }">
+                  {{ report.is_active ? t('settings.active') : t('settings.history') }}
+                </span>
+              </div>
+              <div v-if="!rawdataReports.length" class="empty-row">{{ t('settings.noImportedReports') }}</div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
+
+    <UploadDialog :visible="showUploadDialog" @close="showUploadDialog = false" @done="onUploadDone" />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
+import {
+  DatabaseOutlined,
+  DeleteOutlined,
+  FileExcelOutlined,
+  PlayCircleOutlined,
+} from '@ant-design/icons-vue'
+import { useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n/useI18n'
 import { identifyCsvType, formatStats, formatDate } from './CheckItemDisplay.js'
+import UploadDialog from '@/components/UploadDialog.vue'
 
 const { t } = useI18n()
+const store = useAppStore()
 
 // --- State ---
 const baseFiles = ref([])
@@ -365,9 +498,109 @@ async function handleFileChange(event, fileType) {
   }
 }
 
+// --- Upload Corrected Report (reuses existing UploadDialog) ---
+const uploadState = ref('idle')
+const showUploadDialog = ref(false)
+
+async function onUploadDone(formData) {
+  showUploadDialog.value = false
+  uploadState.value = 'uploading'
+  try {
+    await store.uploadReport(formData, { skipValidation: skipValidation.value })
+    store.invalidateCache()
+    store.checkVersion()
+    uploadState.value = 'done'
+    setTimeout(() => { uploadState.value = 'idle' }, 3000)
+    // Refresh rawdata after upload
+    await store.fetchRawdataSettings()
+  } catch (e) {
+    uploadState.value = 'idle'
+    alert(e.message)
+  }
+}
+
+// --- Rawdata Management ---
+const selectedDaily = ref('')
+const selectedFa = ref('')
+const purgeDbOnDelete = ref(false)
+const parsing = ref(false)
+const skipValidation = ref(false)
+const rawdataStatusText = ref('')
+const rawdataStatusType = ref('')
+
+const rawdataFiles = computed(() => store.settingsRawdata.files || [])
+const rawdataReports = computed(() => store.settingsRawdata.reports || [])
+const dailyFiles = computed(() => rawdataFiles.value.filter(file => file.kind === 'daily_report'))
+const faFiles = computed(() => rawdataFiles.value.filter(file => file.kind === 'fa_tracker'))
+
+function showRawdataStatus(message, type = '') {
+  rawdataStatusText.value = message
+  rawdataStatusType.value = type
+}
+
+async function parseSelected() {
+  if (!selectedDaily.value) return
+  parsing.value = true
+  showRawdataStatus('')
+  try {
+    const result = await store.parseRawdata(selectedDaily.value, selectedFa.value, { skipValidation: skipValidation.value })
+    showRawdataStatus(t('settings.parseDone', { date: result.report_date, count: result.wf_count }))
+    store.triggerRefresh()
+  } catch (e) {
+    showRawdataStatus(e.message || t('settings.parseFailed'), 'error')
+  } finally {
+    parsing.value = false
+  }
+}
+
+function parseFile(file) {
+  selectedDaily.value = file.path
+  const sameDateFa = faFiles.value.find(item => item.date && item.date === file.date)
+  selectedFa.value = sameDateFa?.path || ''
+  parseSelected()
+}
+
+async function deleteFile(file) {
+  const suffix = purgeDbOnDelete.value && file.kind === 'daily_report' ? t('settings.deleteConfirmSuffix') : ''
+  if (!window.confirm(t('settings.deleteConfirm', { name: file.name, suffix }))) return
+  try {
+    await store.deleteRawdataFile(file.path, purgeDbOnDelete.value && file.kind === 'daily_report')
+    showRawdataStatus(t('settings.deleteDone', { name: file.name }))
+    if (selectedDaily.value === file.path) selectedDaily.value = ''
+    if (selectedFa.value === file.path) selectedFa.value = ''
+  } catch (e) {
+    showRawdataStatus(e.message || t('settings.deleteFailed'), 'error')
+  }
+}
+
+function kindLabel(kind) {
+  return kind === 'daily_report' ? t('settings.kindDaily') : kind === 'fa_tracker' ? t('settings.kindFa') : t('settings.kindOther')
+}
+
+function formatSize(size) {
+  if (!Number.isFinite(size)) return '-'
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+
+function formatDateTime(value) {
+  if (!value) return '-'
+  return String(value).replace('T', ' ').slice(0, 16)
+}
+
+watch(dailyFiles, (next) => {
+  if (!selectedDaily.value && next.length) selectedDaily.value = next[0].path
+})
+
 // --- Lifecycle ---
 onMounted(() => {
   fetchBaseFiles()
+  store.fetchRawdataSettings().then(() => {
+    if (!selectedDaily.value && dailyFiles.value.length) {
+      selectedDaily.value = dailyFiles.value[0].path
+    }
+  })
 })
 </script>
 
@@ -700,9 +933,328 @@ onMounted(() => {
   margin: 0;
 }
 
+/* Rawdata panels */
+.rawdata-panel-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.panel {
+  padding: 18px 20px;
+  border: 1px solid var(--border-card);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  gap: 14px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field span {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.field select {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.field select:focus {
+  border-color: var(--border-focus);
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+/* Toggle switch */
+.toggle-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--border-input, #d9d9d9);
+  border-radius: 10px;
+  transition: background var(--duration-fast, 0.2s) var(--ease-in-out, ease);
+}
+
+.toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  transition: transform var(--duration-fast, 0.2s) var(--ease-in-out, ease);
+}
+
+.toggle-switch.active .toggle-track {
+  background: var(--accent-steel, #4a90d9);
+}
+
+.toggle-switch.active .toggle-thumb {
+  transform: translateX(16px);
+}
+
+.toggle-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary, #666);
+  transition: color var(--duration-fast, 0.2s) var(--ease-in-out, ease);
+}
+
+.toggle-switch.active .toggle-label {
+  color: var(--text-primary, #333);
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity var(--duration-fast), background var(--duration-fast), color var(--duration-fast);
+}
+
+.btn-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: opacity var(--duration-fast), background var(--duration-fast), color var(--duration-fast);
+}
+
+.icon-btn.small {
+  width: 30px;
+  height: 30px;
+  font-size: 12px;
+}
+
+.icon-btn.danger {
+  color: var(--color-danger);
+}
+
+.icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.icon-btn:hover:not(:disabled) {
+  opacity: 0.9;
+}
+
+.status-text {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.status-text.error {
+  color: var(--color-danger);
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+th,
+td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border-light);
+  text-align: left;
+  vertical-align: middle;
+}
+
+th {
+  color: var(--text-muted);
+  background: var(--bg-row-stripe);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+tr:hover td {
+  background: var(--bg-row-hover);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.file-name,
+.report-file {
+  max-width: 420px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kind-badge,
+.active-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.kind-badge.daily_report {
+  color: var(--accent-steel);
+  background: color-mix(in srgb, var(--accent-steel) 10%, transparent);
+}
+
+.kind-badge.fa_tracker {
+  color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.kind-badge.other {
+  color: var(--text-muted);
+  background: var(--bg-tag);
+}
+
+.row-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.purge-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.report-list {
+  display: grid;
+  gap: 8px;
+}
+
+.report-row {
+  display: grid;
+  grid-template-columns: 110px 52px minmax(0, 1fr) 130px 78px;
+  align-items: center;
+  gap: 12px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+}
+
+.imported-at {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.active-pill {
+  color: #fff;
+  background: var(--accent-steel);
+}
+
+.active-pill.muted {
+  color: var(--text-muted);
+  background: var(--bg-tag);
+}
+
+.empty-row {
+  padding: 24px 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 @media (max-width: 700px) {
   .base-file-grid {
     grid-template-columns: 1fr;
+  }
+
+  .report-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
   }
 }
 </style>

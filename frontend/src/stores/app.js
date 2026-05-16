@@ -175,8 +175,9 @@ export const useAppStore = defineStore('app', () => {
     return Array.isArray(data) ? data : []
   }
 
-  async function uploadReport(formData) {
-    const resp = await fetch('/api/upload', { method: 'POST', body: formData })
+  async function uploadReport(formData, { skipValidation = false } = {}) {
+    const url = skipValidation ? '/api/upload?skip_validation=true' : '/api/upload'
+    const resp = await fetch(url, { method: 'POST', body: formData })
     const contentType = resp.headers.get('content-type') || ''
     if (!resp.ok) {
       const text = await resp.text()
@@ -210,8 +211,11 @@ export const useAppStore = defineStore('app', () => {
     return data
   }
 
-  async function parseRawdata(dailyPath, faPath = '') {
-    const data = await requestJson('/api/settings/rawdata/parse', {
+  async function parseRawdata(dailyPath, faPath = '', { skipValidation = false } = {}) {
+    const url = skipValidation
+      ? '/api/settings/rawdata/parse?skip_validation=true'
+      : '/api/settings/rawdata/parse'
+    const data = await requestJson(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ daily_path: dailyPath, fa_path: faPath })

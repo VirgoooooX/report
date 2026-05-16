@@ -252,7 +252,7 @@
               <template v-for="(rec, ri) in rawHistoryData.records" :key="ri">
                 <tr class="raw-history-row" :class="{ 'row-fail': rec.status === 'FAIL', expanded: rawHistoryExpanded[ri] }" @click="rec.status === 'FAIL' && toggleRawHistoryRow(ri)">
                   <td class="raw-td-time">{{ rec.end_time }}</td>
-                  <td class="raw-td-cp">{{ rec.effective_cp || rec.rel_event }}</td>
+                  <td class="raw-td-cp">{{ rec.rel_event }}</td>
                   <td>{{ rec.item }}</td>
                   <td><span class="raw-status-badge" :class="rec.status === 'PASS' ? 'badge-pass' : 'badge-fail'">{{ rec.status }}</span></td>
                   <td class="raw-td-version">{{ rec.version || '' }}</td>

@@ -417,16 +417,16 @@ class TestExcelGenerationIntegration:
 
         assert wf1_sheet is not None, "WF1 sheet not found in generated Excel"
 
-        # engine.py uses header_row=1 by default when it can't find Config/Unit # pattern
-        # Our generator puts CP headers in row 1, which is what engine.py expects
-        cps = extract_cp_structure(wf1_sheet, header_row=1)
+        # engine.py finds header_row by looking for Config/Unit # pattern
+        # Our generator puts these at row 2, so CP headers are also in row 2
+        cps = extract_cp_structure(wf1_sheet, header_row=2, cp_range_start=6)
 
         # Should find at least one CP (TC_100CYCLES — T0 is excluded by is_cp_header_label)
         assert len(cps) >= 1
         cp_names = [cp['cp_name'] for cp in cps]
         assert 'TC_100CYCLES' in cp_names
 
-        # Each CP should have check items extracted from row 2
+        # Each CP should have check items extracted from row 3
         for cp in cps:
             assert 'check_items' in cp
             # Check items should be from the known set
@@ -518,17 +518,20 @@ class TestExcelGenerationIntegration:
 
         for name in wb.sheetnames:
             ws = wb[name]
+            # Row 1 should have Report Date in A1
+            assert "Report Date" in str(ws.cell(row=1, column=1).value or '')
+
             # Row 2 should have fixed headers in columns 1-5
             assert ws.cell(row=2, column=1).value == "%"
             assert ws.cell(row=2, column=2).value == "Completion%"
             assert ws.cell(row=2, column=3).value == "Config"
-            assert ws.cell(row=2, column=4).value == "Unit#"
+            assert ws.cell(row=2, column=4).value == "Unit #"
             assert ws.cell(row=2, column=5).value == "S/N"
 
-            # Check items should appear in row 2 starting from column 6
+            # Check items should appear in row 3 starting from column 6
             check_items_found = []
             for col in range(6, ws.max_column + 1):
-                val = ws.cell(row=2, column=col).value
+                val = ws.cell(row=3, column=col).value
                 if val and val in {'Cosmetic', 'ISB', 'FACT', 'BT-OTA', 'Touch-CAL-Post', 'Charging'}:
                     check_items_found.append(val)
 

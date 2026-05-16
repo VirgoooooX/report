@@ -6,15 +6,18 @@ Check Item CSV Import — Daily Report Excel Generator.
 
 import csv
 import datetime
+import glob
 import io
 import json
+import os
 import re
 
-from openpyxl import Workbook
-from openpyxl.styles import PatternFill, Font
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 import db
+from app_paths import RAWDATA_DIR
 from base_manager import get_sn_mapping_from_db, get_sn_lookup_dicts
 
 
@@ -402,10 +405,18 @@ def detect_strife_failures(records: list[dict], cp_schedule: dict) -> list[dict]
 
 # ---------------------------------------------------------------------------
 # Excel Generation — WF Sheet Layout (openpyxl)
+# Formatting matches the original generate_rel_summary.py xlsxwriter output.
 # ---------------------------------------------------------------------------
 
 # Fixed check item order for all WF sheets.
 CHECK_ITEMS = ["Cosmetic", "ISB", "FACT", "BT-OTA", "Touch-CAL-Post", "Charging"]
+
+# --- Border definitions ---
+_THIN_SIDE = Side(style='thin')
+_THICK_SIDE = Side(style='medium')
+
+_THIN_BORDER = Border(left=_THIN_SIDE, right=_THIN_SIDE, top=_THIN_SIDE, bottom=_THIN_SIDE)
+_CENTER_ALIGN = Alignment(horizontal='center', vertical='center')
 
 # --- Color coding constants ---
 PASS_FILL = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
@@ -414,8 +425,39 @@ SPEC_FAIL_FILL = PatternFill(start_color="FF0000", end_color="FF0000", fill_type
 STRIFE_FAIL_FILL = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
 STRIFE_FAIL_FONT = Font(color="000000")
 
+# Header styling
+_CP_HEADER_FILL = PatternFill(start_color="B0B0B0", end_color="B0B0B0", fill_type="solid")
+_CP_HEADER_FONT = Font(bold=True)
+_CP_HEADER_BORDER = Border(
+    left=_THICK_SIDE, right=_THICK_SIDE, top=_THICK_SIDE, bottom=_THICK_SIDE
+)
+
+_SUB_HEADER_FILL = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+_SUB_HEADER_FONT = Font(bold=True)
+_SUB_HEADER_BORDER = Border(
+    left=_THIN_SIDE, right=_THIN_SIDE, top=_THICK_SIDE, bottom=_THICK_SIDE
+)
+_SUB_HEADER_BORDER_RIGHT = Border(
+    left=_THIN_SIDE, right=_THICK_SIDE, top=_THICK_SIDE, bottom=_THICK_SIDE
+)
+
+# SN header (Config/Unit#/S/N in sub-header row)
+_SN_HEADER_BORDER = Border(
+    left=_THIN_SIDE, right=_THICK_SIDE, top=_THICK_SIDE, bottom=_THICK_SIDE
+)
+
 # Number of check item columns per CP group.
 _ITEMS_PER_CP = len(CHECK_ITEMS)  # 6
+
+
+def _make_data_border(thick_right: bool = False, thick_bottom: bool = False) -> Border:
+    """Build a data cell border with optional thick right/bottom edges."""
+    return Border(
+        left=_THIN_SIDE,
+        right=_THICK_SIDE if thick_right else _THIN_SIDE,
+        top=_THIN_SIDE,
+        bottom=_THICK_SIDE if thick_bottom else _THIN_SIDE,
+    )
 
 
 def _is_chemical_wf(wf_num) -> bool:
@@ -439,30 +481,26 @@ def _is_chemical_wf(wf_num) -> bool:
 
 def create_wf_sheet(wb: Workbook, wf_num, wf_name: str, cp_list: list[str],
                     sn_data: list[dict], is_chemical: bool | None = None,
-                    records_by_sn: dict | None = None):
-    """Create a WF sheet in the workbook with proper header layout.
+                    records_by_sn: dict | None = None,
+                    report_date: str | None = None):
+    """Create a WF sheet with formatting matching the original xlsxwriter output.
 
-    Creates a sheet named `Sys WF{wf_num}_{wf_name}` and writes:
-    - Row 1: Header row with fixed columns (%, Completion%, Config, Unit#, S/N)
-             followed by merged CP group headers (each spanning 6 columns).
-    - Row 2: Sub-header row with check item names under each CP group.
-    - Row 3+: Data rows with SN info and test results (if records_by_sn provided).
-
-    For Chemical WFs (29.x, 30), an extra "Chemical" column is inserted
-    between S/N and the first CP group.
+    Layout:
+    - Row 1 (openpyxl): Report Date in A1 + merged CP headers (bold, gray #B0B0B0, thick borders)
+    - Row 2: Sub-headers — Config/Unit#/S/N (bold, light gray, thick right border on S/N)
+             + item names per CP group (bold, light gray #D3D3D3, thick top/bottom)
+    - Row 3+: Data rows with borders, alignment, color fills, config merging.
 
     Args:
         wb: The openpyxl Workbook to add the sheet to.
-        wf_num: WF number (int, float, or string). Used in sheet name and
-                chemical detection.
-        wf_name: Human-readable WF name (e.g., "ISB + FACT + BT-OTA").
+        wf_num: WF number (int, float, or string).
+        wf_name: Human-readable WF name.
         cp_list: Ordered list of checkpoint names for this WF.
         sn_data: List of dicts with SN info: [{serial_number, config, unit_number}, ...].
-                 Used to write data rows (Config, Unit#, S/N columns).
         is_chemical: Override chemical detection. If None, auto-detects from wf_num.
         records_by_sn: Optional dict mapping serial_number to
-                       {(effective_cp, item): record_dict}. When provided,
-                       populate_wf_data is called to fill in results with color coding.
+                       {(effective_cp, item): record_dict}.
+        report_date: Optional date string (YYYY-MM-DD) for the Report Date cell.
 
     Returns:
         The created worksheet.
@@ -482,57 +520,121 @@ def create_wf_sheet(wb: Workbook, wf_num, wf_name: str, cp_list: list[str],
         wf_num_str = str(wf_num)
 
     sheet_name = f"Sys WF{wf_num_str}_{wf_name}"
+    # Excel sheet names cannot contain: \ / * ? : [ ]
+    for ch in r'\/*?:[]':
+        sheet_name = sheet_name.replace(ch, '_')
     # Excel sheet names are limited to 31 characters
     if len(sheet_name) > 31:
         sheet_name = sheet_name[:31]
 
     ws = wb.create_sheet(title=sheet_name)
 
-    # --- Fixed header columns ---
-    fixed_headers = ["%", "Completion%", "Config", "Unit#", "S/N"]
-    header_row_idx = 1  # Row 1 (1-indexed in openpyxl)
-    sub_header_row_idx = 2  # Row 2
+    # --- Row indices (1-indexed in openpyxl) ---
+    header_row_idx = 2   # CP merged headers + %, Completion%, Config, Unit#, S/N
+    sub_header_row_idx = 3  # Item names (Cosmetic, ISB, FACT, ...)
+    report_date_row = 1  # Report Date label only
 
-    # Write fixed headers in row 1
-    for col_idx, header in enumerate(fixed_headers, start=1):
-        ws.cell(row=header_row_idx, column=col_idx, value=header)
+    # --- Report Date in A1 ---
+    date_str = report_date or datetime.date.today().isoformat()
+    cell_a1 = ws.cell(row=report_date_row, column=1, value=f"Report Date: {date_str}")
+    cell_a1.font = Font(italic=True, size=9)
 
-    # Also write fixed headers in row 2 (sub-header row keeps them for alignment)
+    # --- Fixed columns: %, Completion%, Config, Unit #, S/N (cols 1-5) ---
+    # Merge each fixed header vertically across header_row and sub_header_row
+    fixed_headers = ["%", "Completion%", "Config", "Unit #", "S/N"]
     for col_idx, header in enumerate(fixed_headers, start=1):
-        ws.cell(row=sub_header_row_idx, column=col_idx, value=header)
+        # Merge row 2 + row 3 for each fixed column
+        ws.merge_cells(
+            start_row=header_row_idx, start_column=col_idx,
+            end_row=sub_header_row_idx, end_column=col_idx
+        )
+        cell = ws.cell(row=header_row_idx, column=col_idx, value=header)
+        cell.font = _SUB_HEADER_FONT
+        cell.fill = _SUB_HEADER_FILL
+        cell.alignment = _CENTER_ALIGN
+        # Use thick border on all sides for the merged fixed headers
+        border = Border(
+            left=_THICK_SIDE if col_idx == 1 else _THIN_SIDE,
+            right=_THICK_SIDE if col_idx == 5 else _THIN_SIDE,
+            top=_THICK_SIDE,
+            bottom=_THICK_SIDE,
+        )
+        cell.border = border
+        # Apply border/fill to the bottom cell of the merge as well (row 3)
+        bottom_cell = ws.cell(row=sub_header_row_idx, column=col_idx)
+        bottom_cell.border = border
+        bottom_cell.fill = _SUB_HEADER_FILL
 
     # --- Chemical column (if applicable) ---
-    cp_start_col = len(fixed_headers) + 1  # Column after S/N (6)
+    # Normal WF: CP data starts at col 6
+    # Chemical WF: col 6 = "Chemical", CP data starts at col 7
+    cp_start_col = 6  # Column 6
 
     if is_chemical:
-        # Add "Chemical" header in row 1 at the column after S/N
-        ws.cell(row=header_row_idx, column=cp_start_col, value="Chemical")
-        ws.cell(row=sub_header_row_idx, column=cp_start_col, value="")
-        cp_start_col += 1  # CP groups start one column later
+        # Merge Chemical header vertically across both header rows
+        ws.merge_cells(
+            start_row=header_row_idx, start_column=cp_start_col,
+            end_row=sub_header_row_idx, end_column=cp_start_col
+        )
+        cell = ws.cell(row=header_row_idx, column=cp_start_col, value="Chemical")
+        cell.font = _CP_HEADER_FONT
+        cell.fill = _CP_HEADER_FILL
+        cell.alignment = _CENTER_ALIGN
+        cell.border = _CP_HEADER_BORDER
+        # Apply border to bottom cell of merge
+        sub_cell = ws.cell(row=sub_header_row_idx, column=cp_start_col)
+        sub_cell.border = _CP_HEADER_BORDER
+        sub_cell.fill = _CP_HEADER_FILL
+        cp_start_col = 7  # CPs start at col 7 for chemical WFs
 
-    # --- CP group headers (row 1) and check item sub-headers (row 2) ---
+    # --- CP group headers (row 2) and check item sub-headers (row 3) ---
     current_col = cp_start_col
     for cp_name in cp_list:
         start_col = current_col
         end_col = current_col + _ITEMS_PER_CP - 1
 
-        # Merge CP name across 6 columns in row 1
+        # Merge CP name across 6 columns in header row
         if _ITEMS_PER_CP > 1:
             ws.merge_cells(
                 start_row=header_row_idx, start_column=start_col,
                 end_row=header_row_idx, end_column=end_col
             )
-        ws.cell(row=header_row_idx, column=start_col, value=cp_name)
+        cp_cell = ws.cell(row=header_row_idx, column=start_col, value=cp_name)
+        cp_cell.font = _CP_HEADER_FONT
+        cp_cell.fill = _CP_HEADER_FILL
+        cp_cell.alignment = _CENTER_ALIGN
+        cp_cell.border = _CP_HEADER_BORDER
 
-        # Write check item sub-headers in row 2
+        # Apply thick borders to ALL cells in the merged CP range
+        # (openpyxl only renders the top-left cell's border; we must set
+        #  borders on every cell in the merge for the outline to display)
+        for merge_col in range(start_col, end_col + 1):
+            c = ws.cell(row=header_row_idx, column=merge_col)
+            c.border = Border(
+                left=_THICK_SIDE if merge_col == start_col else _THIN_SIDE,
+                right=_THICK_SIDE if merge_col == end_col else _THIN_SIDE,
+                top=_THICK_SIDE,
+                bottom=_THICK_SIDE,
+            )
+            c.fill = _CP_HEADER_FILL
+
+        # Write check item sub-headers in row 3
         for item_offset, item_name in enumerate(CHECK_ITEMS):
-            ws.cell(row=sub_header_row_idx, column=current_col + item_offset, value=item_name)
+            is_last_item = (item_offset == _ITEMS_PER_CP - 1)
+            sub_cell = ws.cell(row=sub_header_row_idx, column=current_col + item_offset, value=item_name)
+            sub_cell.font = _SUB_HEADER_FONT
+            sub_cell.fill = _SUB_HEADER_FILL
+            sub_cell.alignment = _CENTER_ALIGN
+            sub_cell.border = _SUB_HEADER_BORDER_RIGHT if is_last_item else _SUB_HEADER_BORDER
 
         current_col = end_col + 1
 
-    # --- Data rows (row 3+): write SN info columns ---
+    # Track total columns for width setting
+    total_cols = current_col - 1
+
+    # --- Data rows (row 4+): write SN info columns ---
     for row_offset, sn_info in enumerate(sn_data):
-        data_row = 3 + row_offset  # Starting from row 3
+        data_row = 4 + row_offset
         ws.cell(row=data_row, column=3, value=sn_info.get("config", ""))
         ws.cell(row=data_row, column=4, value=sn_info.get("unit_number", ""))
         ws.cell(row=data_row, column=5, value=sn_info.get("serial_number", ""))
@@ -541,57 +643,114 @@ def create_wf_sheet(wb: Workbook, wf_num, wf_name: str, cp_list: list[str],
     if records_by_sn is not None and sn_data:
         populate_wf_data(ws, sn_data, cp_list, records_by_sn, is_chemical)
 
+    # --- Column widths ---
+    for col in range(1, 6):  # %, Completion%, Config, Unit#, S/N
+        ws.column_dimensions[get_column_letter(col)].width = 15
+    for col in range(6, total_cols + 1):  # Data columns
+        ws.column_dimensions[get_column_letter(col)].width = 10
+
+    # --- Freeze panes: row 3, column 6 (headers + SN columns stay visible) ---
+    ws.freeze_panes = ws.cell(row=4, column=6)
+
     return ws
 
 
 def populate_wf_data(ws, sn_data: list[dict], cp_list: list[str],
                      records_by_sn: dict, is_chemical: bool = False):
-    """Populate data rows with SN results and apply color coding.
+    """Populate data rows with SN results, apply color coding and full formatting.
 
-    For each SN in sn_data, writes status values ("PASS" or "FAIL") in the
-    appropriate cells and applies color coding based on the record's failure_type:
-    - PASS: green background (#C6EFCE), green font (#006100)
-    - spec_fail: red background (#FF0000), white font (default)
-    - strife_fail: yellow background (#FFFF00), black font (#000000)
-    - Empty cells (no record) get no color.
+    Matches the original xlsxwriter output:
+    - All cells: thin border, center aligned, vertical center
+    - Config column: merged vertically for same config, thick right border
+    - Unit# column: thin border, center aligned
+    - S/N column: thick right border
+    - Last item in each CP group: thick right border
+    - Last row in each config group: thick bottom border
+    - Data cells: color fills for PASS/FAIL/Strife
 
     Args:
         ws: The openpyxl worksheet to populate.
         sn_data: List of dicts with SN info: [{serial_number, config, unit_number}, ...].
-                 Determines row order (row 3+).
         cp_list: Ordered list of checkpoint names for this WF.
         records_by_sn: Dict mapping serial_number to a dict of
-                       {(effective_cp, item): record_dict}. Each record_dict must
-                       have 'status' and 'failure_type' keys.
+                       {(effective_cp, item): record_dict}.
         is_chemical: Whether this is a Chemical WF (shifts CP columns by 1).
     """
-    # Determine the starting column for CP data
-    # Fixed columns: %, Completion%, Config, Unit#, S/N = 5 columns
-    fixed_col_count = 5
-    cp_start_col = fixed_col_count + 1  # Column 6
+    # Fixed columns: %(1), Completion%(2), Config(3), Unit#(4), S/N(5)
+    # CP data starts at col 6 (normal) or col 7 (chemical)
+    cp_start_col = 6  # Column 6
 
     if is_chemical:
-        cp_start_col += 1  # Chemical column shifts CPs to column 7
+        cp_start_col = 7  # Chemical column at 6, CPs start at 7
+
+    # Pre-compute config group boundaries (for thick bottom borders and merging)
+    config_groups: list[tuple[int, int, str]] = []  # (start_row_offset, end_row_offset, config)
+    if sn_data:
+        current_config = sn_data[0].get("config", "")
+        group_start = 0
+        for i, sn_info in enumerate(sn_data):
+            cfg = sn_info.get("config", "")
+            if cfg != current_config:
+                config_groups.append((group_start, i - 1, current_config))
+                current_config = cfg
+                group_start = i
+        config_groups.append((group_start, len(sn_data) - 1, current_config))
+
+    # Build a set of row offsets that are last in their config group
+    last_in_config = set()
+    for (_, end_offset, _) in config_groups:
+        last_in_config.add(end_offset)
 
     # Populate data for each SN
     for row_offset, sn_info in enumerate(sn_data):
-        data_row = 3 + row_offset  # Data starts at row 3
+        data_row = 4 + row_offset
         sn = sn_info.get("serial_number", "")
+        is_last_in_group = row_offset in last_in_config
 
-        # Get this SN's records lookup
+        # --- Config column (col 1): will be merged later ---
+        # --- Config column (col 3) ---
+        config_cell = ws.cell(row=data_row, column=3)
+        config_cell.value = sn_info.get("config", "")
+        config_cell.alignment = _CENTER_ALIGN
+        config_cell.border = _make_data_border(
+            thick_right=True, thick_bottom=is_last_in_group
+        )
+
+        # --- Unit# column (col 4) ---
+        unit_cell = ws.cell(row=data_row, column=4)
+        unit_cell.value = sn_info.get("unit_number", "")
+        unit_cell.alignment = _CENTER_ALIGN
+        unit_cell.border = _make_data_border(
+            thick_right=False, thick_bottom=is_last_in_group
+        )
+
+        # --- S/N column (col 5): thick right border ---
+        sn_cell = ws.cell(row=data_row, column=5)
+        sn_cell.value = sn
+        sn_cell.alignment = _CENTER_ALIGN
+        sn_cell.border = _make_data_border(
+            thick_right=True, thick_bottom=is_last_in_group
+        )
+
+        # --- Data columns ---
         sn_records = records_by_sn.get(sn, {})
-
-        # Iterate through each CP and each check item
         current_col = cp_start_col
         for cp_name in cp_list:
             for item_offset, item_name in enumerate(CHECK_ITEMS):
                 col = current_col + item_offset
+                is_last_item = (item_offset == _ITEMS_PER_CP - 1)
                 record = sn_records.get((cp_name, item_name))
+
+                cell = ws.cell(row=data_row, column=col)
+                cell.alignment = _CENTER_ALIGN
+                cell.border = _make_data_border(
+                    thick_right=is_last_item, thick_bottom=is_last_in_group
+                )
 
                 if record is not None:
                     status = record.get("status", "")
                     failure_type = record.get("failure_type")
-                    cell = ws.cell(row=data_row, column=col, value=status)
+                    cell.value = status
 
                     # Apply color coding
                     if status == "PASS":
@@ -602,9 +761,23 @@ def populate_wf_data(ws, sn_data: list[dict], cp_list: list[str],
                         cell.font = STRIFE_FAIL_FONT
                     elif failure_type == "spec_fail":
                         cell.fill = SPEC_FAIL_FILL
-                    # else: no color for unknown status
 
             current_col += _ITEMS_PER_CP
+
+    # --- Merge config cells vertically for same config (col 3) ---
+    for (start_offset, end_offset, config_val) in config_groups:
+        start_row = 4 + start_offset
+        end_row = 4 + end_offset
+        if start_row < end_row:
+            ws.merge_cells(
+                start_row=start_row, start_column=3,
+                end_row=end_row, end_column=3
+            )
+            # Re-apply formatting to merged cell (openpyxl requires this)
+            merged_cell = ws.cell(row=start_row, column=3)
+            merged_cell.value = config_val
+            merged_cell.alignment = _CENTER_ALIGN
+            merged_cell.border = _make_data_border(thick_right=True, thick_bottom=True)
 
 
 # ---------------------------------------------------------------------------
@@ -689,6 +862,211 @@ def store_raw_records(records: list[dict], summary: dict):
         return batch_id
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Manual Edit Preservation (回填机制)
+# ---------------------------------------------------------------------------
+
+
+def _get_previous_results(sn_mapping: dict, cp_schedule: dict) -> dict:
+    """Retrieve previous report results for manual edit preservation.
+
+    Priority 1: Query the most recent active report's per-SN/CP/Item data from DB.
+    Priority 2: If DB has no data, parse the most recent Daily Report Excel file.
+
+    Args:
+        sn_mapping: Dict of {serial_number: info_dict} from DB.
+        cp_schedule: Dict of {wf_num: [cp_name, ...]} from DB.
+
+    Returns:
+        Dict of {(serial_number, cp_name, item): status_string}.
+    """
+    # --- Priority 1: DB query ---
+    prev_results = _get_previous_results_from_db()
+    if prev_results:
+        return prev_results
+
+    # --- Priority 2: Excel fallback ---
+    return _get_previous_results_from_excel()
+
+
+def _get_previous_results_from_db() -> dict:
+    """Query the most recent active report's check-item results from DB.
+
+    Looks at sn_check_results table for the latest active report, falling back
+    to sn_check_state_history if sn_check_results has no data.
+
+    Returns:
+        Dict of {(serial_number, cp_name, item): status_string}, or empty dict.
+    """
+    conn = db.get_conn()
+    try:
+        # Find the most recent active report
+        report = conn.execute(
+            """SELECT id FROM reports
+               WHERE is_active = 1
+               ORDER BY report_date DESC, version DESC
+               LIMIT 1"""
+        ).fetchone()
+        if not report:
+            return {}
+
+        report_id = report['id']
+
+        # Try sn_check_results first (legacy table, may have data)
+        rows = conn.execute(
+            """SELECT sn, check_item, status
+               FROM sn_check_results
+               WHERE report_id = ?""",
+            (report_id,),
+        ).fetchall()
+
+        if rows:
+            # sn_check_results has cp_idx — we need to resolve cp_name
+            # Re-query with cp_name from report_cps
+            rows = conn.execute(
+                """SELECT scr.sn, rcp.cp_name, scr.check_item, scr.status
+                   FROM sn_check_results scr
+                   JOIN report_cps rcp
+                     ON rcp.report_id = scr.report_id
+                    AND rcp.wf_num = scr.wf_num
+                    AND rcp.cp_idx = scr.cp_idx
+                   WHERE scr.report_id = ?""",
+                (report_id,),
+            ).fetchall()
+            if rows:
+                result = {}
+                for r in rows:
+                    key = (r['sn'], r['cp_name'], r['check_item'])
+                    result[key] = r['status']
+                return result
+
+        # Fallback: sn_check_state_history (lifecycle table, currently open rows)
+        rows = conn.execute(
+            """SELECT h.sn, rcp.cp_name, h.check_item, h.status
+               FROM sn_check_state_history h
+               JOIN current_cp_definitions rcp
+                 ON rcp.wf_num = h.wf_num AND rcp.cp_idx = h.cp_idx
+               WHERE h.closed_before_report_id IS NULL
+                 AND h.last_seen_report_id = ?""",
+            (report_id,),
+        ).fetchall()
+        if rows:
+            result = {}
+            for r in rows:
+                key = (r['sn'], r['cp_name'], r['check_item'])
+                result[key] = r['status']
+            return result
+
+        return {}
+    finally:
+        conn.close()
+
+
+def _get_previous_results_from_excel() -> dict:
+    """Parse the most recent M60 EVT Rel Daily Report Excel file from rawdata.
+
+    Reads Row 1 for CP names (forward-filled across merged cells),
+    Row 2 for item names, Row 3+ for data.
+
+    Returns:
+        Dict of {(serial_number, cp_name, item): status_string}, or empty dict.
+    """
+    # Find the most recent Daily Report file
+    pattern = os.path.join(RAWDATA_DIR, 'M60 EVT Rel Daily Report_*.xlsx')
+    report_files = glob.glob(pattern)
+    if not report_files:
+        # Also check subdirectories
+        pattern = os.path.join(RAWDATA_DIR, '**', 'M60 EVT Rel Daily Report_*.xlsx')
+        report_files = glob.glob(pattern, recursive=True)
+
+    if not report_files:
+        return {}
+
+    # Sort by modification time, most recent first
+    report_files.sort(key=os.path.getmtime, reverse=True)
+    latest_file = report_files[0]
+
+    result = {}
+    try:
+        wb = load_workbook(latest_file, read_only=True, data_only=True)
+        for sheet_name in wb.sheetnames:
+            ws = wb[sheet_name]
+            rows_data = list(ws.iter_rows(values_only=True))
+            if len(rows_data) < 3:
+                continue
+
+            # Row 0 (index 0): CP names (merged → forward fill)
+            cp_row = list(rows_data[0])
+            # Row 1 (index 1): Item names
+            item_row = list(rows_data[1])
+
+            # Forward-fill CP names (merged cells show as None after first)
+            last_cp = None
+            for i in range(len(cp_row)):
+                if cp_row[i] is not None and str(cp_row[i]).strip():
+                    val = str(cp_row[i]).strip()
+                    # Skip Report Date cell and header labels
+                    if 'Report Date' in val:
+                        cp_row[i] = None
+                        continue
+                    last_cp = val
+                    cp_row[i] = last_cp
+                else:
+                    cp_row[i] = last_cp
+
+            # Data rows start at index 2
+            # Determine SN column: look for column with "S/N" in item_row
+            sn_col_idx = None
+            for ci, val in enumerate(item_row):
+                if val and str(val).strip().upper() in ('S/N', 'SN', 'SERIAL'):
+                    sn_col_idx = ci
+                    break
+            # Fallback: SN is typically column 2 (0-indexed)
+            if sn_col_idx is None:
+                sn_col_idx = 2
+
+            # Data columns start after the SN column
+            data_start_col = sn_col_idx + 1
+
+            for row_idx in range(2, len(rows_data)):
+                row = rows_data[row_idx]
+                if not row or len(row) <= sn_col_idx:
+                    continue
+
+                sn = str(row[sn_col_idx] or '').strip()
+                if not sn or sn.lower() == 'nan' or sn.lower() == 's/n':
+                    continue
+
+                for col_idx in range(data_start_col, len(row)):
+                    val = row[col_idx]
+                    if val is None or str(val).strip() == '':
+                        continue
+
+                    # Get CP name and item name for this column
+                    cp_name = cp_row[col_idx] if col_idx < len(cp_row) else None
+                    item_name = item_row[col_idx] if col_idx < len(item_row) else None
+
+                    if not cp_name or not item_name:
+                        continue
+
+                    cp_name = str(cp_name).strip()
+                    item_name = str(item_name).strip()
+
+                    # Skip non-item columns
+                    if item_name not in CHECK_ITEMS:
+                        continue
+
+                    status_str = str(val).strip()
+                    result[(sn, cp_name, item_name)] = status_str
+
+        wb.close()
+    except Exception:
+        # If parsing fails, return empty — don't block report generation
+        return {}
+
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -791,11 +1169,80 @@ def generate_daily_report(csv_files: list) -> tuple[bytes, str, dict]:
     # Detect strife failures
     final_records = detect_strife_failures(deduped_records, cp_schedule)
 
+    # --- Step 3.5: Merge previous results (回填机制) ---
+    prev_results = _get_previous_results(sn_mapping, cp_schedule)
+    if prev_results:
+        # Build a lookup of existing records for fast matching
+        existing_keys: dict[tuple[str, str, str], int] = {}
+        for idx, rec in enumerate(final_records):
+            key = (rec.get('serial_number', ''), rec.get('effective_cp', ''), rec.get('item', ''))
+            existing_keys[key] = idx
+
+        for key, prev_status in prev_results.items():
+            sn, cp, item = key
+
+            if key in existing_keys:
+                # Override with previous value
+                rec = final_records[existing_keys[key]]
+                rec['status'] = prev_status
+                # Update failure_type based on new status
+                if 'FAIL' in prev_status.upper():
+                    rec['failure_type'] = 'strife_fail' if _is_strife_failure(cp) else 'spec_fail'
+                else:
+                    rec['failure_type'] = None
+            else:
+                # Append as new record (manual edit that has no CSV counterpart)
+                # Only add if SN is valid
+                if sn in valid_sns:
+                    final_records.append({
+                        'serial_number': sn,
+                        'effective_cp': cp,
+                        'item': item,
+                        'status': prev_status,
+                        'failure_type': (
+                            'strife_fail' if ('FAIL' in prev_status.upper() and _is_strife_failure(cp))
+                            else ('spec_fail' if 'FAIL' in prev_status.upper() else None)
+                        ),
+                        'rel_event': cp,
+                        'end_time': '',
+                        'failing_tests': '',
+                        'station_id': '',
+                        'version': '',
+                        'test_params': None,
+                        'source_file': 'manual_edit',
+                    })
+
     # --- Step 4: Generate Excel workbook ---
     wb = Workbook()
     # Remove the default sheet created by openpyxl
     if wb.active:
         wb.remove(wb.active)
+
+    # Determine report date for the header
+    all_end_times = [r.get('end_time', '') for r in all_records if r.get('end_time')]
+    if all_end_times:
+        latest_end_time = max(all_end_times)
+        try:
+            dt = datetime.datetime.fromisoformat(latest_end_time.replace('Z', '+00:00'))
+        except (ValueError, AttributeError):
+            try:
+                for fmt in ('%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S', '%m/%d/%Y %H:%M:%S',
+                            '%Y-%m-%d %H:%M:%S.%f', '%m/%d/%Y %I:%M:%S %p'):
+                    try:
+                        dt = datetime.datetime.strptime(latest_end_time, fmt)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    dt = datetime.datetime.now()
+            except Exception:
+                dt = datetime.datetime.now()
+        date_str = dt.strftime('%Y%m%d')
+        report_date_display = dt.strftime('%Y-%m-%d')
+    else:
+        dt = datetime.datetime.now()
+        date_str = dt.strftime('%Y%m%d')
+        report_date_display = dt.strftime('%Y-%m-%d')
 
     # Determine which WFs to generate sheets for (sorted numerically)
     wf_nums_sorted = sorted(cp_schedule.keys(), key=lambda x: float(x))
@@ -844,40 +1291,15 @@ def generate_daily_report(csv_files: list) -> tuple[bytes, str, dict]:
                 records_by_sn[sn][key] = rec
 
         # Create the WF sheet
-        create_wf_sheet(wb, wf_num, wf_name, cp_list, sn_data, records_by_sn=records_by_sn)
+        create_wf_sheet(wb, wf_num, wf_name, cp_list, sn_data,
+                        records_by_sn=records_by_sn, report_date=report_date_display)
 
     # --- Step 5: Save workbook to bytes ---
     output = io.BytesIO()
     wb.save(output)
     excel_bytes = output.getvalue()
 
-    # --- Step 6: Determine filename from latest EndTime ---
-    # Find the latest end_time across all records
-    all_end_times = [r.get('end_time', '') for r in all_records if r.get('end_time')]
-    if all_end_times:
-        latest_end_time = max(all_end_times)
-        # Parse date from end_time string (various formats possible)
-        try:
-            # Try ISO format first
-            dt = datetime.datetime.fromisoformat(latest_end_time.replace('Z', '+00:00'))
-        except (ValueError, AttributeError):
-            try:
-                # Try common datetime formats
-                for fmt in ('%Y-%m-%d %H:%M:%S', '%Y/%m/%d %H:%M:%S', '%m/%d/%Y %H:%M:%S',
-                            '%Y-%m-%d %H:%M:%S.%f', '%m/%d/%Y %I:%M:%S %p'):
-                    try:
-                        dt = datetime.datetime.strptime(latest_end_time, fmt)
-                        break
-                    except ValueError:
-                        continue
-                else:
-                    dt = datetime.datetime.now()
-            except Exception:
-                dt = datetime.datetime.now()
-        date_str = dt.strftime('%Y%m%d')
-    else:
-        date_str = datetime.date.today().strftime('%Y%m%d')
-
+    # --- Step 6: Determine filename (date already computed in Step 4) ---
     filename = f"M60 EVT Rel Daily Report_{date_str}.xlsx"
 
     # --- Step 7: Build summary ---

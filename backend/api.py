@@ -2636,8 +2636,12 @@ def api_settings_rawdata_parse():
 
     raw_date = match.group(1)
     report_date = f"{raw_date[:4]}-{raw_date[4:6]}-{raw_date[6:]}"
+    skip_validation = (
+        request.args.get('skip_validation', '').lower() in ('1', 'true', 'yes')
+        or str(data.get('skip_validation', '')).lower() in ('1', 'true', 'yes')
+    )
     _delete_report_data_by_date(report_date)
-    result = process_report_file(report_date, daily_path, fa_path=fa_path)
+    result = process_report_file(report_date, daily_path, fa_path=fa_path, skip_validation=skip_validation)
     if result and result.get('validation_failed'):
         return _validation_response(result.get('validation_errors'), 400)
     if not result:
@@ -2728,8 +2732,12 @@ def upload_report():
     else:
         fa_path = None
 
+    skip_validation = (
+        request.args.get('skip_validation', '').lower() in ('1', 'true', 'yes')
+    )
     try:
-        validate_daily_report(daily_path, report_date=report_date, source_file_name=daily_name)
+        if not skip_validation:
+            validate_daily_report(daily_path, report_date=report_date, source_file_name=daily_name)
     except RawDataValidationError as exc:
         return _validation_response(exc.errors, 400)
 
@@ -2759,7 +2767,7 @@ def upload_report():
 
     # Parse
     try:
-        result = process_report_file(report_date, daily_path, fa_path=fa_path)
+        result = process_report_file(report_date, daily_path, fa_path=fa_path, skip_validation=skip_validation)
         if result and result.get('validation_failed'):
             return _validation_response(result.get('validation_errors'), 400)
         if not result:

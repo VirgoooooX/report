@@ -340,7 +340,7 @@ def process_all(rebuild=False):
 #  process_newest — 增量更新
 # ═══════════════════════════════════════════════════════════════════════
 
-def process_report_file(report_date, daily_path, fa_path=None):
+def process_report_file(report_date, daily_path, fa_path=None, skip_validation=False):
     """Process one selected Daily Report file.
 
     Args:
@@ -348,6 +348,7 @@ def process_report_file(report_date, daily_path, fa_path=None):
         daily_path: Daily Report workbook path.
         fa_path: optional FA Tracker workbook path. If omitted, the closest
             tracker for report_date is selected automatically.
+        skip_validation: if True, skip rawdata validation checks.
 
     Returns:
         dict or None: processing result information.
@@ -369,7 +370,7 @@ def process_report_file(report_date, daily_path, fa_path=None):
 
     print("   [+] Starting process...")
     try:
-        parsed = parse_daily_report(daily_path, report_date=report_date, source_file_name=fname)
+        parsed = parse_daily_report(daily_path, report_date=report_date, source_file_name=fname, skip_validation=skip_validation)
         results = parsed.summary_results
 
         fa_stats = {'total': 0, 'matched': 0}

@@ -293,6 +293,11 @@ def _find_rawdata_anomalies_for_sheet(ws, wf_num, ts_names, report_date='', sour
                 if dc1 == '%' and dcfg == 'Config' and ws.cell(dr, 4).value == 'Unit #':
                     break
 
+                # Update running default config when we see a new config group label
+                dcfg_resolved = resolve_config_alias(dcfg) if dcfg else ''
+                if dcfg_resolved in CONFIGS:
+                    default_config = dcfg_resolved
+
                 sn = ws.cell(dr, 5).value
                 unit_num = ws.cell(dr, 4).value
                 if dcfg == 'Config' or (sn and str(sn).strip() == 'S/N') or not sn or not has_pre_cp_data(ws, dr, cp_list[0][0]):
@@ -370,11 +375,23 @@ def validate_rawdata_workbook(wb, ts_test_names, report_date='', source_file_nam
 def validate_daily_report(path, report_date=None, source_file_name=None):
     """Validate one Daily Report file and raise RawDataValidationError on blocking rawdata issues."""
     import os as _os
+    import db as _db
 
     source_file_name = source_file_name or _os.path.basename(path)
     wb = load_workbook(path, data_only=True)
     try:
-        _, _, ts_test_names, _ = read_test_summary_from_workbook(wb)
+        # Get test definitions: Test Summary sheet first, then DB fallback
+        if 'Test Summary' in wb.sheetnames:
+            _, _, ts_test_names, _ = read_test_summary_from_workbook(wb)
+        else:
+            conn = _db.get_conn()
+            try:
+                ts_test_names = _db.get_current_test_definitions(conn)
+            finally:
+                conn.close()
+            if not ts_test_names:
+                raise RawDataValidationError(["请先上传 Base 文件（无 Test Summary sheet 且 DB 无定义）"])
+
         errors = validate_rawdata_workbook(
             wb,
             ts_test_names,
@@ -497,6 +514,8 @@ def read_test_summary(daily_path):
 
 def read_test_summary_from_workbook(wb):
     """Same as read_test_summary() but operates on an already-opened workbook."""
+    if 'Test Summary' not in wb.sheetnames:
+        return {}, {}, {}, {}
     ws = wb['Test Summary']
 
     sys_row = None
@@ -604,6 +623,8 @@ def read_test_schedule(daily_path):
 
 def read_test_schedule_from_workbook(wb):
     """Same as read_test_schedule() but operates on an already-opened workbook."""
+    if 'Test Schedule' not in wb.sheetnames:
+        return {}
     ws = wb['Test Schedule']
     names = {}
     for r in range(1, ws.max_row + 1):
@@ -1110,6 +1131,11 @@ def _parse_wf_sheet(ws, wfn, ts_names):
                     if ws.cell(dr, 4).value == 'Unit #': break
                     else: dr += 1; continue
                 
+                # Update running default config when we see a new config group label
+                dcfg_resolved = resolve_config_alias(dcfg) if dcfg else ''
+                if dcfg_resolved in CONFIGS:
+                    config = dcfg_resolved
+
                 sn = ws.cell(dr, 5).value
                 unit_num = ws.cell(dr, 4).value
                 if dcfg == 'Config' or (sn and str(sn).strip() == 'S/N'): dr += 1; continue
@@ -1388,7 +1414,17 @@ def extract_sn_fact_rows_from_workbook(wb, report_id, report_date, ts_test_names
     If ts_test_names is None, it will be read from the workbook.
     """
     if ts_test_names is None:
-        _, _, ts_test_names, _ = read_test_summary_from_workbook(wb)
+        if 'Test Summary' in wb.sheetnames:
+            _, _, ts_test_names, _ = read_test_summary_from_workbook(wb)
+        else:
+            import db as _db
+            conn = _db.get_conn()
+            try:
+                ts_test_names = _db.get_current_test_definitions(conn)
+            finally:
+                conn.close()
+            if not ts_test_names:
+                ts_test_names = {}
     all_cp_rows = []
     all_check_rows = []
 
@@ -1482,6 +1518,11 @@ def _extract_wf_progress(ws, ts_names):
                     else:
                         dr += 1
                         continue
+
+                # Update running default config when we see a new config group label
+                dcfg_resolved = resolve_config_alias(dcfg) if dcfg else ''
+                if dcfg_resolved in CONFIGS:
+                    config = dcfg_resolved
 
                 sn = ws.cell(dr, 5).value
                 unit_num = ws.cell(dr, 4).value
@@ -1635,6 +1676,11 @@ def extract_wf_fact_rows(ws, wf_num, report_id, report_date, ts_names):
                 if dc1 == '%' and dcfg == 'Config' and ws.cell(dr, 4).value == 'Unit #':
                     break
 
+                # Update running default config when we see a new config group label
+                dcfg_resolved = resolve_config_alias(dcfg) if dcfg else ''
+                if dcfg_resolved in CONFIGS:
+                    default_config = dcfg_resolved
+
                 sn = ws.cell(dr, 5).value
                 unit_num = ws.cell(dr, 4).value
                 if dcfg == 'Config' or (sn and str(sn).strip() == 'S/N') or not sn or not has_pre_cp_data(ws, dr, cp_list[0][0]):
@@ -1749,7 +1795,33 @@ class DailyReportParseResult:
         self.test_names_by_wf = {}
 
 
-def parse_daily_report(path, report_date=None, source_file_name=None, conn=None):
+def _try_restore_test_definitions(conn):
+    """Attempt to restore current_test_definitions from the uploaded base test_plan file.
+
+    If base_file_meta shows a test_plan was uploaded but current_test_definitions is empty,
+    re-parse and re-save the definitions. Returns the restored dict or empty dict on failure.
+    """
+    import db as _db2
+    row = conn.execute(
+        "SELECT stored_path FROM base_file_meta WHERE file_type = 'test_plan' LIMIT 1"
+    ).fetchone()
+    if not row:
+        return {}
+    stored_path = row['stored_path']
+    if not os.path.isabs(stored_path):
+        stored_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), stored_path)
+    if not os.path.isfile(stored_path):
+        return {}
+    try:
+        import base_manager as _bm
+        result = _bm.parse_test_plan(stored_path)
+        _bm.save_test_plan_to_db(result, conn=conn)
+        return _db2.get_current_test_definitions(conn)
+    except Exception:
+        return {}
+
+
+def parse_daily_report(path, report_date=None, source_file_name=None, conn=None, skip_validation=False):
     """Parse a Daily Report excel file, opening the workbook only once.
 
     Definition priority:
@@ -1784,6 +1856,9 @@ def parse_daily_report(path, report_date=None, source_file_name=None, conn=None)
         else:
             # No Test Summary sheet — try DB definitions
             db_test_defs = _db.get_current_test_definitions(conn)
+            if not db_test_defs:
+                # Attempt self-healing: re-parse base test_plan file if it was uploaded
+                db_test_defs = _try_restore_test_definitions(conn)
             if db_test_defs:
                 # Requirement 7.3: no Test Summary + DB has definitions → proceed normally
                 result.ts_test_names = db_test_defs
@@ -1815,7 +1890,7 @@ def parse_daily_report(path, report_date=None, source_file_name=None, conn=None)
             report_date=validation_report_date,
             source_file_name=result.source_file_name,
         )
-        if validation_errors:
+        if validation_errors and not skip_validation:
             raise RawDataValidationError(validation_errors)
 
         # 3. wf_names: Test Schedule sheet takes priority, then DB, then derive from test names

@@ -11,120 +11,11 @@
     </div>
 
     <div class="settings-tabs" role="tablist">
-      <button :class="{ active: tab === 'rawdata' }" @click="tab = 'rawdata'">{{ t('settings.tabRawdata') }}</button>
       <button :class="{ active: tab === 'rules' }" @click="tab = 'rules'">{{ t('settings.tabRules') }}</button>
       <button :class="{ active: tab === 'ideas' }" @click="tab = 'ideas'">{{ t('settings.tabIdeas') }}</button>
     </div>
 
-    <section v-if="tab === 'rawdata'" class="settings-grid">
-      <div class="panel parse-panel">
-        <div class="panel-title">
-          <PlayCircleOutlined />
-          <span>{{ t('settings.parseSection') }}</span>
-        </div>
-        <div class="field-grid">
-          <label class="field">
-            <span>{{ t('settings.dailyReport') }}</span>
-            <select v-model="selectedDaily">
-              <option value="">{{ t('settings.selectFile') }}</option>
-              <option v-for="file in dailyFiles" :key="file.path" :value="file.path">
-                {{ file.date || t('settings.noDate') }} · {{ file.name }}
-              </option>
-            </select>
-          </label>
-          <label class="field">
-            <span>{{ t('settings.faTracker') }}</span>
-            <select v-model="selectedFa">
-              <option value="">{{ t('settings.autoMatch') }}</option>
-              <option v-for="file in faFiles" :key="file.path" :value="file.path">
-                {{ file.date || t('settings.noDate') }} · {{ file.name }}
-              </option>
-            </select>
-          </label>
-        </div>
-        <div class="action-row">
-          <button class="btn-primary" :disabled="!selectedDaily || parsing" @click="parseSelected">
-            <PlayCircleOutlined />
-            <span>{{ parsing ? t('settings.parsing') : t('settings.parseSelected') }}</span>
-          </button>
-          <span class="status-text" :class="{ error: statusType === 'error' }">{{ statusText }}</span>
-        </div>
-      </div>
-
-      <div class="panel rawdata-panel">
-        <div class="panel-title">
-          <FileExcelOutlined />
-          <span>{{ t('settings.rawdataFiles') }}</span>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>{{ t('settings.kind') }}</th>
-                <th>{{ t('settings.date') }}</th>
-                <th>{{ t('settings.file') }}</th>
-                <th>{{ t('settings.size') }}</th>
-                <th>{{ t('settings.modifiedAt') }}</th>
-                <th>{{ t('settings.actions') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="file in files" :key="file.path">
-                <td><span class="kind-badge" :class="file.kind">{{ kindLabel(file.kind) }}</span></td>
-                <td class="mono">{{ file.date || '-' }}</td>
-                <td class="file-name" :title="file.path">{{ file.name }}</td>
-                <td class="mono">{{ formatSize(file.size) }}</td>
-                <td class="mono">{{ formatDateTime(file.modified_at) }}</td>
-                <td>
-                  <div class="row-actions">
-                    <button
-                      v-if="file.kind === 'daily_report'"
-                      class="icon-btn small"
-                      :title="t('settings.parseFile')"
-                      :aria-label="t('settings.parseFile')"
-                      @click="parseFile(file)"
-                    >
-                      <PlayCircleOutlined />
-                    </button>
-                    <button class="icon-btn small danger" :title="t('settings.deleteFile')" :aria-label="t('settings.deleteFile')" @click="deleteFile(file)">
-                      <DeleteOutlined />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-              <tr v-if="!files.length">
-                <td colspan="6" class="empty-row">{{ t('settings.noRawdataFiles') }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <label class="purge-toggle">
-          <input v-model="purgeDbOnDelete" type="checkbox" />
-          <span>{{ t('settings.purgeDb') }}</span>
-        </label>
-      </div>
-
-      <div class="panel reports-panel">
-        <div class="panel-title">
-          <DatabaseOutlined />
-          <span>{{ t('settings.importedReports') }}</span>
-        </div>
-        <div class="report-list">
-          <div v-for="report in reports" :key="report.id" class="report-row">
-            <span class="mono">{{ report.report_date }}</span>
-            <span>v{{ report.version }}</span>
-            <span class="report-file">{{ report.source_file_name }}</span>
-            <span class="mono imported-at">{{ formatDateTime(report.imported_at) }}</span>
-            <span class="active-pill" :class="{ muted: !report.is_active }">
-              {{ report.is_active ? t('settings.active') : t('settings.history') }}
-            </span>
-          </div>
-          <div v-if="!reports.length" class="empty-row">{{ t('settings.noImportedReports') }}</div>
-        </div>
-      </div>
-    </section>
-
-    <section v-else-if="tab === 'rules'" class="rules-grid">
+    <section v-if="tab === 'rules'" class="rules-grid">
       <div class="panel">
         <div class="panel-title">
           <SettingOutlined />
@@ -269,14 +160,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   CodeOutlined,
-  DatabaseOutlined,
   DeleteOutlined,
   EyeOutlined,
-  FileExcelOutlined,
-  PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
   SaveOutlined,
@@ -290,12 +178,8 @@ import { useI18n } from '@/i18n/useI18n'
 const store = useAppStore()
 const { t } = useI18n()
 const loading = ref(false)
-const parsing = ref(false)
 const savingRules = ref(false)
-const tab = ref('rawdata')
-const selectedDaily = ref('')
-const selectedFa = ref('')
-const purgeDbOnDelete = ref(false)
+const tab = ref('rules')
 const statusText = ref('')
 const statusType = ref('')
 
@@ -319,11 +203,6 @@ const emptyRules = () => ({
 })
 
 const ruleDraft = reactive(emptyRules())
-
-const files = computed(() => store.settingsRawdata.files || [])
-const reports = computed(() => store.settingsRawdata.reports || [])
-const dailyFiles = computed(() => files.value.filter(file => file.kind === 'daily_report'))
-const faFiles = computed(() => files.value.filter(file => file.kind === 'fa_tracker'))
 
 const previewRules = computed(() => JSON.stringify(serializeRules(), null, 2))
 
@@ -358,14 +237,8 @@ async function loadAll() {
   loading.value = true
   statusText.value = ''
   try {
-    await Promise.all([
-      store.fetchRawdataSettings(),
-      store.fetchSettingsRules(),
-    ])
+    await store.fetchSettingsRules()
     hydrateRules(store.settingsRules)
-    if (!selectedDaily.value && dailyFiles.value.length) {
-      selectedDaily.value = dailyFiles.value[0].path
-    }
   } catch (e) {
     showStatus(e.message || t('settings.loadFailed'), 'error')
   } finally {
@@ -450,47 +323,12 @@ function serializeRules() {
   }
 }
 
-async function parseSelected() {
-  if (!selectedDaily.value) return
-  parsing.value = true
-  showStatus('')
-  try {
-    const result = await store.parseRawdata(selectedDaily.value, selectedFa.value)
-    showStatus(t('settings.parseDone', { date: result.report_date, count: result.wf_count }))
-    store.triggerRefresh()
-  } catch (e) {
-    showStatus(e.message || t('settings.parseFailed'), 'error')
-  } finally {
-    parsing.value = false
-  }
-}
-
 function addMapping() {
   ruleDraft.matching.location_mappings.push({ daily_report: '', fa_tracker: '', mode: 'exact' })
 }
 
 function removeMapping(index) {
   ruleDraft.matching.location_mappings.splice(index, 1)
-}
-
-function parseFile(file) {
-  selectedDaily.value = file.path
-  const sameDateFa = faFiles.value.find(item => item.date && item.date === file.date)
-  selectedFa.value = sameDateFa?.path || ''
-  parseSelected()
-}
-
-async function deleteFile(file) {
-  const suffix = purgeDbOnDelete.value && file.kind === 'daily_report' ? t('settings.deleteConfirmSuffix') : ''
-  if (!window.confirm(t('settings.deleteConfirm', { name: file.name, suffix }))) return
-  try {
-    await store.deleteRawdataFile(file.path, purgeDbOnDelete.value && file.kind === 'daily_report')
-    showStatus(t('settings.deleteDone', { name: file.name }))
-    if (selectedDaily.value === file.path) selectedDaily.value = ''
-    if (selectedFa.value === file.path) selectedFa.value = ''
-  } catch (e) {
-    showStatus(e.message || t('settings.deleteFailed'), 'error')
-  }
 }
 
 async function saveRules() {
@@ -519,26 +357,6 @@ async function resetRules() {
     savingRules.value = false
   }
 }
-
-function kindLabel(kind) {
-  return kind === 'daily_report' ? t('settings.kindDaily') : kind === 'fa_tracker' ? t('settings.kindFa') : t('settings.kindOther')
-}
-
-function formatSize(size) {
-  if (!Number.isFinite(size)) return '-'
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / 1024 / 1024).toFixed(1)} MB`
-}
-
-function formatDateTime(value) {
-  if (!value) return '-'
-  return String(value).replace('T', ' ').slice(0, 16)
-}
-
-watch(dailyFiles, (next) => {
-  if (!selectedDaily.value && next.length) selectedDaily.value = next[0].path
-})
 
 onMounted(loadAll)
 </script>
@@ -596,7 +414,6 @@ onMounted(loadAll)
   box-shadow: var(--shadow-card);
 }
 
-.settings-grid,
 .rules-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -786,86 +603,10 @@ tr:hover td {
   font-variant-numeric: tabular-nums;
 }
 
-.file-name,
-.report-file {
-  max-width: 420px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.kind-badge,
-.active-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 56px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: var(--radius-sm);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.kind-badge.daily_report {
-  color: var(--accent-steel);
-  background: color-mix(in srgb, var(--accent-steel) 10%, transparent);
-}
-
-.kind-badge.fa_tracker {
-  color: var(--color-success);
-  background: var(--color-success-bg);
-}
-
-.kind-badge.other {
-  color: var(--text-muted);
-  background: var(--bg-tag);
-}
-
 .row-actions {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.purge-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.report-list {
-  display: grid;
-  gap: 8px;
-}
-
-.report-row {
-  display: grid;
-  grid-template-columns: 110px 52px minmax(0, 1fr) 130px 78px;
-  align-items: center;
-  gap: 12px;
-  min-height: 38px;
-  padding: 8px 10px;
-  border: 1px solid var(--border-light);
-  border-radius: var(--radius-sm);
-}
-
-.imported-at {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.active-pill {
-  color: #fff;
-  background: var(--accent-steel);
-}
-
-.active-pill.muted {
-  color: var(--text-muted);
-  background: var(--bg-tag);
 }
 
 .rules-actions-panel {
@@ -1003,11 +744,6 @@ tr:hover td {
 
   .settings-tabs button {
     width: 100%;
-  }
-
-  .report-row {
-    grid-template-columns: 1fr;
-    gap: 6px;
   }
 }
 </style>
