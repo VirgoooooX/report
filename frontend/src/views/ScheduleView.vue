@@ -1,6 +1,10 @@
 <template>
   <div class="schedule-page">
     <header class="page-heading">
+      <div v-if="store.activeReport" class="data-source-bar">
+        <span>{{ t('common.activeReport') }}: {{ store.activeReport.report_date || '—' }} v{{ store.activeReport.report_version || '—' }}</span>
+        <span v-if="store.activeReport.source_file_name">{{ t('common.sourceFile') }}: {{ store.activeReport.source_file_name }}</span>
+      </div>
       <div class="header-tools">
         <section class="compact-filter">
           <input
@@ -111,10 +115,20 @@ watch(() => store.refreshCounter, () => { loadData(true) })
 
 .page-heading {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
   flex: 0 0 auto;
   height: 31px;
+  gap: 12px;
+}
+
+.data-source-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 11px;
 }
 
 .header-tools {

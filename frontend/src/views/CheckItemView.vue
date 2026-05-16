@@ -11,8 +11,12 @@
     <section class="section">
       <div class="card section-card">
         <div class="section-header">
+          <span class="step-badge">1</span>
           <h2 class="section-title">{{ t('checkitem.baseDataTitle') }}</h2>
           <p class="section-desc">{{ t('checkitem.baseDataDesc') }}</p>
+        </div>
+        <div class="workflow-note" :class="{ ready: baseReadyForGeneration }">
+          {{ baseReadyForGeneration ? t('checkitem.baseReadyNote') : t('checkitem.baseMissingNote', { files: missingRequiredLabels.join(', ') }) }}
         </div>
         <div class="base-file-grid">
           <div
@@ -29,7 +33,7 @@
                 ✅ {{ t('checkitem.uploaded') }} {{ formatDate(getFileStatus(ft.key).uploaded_at) }}
               </span>
               <span v-else class="base-file-status status-pending">
-                ⚠️ {{ t('checkitem.notUploaded') }}
+                ⚠️ {{ t('checkitem.notUploaded') }}{{ ft.required ? '' : ` · ${t('checkitem.optional')}` }}
               </span>
             </div>
             <div v-if="getFileStatus(ft.key)" class="base-file-stats">
@@ -59,6 +63,7 @@
         <div v-if="uploadError" class="base-file-error">
           {{ uploadError }}
         </div>
+        <p v-else class="section-footnote">{{ t('checkitem.baseEffectNote') }}</p>
       </div>
     </section>
 
@@ -66,12 +71,16 @@
     <section class="section">
       <div class="card section-card">
         <div class="section-header">
+          <span class="step-badge">2</span>
           <h2 class="section-title">{{ t('checkitem.generateTitle') }}</h2>
           <p class="section-desc">{{ t('checkitem.generateDesc') }}</p>
         </div>
+        <div v-if="!baseReadyForGeneration" class="generate-error">
+          {{ t('checkitem.generateBlocked', { files: missingRequiredLabels.join(', ') }) }}
+        </div>
         <div
           class="upload-drop-zone"
-          :class="{ 'drop-zone-active': isDragOver }"
+          :class="{ 'drop-zone-active': isDragOver, disabled: !baseReadyForGeneration }"
           @dragover.prevent="onDragOver"
           @dragleave.prevent="onDragLeave"
           @drop.prevent="onDrop"
@@ -125,11 +134,15 @@
         <div class="generate-actions">
           <button
             class="btn-primary"
-            :disabled="csvFiles.length === 0 || generating"
+            :disabled="!baseReadyForGeneration || csvFiles.length === 0 || generating"
             @click="handleGenerate"
           >
             {{ generating ? t('checkitem.generating') : t('checkitem.generateBtn') }}
           </button>
+        </div>
+        <div v-if="generateStatus" class="success-note">
+          {{ generateStatus }}
+          <button class="link-btn" @click="store.fetchRawdataSettings()">{{ t('checkitem.refreshRawdata') }}</button>
         </div>
       </div>
     </section>
@@ -138,8 +151,9 @@
     <section class="section">
       <div class="card section-card">
         <div class="section-header">
-          <h2 class="section-title">{{ t('settings.tabRawdata') }} 管理</h2>
-          <p class="section-desc">{{ t('checkitem.uploadCorrectedDesc') }}</p>
+          <span class="step-badge">3</span>
+          <h2 class="section-title">{{ t('checkitem.importTitle') }}</h2>
+          <p class="section-desc">{{ t('checkitem.importDesc') }}</p>
         </div>
 
         <!-- Parse panel -->
@@ -147,7 +161,49 @@
           <div class="panel parse-panel">
             <div class="panel-title">
               <PlayCircleOutlined />
-              <span>{{ t('settings.parseSection') }}</span>
+              <span>{{ t('checkitem.importGeneratedTitle') }}</span>
+            </div>
+            <div class="inline-upload-card">
+              <div class="inline-upload-copy">
+                <strong>{{ t('checkitem.uploadDailyReportTitle') }}</strong>
+                <span>{{ t('checkitem.uploadDailyReportDesc') }}</span>
+              </div>
+              <div class="inline-upload-grid">
+                <button class="file-pick-card" type="button" @click="triggerDailyReportSelect">
+                  <FileExcelOutlined />
+                  <span>{{ dailyUploadFile?.name || t('checkitem.chooseDailyReport') }}</span>
+                </button>
+                <input
+                  ref="dailyReportInput"
+                  type="file"
+                  accept=".xlsx"
+                  style="display: none"
+                  @change="onDailyReportChange"
+                >
+                <button class="file-pick-card optional" type="button" @click="triggerFaTrackerSelect">
+                  <FileExcelOutlined />
+                  <span>{{ faUploadFile?.name || t('checkitem.chooseFaTracker') }}</span>
+                </button>
+                <input
+                  ref="faTrackerInput"
+                  type="file"
+                  accept=".xlsx"
+                  style="display: none"
+                  @change="onFaTrackerChange"
+                >
+              </div>
+              <div class="inline-upload-actions">
+                <button
+                  class="btn-secondary"
+                  :disabled="!dailyUploadFile || uploadState === 'uploading'"
+                  @click="uploadRawdataFiles"
+                >
+                  <template v-if="uploadState === 'done'">✓ {{ t('upload.done') }}</template>
+                  <template v-else-if="uploadState === 'uploading'">{{ t('upload.uploading') }}</template>
+                  <template v-else>{{ t('checkitem.uploadDailyReportBtn') }}</template>
+                </button>
+                <span class="status-text" :class="{ error: uploadStatusType === 'error' }">{{ uploadStatusText }}</span>
+              </div>
             </div>
             <div class="field-grid">
               <label class="field">
@@ -169,24 +225,18 @@
                 </select>
               </label>
             </div>
-            <div class="action-row">
+            <details class="advanced-options">
+              <summary>{{ t('checkitem.advancedImportOptions') }}</summary>
               <label class="toggle-switch" :class="{ active: skipValidation }">
                 <input type="checkbox" v-model="skipValidation" />
                 <span class="toggle-track"><span class="toggle-thumb"></span></span>
-                <span class="toggle-label">Skip Validation</span>
+                <span class="toggle-label">{{ t('checkitem.skipValidationAdvanced') }}</span>
               </label>
+            </details>
+            <div class="action-row">
               <button class="btn-primary" :disabled="!selectedDaily || parsing" @click="parseSelected">
                 <PlayCircleOutlined />
-                <span>{{ parsing ? t('settings.parsing') : t('settings.parseSelected') }}</span>
-              </button>
-              <button
-                class="btn-secondary"
-                :disabled="uploadState === 'uploading'"
-                @click="showUploadDialog = true"
-              >
-                <template v-if="uploadState === 'done'">✓ {{ t('upload.done') }}</template>
-                <template v-else-if="uploadState === 'uploading'">{{ t('upload.uploading') }}</template>
-                <template v-else>{{ t('upload.idle') }}</template>
+                <span>{{ parsing ? t('settings.parsing') : t('checkitem.importSelected') }}</span>
               </button>
               <span class="status-text" :class="{ error: rawdataStatusType === 'error' }">{{ rawdataStatusText }}</span>
             </div>
@@ -269,7 +319,6 @@
       </div>
     </section>
 
-    <UploadDialog :visible="showUploadDialog" @close="showUploadDialog = false" @done="onUploadDone" />
   </div>
 </template>
 
@@ -283,8 +332,14 @@ import {
 } from '@ant-design/icons-vue'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n/useI18n'
-import { identifyCsvType, formatStats, formatDate } from './CheckItemDisplay.js'
-import UploadDialog from '@/components/UploadDialog.vue'
+import {
+  identifyCsvType,
+  formatStats,
+  formatDate,
+  getBaseStatusMap,
+  getMissingRequiredBaseFiles,
+  isBaseReadyForGeneration,
+} from './CheckItemDisplay.js'
 
 const { t } = useI18n()
 const store = useAppStore()
@@ -300,6 +355,7 @@ const csvFiles = ref([])
 const isDragOver = ref(false)
 const generating = ref(false)
 const generateError = ref(null)
+const generateStatus = ref('')
 const csvFileInput = ref(null)
 
 // File input refs stored by key
@@ -314,27 +370,36 @@ const fileTypes = [
     key: 'sn_mapping',
     label: t('checkitem.snMapping'),
     accept: '.csv',
-    uploadHint: 'Upload SN mapping CSV to get started'
+    uploadHint: t('checkitem.snMappingHint'),
+    required: true
   },
   {
     key: 'checkpoint_schedule',
     label: t('checkitem.cpSchedule'),
     accept: '.csv',
-    uploadHint: 'Upload Checkpoint Schedule CSV'
+    uploadHint: t('checkitem.cpScheduleHint'),
+    required: true
   },
   {
     key: 'test_plan',
     label: t('checkitem.testPlan'),
     accept: '.csv',
-    uploadHint: 'Upload Test Plan CSV'
+    uploadHint: t('checkitem.testPlanHint'),
+    required: true
   },
   {
     key: 'test_schedule',
     label: t('checkitem.testSchedule'),
     accept: '.xlsx,.xls',
-    uploadHint: 'Upload Test Schedule Excel'
+    uploadHint: t('checkitem.testScheduleHint'),
+    required: false
   }
 ]
+
+const baseStatusMap = computed(() => getBaseStatusMap(baseFiles.value))
+const missingRequiredBaseFiles = computed(() => getMissingRequiredBaseFiles(baseFiles.value))
+const baseReadyForGeneration = computed(() => isBaseReadyForGeneration(baseFiles.value))
+const missingRequiredLabels = computed(() => missingRequiredBaseFiles.value.map((key) => fileTypes.find((ft) => ft.key === key)?.label || key))
 
 // identifyCsvType imported from CheckItemDisplay.js
 
@@ -349,6 +414,7 @@ function onDragLeave() {
 
 function onDrop(event) {
   isDragOver.value = false
+  if (!baseReadyForGeneration.value) return
   const files = event.dataTransfer?.files
   if (files) {
     addCsvFiles(files)
@@ -356,6 +422,7 @@ function onDrop(event) {
 }
 
 function triggerCsvSelect() {
+  if (!baseReadyForGeneration.value) return
   if (csvFileInput.value) {
     csvFileInput.value.value = ''
     csvFileInput.value.click()
@@ -371,6 +438,7 @@ function onCsvFileSelect(event) {
 
 function addCsvFiles(fileList) {
   generateError.value = null
+  generateStatus.value = ''
   for (const file of fileList) {
     if (!file.name.toLowerCase().endsWith('.csv')) continue
     // Avoid duplicates by name
@@ -389,10 +457,11 @@ function removeCsvFile(index) {
 
 // --- Generate & Download ---
 async function handleGenerate() {
-  if (csvFiles.value.length === 0) return
+  if (!baseReadyForGeneration.value || csvFiles.value.length === 0) return
 
   generating.value = true
   generateError.value = null
+  generateStatus.value = ''
 
   try {
     const formData = new FormData()
@@ -429,6 +498,8 @@ async function handleGenerate() {
 
     // Clear files after successful generation
     csvFiles.value = []
+    generateStatus.value = t('checkitem.generateDoneNext')
+    await store.fetchRawdataSettings().catch(() => {})
   } catch (e) {
     generateError.value = e.message
   } finally {
@@ -438,7 +509,7 @@ async function handleGenerate() {
 
 // --- Helpers ---
 function getFileStatus(fileType) {
-  return baseFiles.value.find(f => f.file_type === fileType) || null
+  return baseStatusMap.value[fileType] || null
 }
 
 // formatDate and formatStats imported from CheckItemDisplay.js
@@ -491,6 +562,7 @@ async function handleFileChange(event, fileType) {
 
     // Refresh the file list
     await fetchBaseFiles()
+    generateStatus.value = ''
   } catch (e) {
     uploadError.value = e.message
   } finally {
@@ -498,24 +570,63 @@ async function handleFileChange(event, fileType) {
   }
 }
 
-// --- Upload Corrected Report (reuses existing UploadDialog) ---
+// --- Upload Daily Report files into the RawData file list ---
 const uploadState = ref('idle')
-const showUploadDialog = ref(false)
+const uploadStatusText = ref('')
+const uploadStatusType = ref('')
+const dailyReportInput = ref(null)
+const faTrackerInput = ref(null)
+const dailyUploadFile = ref(null)
+const faUploadFile = ref(null)
 
-async function onUploadDone(formData) {
-  showUploadDialog.value = false
+function triggerDailyReportSelect() {
+  if (dailyReportInput.value) {
+    dailyReportInput.value.value = ''
+    dailyReportInput.value.click()
+  }
+}
+
+function triggerFaTrackerSelect() {
+  if (faTrackerInput.value) {
+    faTrackerInput.value.value = ''
+    faTrackerInput.value.click()
+  }
+}
+
+function onDailyReportChange(event) {
+  dailyUploadFile.value = event.target.files?.[0] || null
+  uploadStatusText.value = ''
+  uploadStatusType.value = ''
+}
+
+function onFaTrackerChange(event) {
+  faUploadFile.value = event.target.files?.[0] || null
+  uploadStatusText.value = ''
+  uploadStatusType.value = ''
+}
+
+async function uploadRawdataFiles() {
+  if (!dailyUploadFile.value) return
   uploadState.value = 'uploading'
+  uploadStatusText.value = ''
+  uploadStatusType.value = ''
   try {
-    await store.uploadReport(formData, { skipValidation: skipValidation.value })
-    store.invalidateCache()
-    store.checkVersion()
+    const formData = new FormData()
+    formData.append('daily_report', dailyUploadFile.value)
+    if (faUploadFile.value) formData.append('fa_tracker', faUploadFile.value)
+    const result = await store.uploadRawdataFiles(formData)
     uploadState.value = 'done'
-    setTimeout(() => { uploadState.value = 'idle' }, 3000)
-    // Refresh rawdata after upload
+    uploadStatusText.value = t('checkitem.uploadDailyReportDone')
     await store.fetchRawdataSettings()
+    selectedDaily.value = result.daily_report?.path || selectedDaily.value
+    selectedFa.value = result.fa_tracker?.path || selectedFa.value
+    dailyUploadFile.value = null
+    faUploadFile.value = null
+    setTimeout(() => { uploadState.value = 'idle' }, 3000)
   } catch (e) {
     uploadState.value = 'idle'
-    alert(e.message)
+    uploadStatusType.value = 'error'
+    uploadStatusText.value = e.message || t('upload.uploadFailed')
   }
 }
 
@@ -544,7 +655,10 @@ async function parseSelected() {
   showRawdataStatus('')
   try {
     const result = await store.parseRawdata(selectedDaily.value, selectedFa.value, { skipValidation: skipValidation.value })
-    showRawdataStatus(t('settings.parseDone', { date: result.report_date, count: result.wf_count }))
+    const warnings = Array.isArray(result.warnings) && result.warnings.length
+      ? ` ${t('checkitem.importWarnings', { count: result.warnings.length })}`
+      : ''
+    showRawdataStatus(t('settings.parseDone', { date: result.report_date, count: result.wf_count }) + warnings)
     store.triggerRefresh()
   } catch (e) {
     showRawdataStatus(e.message || t('settings.parseFailed'), 'error')
@@ -624,6 +738,10 @@ onMounted(() => {
 
 .section-header {
   margin-bottom: 20px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .section-title {
@@ -633,10 +751,59 @@ onMounted(() => {
   margin: 0 0 4px 0;
 }
 
+.step-badge {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: var(--accent-steel);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .section-desc {
   font-size: 13px;
   color: var(--text-muted);
   margin: 0;
+  flex-basis: 100%;
+  padding-left: 34px;
+}
+
+.workflow-note,
+.success-note,
+.section-footnote {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: var(--text-secondary, var(--text-muted));
+  background: var(--bg-row-stripe);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.workflow-note.ready,
+.success-note {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 8%, var(--bg-card));
+  border-color: color-mix(in srgb, var(--color-success) 25%, var(--border-light));
+}
+
+.section-footnote {
+  margin: 14px 0 0;
+}
+
+.link-btn {
+  margin-left: 10px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-steel);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 /* Base file grid */
@@ -743,6 +910,14 @@ onMounted(() => {
 .upload-drop-zone:hover {
   border-color: var(--accent-steel);
   background: var(--bg-row-hover);
+}
+
+.upload-drop-zone.disabled,
+.upload-drop-zone.disabled:hover {
+  opacity: 0.55;
+  cursor: not-allowed;
+  border-color: var(--border-light);
+  background: transparent;
 }
 
 .upload-drop-zone.drop-zone-active {
@@ -899,6 +1074,25 @@ onMounted(() => {
   justify-content: flex-end;
 }
 
+.advanced-options {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  background: var(--bg-row-stripe);
+}
+
+.advanced-options summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.advanced-options .toggle-switch {
+  margin-top: 10px;
+}
+
 .btn-primary {
   padding: 8px 20px;
   font-size: 13px;
@@ -957,6 +1151,84 @@ onMounted(() => {
   font-family: var(--font-display);
   font-size: 14px;
   font-weight: 700;
+}
+
+.inline-upload-card {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, var(--accent-steel) 18%, var(--border-light));
+  border-radius: var(--radius-md);
+  background:
+    radial-gradient(circle at 0 0, color-mix(in srgb, var(--accent-steel) 10%, transparent), transparent 34%),
+    var(--bg-card);
+}
+
+.inline-upload-copy {
+  display: grid;
+  gap: 4px;
+}
+
+.inline-upload-copy strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.inline-upload-copy span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.inline-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.file-pick-card {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px dashed color-mix(in srgb, var(--accent-steel) 32%, var(--border-input));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent-steel) 5%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    background 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.file-pick-card:hover {
+  border-color: var(--accent-steel);
+  background: color-mix(in srgb, var(--accent-steel) 10%, transparent);
+  transform: translateY(-1px);
+}
+
+.file-pick-card.optional {
+  border-color: var(--border-input);
+  background: var(--bg-muted);
+}
+
+.file-pick-card span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.inline-upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .field-grid {
@@ -1248,6 +1520,10 @@ tr:hover td {
 }
 
 @media (max-width: 700px) {
+  .inline-upload-grid {
+    grid-template-columns: 1fr;
+  }
+
   .base-file-grid {
     grid-template-columns: 1fr;
   }

@@ -304,6 +304,7 @@ import LoadingState from '@/components/LoadingState.vue'
 import ErrorState from '@/components/ErrorState.vue'
 import CompareView from '@/components/QueryCompareView.vue'
 import MultiSelect from '@/components/MultiSelect.vue'
+import { CHECK_ITEM_TYPES } from './CheckItemDisplay.js'
 
 const store = useAppStore()
 const route = useRoute()
@@ -596,7 +597,7 @@ const rawHistoryError = ref('')
 const rawHistoryData = ref(null)
 const rawHistoryExpanded = ref({})
 
-const rawHistoryItems = ['BT-OTA', 'Charging', 'FACT', 'ISB', 'Touch-CAL-Post', 'Cosmetic']
+const rawHistoryItems = computed(() => store.checkItems?.length ? store.checkItems : CHECK_ITEM_TYPES)
 
 function clearRawHistory() {
   rawHistoryInput.value = ''
@@ -789,7 +790,14 @@ function exportRawHistory() {
 }
 
 watch(() => route.fullPath, () => { if (route.name === 'sn') applyRoute() })
-onMounted(async () => { await store.fetchWfList().catch(() => {}); await applyRoute(); if (activeMode.value === 'failure') loadFaOptions() })
+onMounted(async () => {
+  await Promise.all([
+    store.fetchWfList().catch(() => {}),
+    store.fetchCheckItems().catch(() => {}),
+  ])
+  await applyRoute()
+  if (activeMode.value === 'failure') loadFaOptions()
+})
 </script>
 
 <style scoped>

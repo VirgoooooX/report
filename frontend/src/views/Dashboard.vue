@@ -55,6 +55,12 @@
     <!-- Footer -->
     <footer class="page-footer">
       <span>{{ t('dashboard.reportDate') }}: {{ store.reportDate || '—' }}</span>
+      <span v-if="store.activeReport">
+        {{ t('common.activeReport') }}:
+        {{ store.activeReport.report_date || '—' }}
+        v{{ store.activeReport.report_version || '—' }}
+      </span>
+      <span v-if="store.activeReport?.source_file_name">{{ t('common.sourceFile') }}: {{ store.activeReport.source_file_name }}</span>
       <span>{{ configCount }} {{ t('common.configs') }}</span>
       <span>{{ wfCount }} {{ t('common.wfs') }}</span>
       <span>{{ failureCount }} {{ t('common.failures') }}</span>

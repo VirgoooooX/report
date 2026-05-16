@@ -271,7 +271,8 @@ def api_version():
     The frontend uses this to decide whether to invalidate cached API responses."""
     conn = get_conn()
     row = conn.execute(
-        """SELECT id, report_date, version FROM reports
+        """SELECT id, report_date, version, source_file_name
+           FROM reports
            WHERE is_active = 1
            ORDER BY report_date DESC, version DESC
            LIMIT 1"""
@@ -280,7 +281,13 @@ def api_version():
     if not row:
         return jsonify({'version': 'empty'})
     return jsonify({
-        'version': f"{row['report_date']}-r{row['id']}-v{row['version']}"
+        'version': f"{row['report_date']}-r{row['id']}-v{row['version']}",
+        'active_report': {
+            'id': row['id'],
+            'report_date': row['report_date'],
+            'report_version': row['version'],
+            'source_file_name': row['source_file_name'] or '',
+        },
     })
 
 
@@ -375,7 +382,7 @@ def api_overview():
         fail_stats = get_failure_rate_stats(rid)
     
     # Latest report date and source_file_name for project name extraction
-    rpt = conn.execute("SELECT report_date, source_file_name FROM reports WHERE id = ?", (rid,)).fetchone()
+    rpt = conn.execute("SELECT id, report_date, version, source_file_name FROM reports WHERE id = ?", (rid,)).fetchone()
     report_date = rpt['report_date'] if rpt else ''
     
     project_name = 'M60 EVT REL'
@@ -421,6 +428,12 @@ def api_overview():
     return jsonify({
         'project_name': project_name,
         'report_date': report_date,
+        'active_report': {
+            'id': rpt['id'] if rpt else rid,
+            'report_date': report_date,
+            'report_version': rpt['version'] if rpt else '',
+            'source_file_name': rpt['source_file_name'] if rpt else '',
+        },
         'completion': completion,
         'daily_updates': {
             'total_changes': len(wf_updates_list),
@@ -2697,6 +2710,52 @@ def _upload_basename(filename):
     return str(filename or '').replace('\\', '/').split('/')[-1].strip()
 
 
+@app.route('/api/settings/rawdata/upload', methods=['POST'])
+def api_settings_rawdata_upload():
+    """Upload Daily Report/FA files into rawdata without importing them."""
+    daily_file = request.files.get('daily_report')
+    if not daily_file or not daily_file.filename:
+        return jsonify({'success': False, 'error': 'Missing daily_report file'}), 400
+
+    daily_name = _upload_basename(daily_file.filename)
+    if not REPORT_PATTERN.match(daily_name):
+        return jsonify({'success': False, 'error': f'Invalid Daily Report filename: {daily_name}'}), 400
+
+    fa_file = request.files.get('fa_tracker')
+    fa_name = ''
+    if fa_file and fa_file.filename:
+        fa_name = _upload_basename(fa_file.filename)
+        if not FA_PATTERN.match(fa_name):
+            return jsonify({'success': False, 'error': f'Invalid FA Tracker filename: {fa_name}'}), 400
+
+    os.makedirs(RAWDATA_DIR, exist_ok=True)
+    daily_path = os.path.join(RAWDATA_DIR, daily_name)
+    daily_file.save(daily_path)
+
+    result = {
+        'success': True,
+        'daily_report': {
+            'name': daily_name,
+            'path': _rawdata_relpath(daily_path),
+            'kind': 'daily_report',
+            'date': _rawdata_date(daily_name),
+        },
+        'fa_tracker': None,
+    }
+
+    if fa_file and fa_name:
+        fa_path = os.path.join(RAWDATA_DIR, fa_name)
+        fa_file.save(fa_path)
+        result['fa_tracker'] = {
+            'name': fa_name,
+            'path': _rawdata_relpath(fa_path),
+            'kind': 'fa_tracker',
+            'date': _rawdata_date(fa_name),
+        }
+
+    return jsonify(result)
+
+
 @app.route('/api/upload', methods=['POST'])
 def upload_report():
     daily_file = request.files.get('daily_report')
@@ -2924,6 +2983,12 @@ def api_base_files_delete(filename):
 # ═══════════════════════════════════════════════════════════════════════
 
 import checkitem_generator
+
+
+@app.route('/api/check-items', methods=['GET'])
+def api_check_items():
+    """Return the supported check item columns used by generated Daily Reports."""
+    return jsonify({'items': list(checkitem_generator.CHECK_ITEMS)})
 
 
 @app.route('/api/checkitem/generate', methods=['POST'])

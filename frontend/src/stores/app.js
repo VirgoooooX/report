@@ -31,6 +31,7 @@ export const useAppStore = defineStore('app', () => {
 
   const projectName = ref('')
   const reportDate = ref('')
+  const activeReport = ref(null)
   const wfNames = ref({})
   const overviewData = ref(null)
   const summaryData = ref(null)
@@ -58,6 +59,7 @@ export const useAppStore = defineStore('app', () => {
   const querySingleSnKey = ref('')
   const settingsRawdata = ref({ files: [], reports: [] })
   const settingsRules = ref(null)
+  const checkItems = ref([])
   const lastQueryType = ref('')  // 'lookup' | 'wcfg' | 'failure'
   const faCache = ref({})  // key = sn → [{symptom, failure_mode, ...}]
   const faLastTags = ref('')  // comma-separated last FA query tags
@@ -88,6 +90,7 @@ export const useAppStore = defineStore('app', () => {
       overviewData.value = data
       lastOverviewFetch.value = Date.now()
       reportDate.value = data.report_date || ''
+      activeReport.value = data.active_report || null
       projectName.value = data.project_name || ''
       if (data.wf_names) {
         // Normalize: API returns {wf: {name, test_names}} -> flatten to {wf: name} for compat
@@ -189,6 +192,23 @@ export const useAppStore = defineStore('app', () => {
     }
     const data = contentType.includes('application/json') ? await resp.json() : await resp.text()
     if (!data.success) throw new Error(data.error || 'Upload failed')
+    return data
+  }
+
+  async function uploadRawdataFiles(formData) {
+    const resp = await fetch('/api/settings/rawdata/upload', { method: 'POST', body: formData })
+    const contentType = resp.headers.get('content-type') || ''
+    if (!resp.ok) {
+      const text = await resp.text()
+      let message = `HTTP ${resp.status}`
+      if (contentType.includes('application/json')) {
+        try { message = JSON.parse(text).error || message } catch {}
+      }
+      throw new Error(message)
+    }
+    const data = contentType.includes('application/json') ? await resp.json() : await resp.text()
+    if (!data.success) throw new Error(data.error || 'Upload failed')
+    await fetchRawdataSettings()
     return data
   }
 
@@ -421,6 +441,13 @@ export const useAppStore = defineStore('app', () => {
     return await requestJson(`/api/raw-records?${qs.toString()}`)
   }
 
+  async function fetchCheckItems(force = false) {
+    if (!force && checkItems.value.length) return checkItems.value
+    const data = await requestJson('/api/check-items')
+    checkItems.value = data.items || []
+    return checkItems.value
+  }
+
   // ── Cache layer ──
 
   function invalidateCache() {
@@ -454,10 +481,11 @@ export const useAppStore = defineStore('app', () => {
 
   async function checkVersion() {
     try {
-      const { version } = await requestJson('/api/version')
+      const { version, active_report } = await requestJson('/api/version')
       if (dataVersion.value && dataVersion.value !== version) {
         invalidateCache()
       }
+      if (active_report) activeReport.value = active_report
       dataVersion.value = version
       localStorage.setItem('data-version', version)
     } catch { /* allow — version check is advisory */ }
@@ -529,18 +557,18 @@ export const useAppStore = defineStore('app', () => {
 
   return {
     language, theme, setLanguage, setTheme, toggleTheme, applyPreferences,
-    projectName, reportDate, wfNames, overviewData, summaryData, lastOverviewFetch, lastSummaryFetch, loading, error,
+    projectName, reportDate, activeReport, wfNames, overviewData, summaryData, lastOverviewFetch, lastSummaryFetch, loading, error,
     dailyIssues, dailyIssuesConsistency, dailyIssuesReportDate,
     categories, categoryDetail, predictions, scheduleData, exportData,
     configColors, catColors, CONFIG_ORDER, CAT_ORDER,
     fetchOverview, fetchDailyIssues, fetchSummary, fetchCategories, fetchPredictions, fetchSchedule,
-    fetchCategoryDetail, searchSn, fetchExportData, uploadReport, fetchFaCross,
+    fetchCategoryDetail, searchSn, fetchExportData, uploadReport, uploadRawdataFiles, fetchFaCross,
     crossData,
     fetchWfList, fetchQueryByWf, fetchSnTimeline, fetchSnCheckDetails, resolveMark, fetchSnFa, fetchFaOptions,
-    fetchRawRecords,
+    fetchRawRecords, fetchCheckItems,
     queryWfList, queryByWfData, queryMultiSnData, querySingleSnData,
     queryByWfKey, queryMultiSnKey, querySingleSnKey,
-    settingsRawdata, settingsRules,
+    settingsRawdata, settingsRules, checkItems,
     lastQueryType, faCache, faLastTags, faOptions,
     fetchRawdataSettings, deleteRawdataFile, parseRawdata,
     fetchSettingsRules, saveSettingsRules, resetSettingsRules,

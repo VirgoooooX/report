@@ -1,5 +1,15 @@
 import assert from 'node:assert/strict'
-import { identifyCsvType, formatStats, formatDate } from './CheckItemDisplay.js'
+import {
+  identifyCsvType,
+  formatStats,
+  formatDate,
+  CHECK_ITEM_TYPES,
+  REQUIRED_BASE_FILE_TYPES,
+  OPTIONAL_BASE_FILE_TYPES,
+  getBaseStatusMap,
+  getMissingRequiredBaseFiles,
+  isBaseReadyForGeneration,
+} from './CheckItemDisplay.js'
 
 // ============================================================
 // identifyCsvType tests
@@ -113,5 +123,39 @@ assert.equal(formatDate(undefined), '')
 // Invalid date string — returns original string
 assert.equal(formatDate('not-a-date'), 'not-a-date')
 assert.equal(formatDate('abc123'), 'abc123')
+
+// ============================================================
+// Base-first workflow helpers
+// ============================================================
+
+assert.deepEqual(CHECK_ITEM_TYPES, ['BT-OTA', 'Charging', 'FACT', 'ISB', 'Touch-CAL-Post', 'Cosmetic'])
+assert.deepEqual(REQUIRED_BASE_FILE_TYPES, ['sn_mapping', 'checkpoint_schedule', 'test_plan'])
+assert.deepEqual(OPTIONAL_BASE_FILE_TYPES, ['test_schedule'])
+
+const completeBaseFiles = [
+  { file_type: 'sn_mapping', uploaded_at: '2026-05-15T10:00:00' },
+  { file_type: 'checkpoint_schedule', uploaded_at: '2026-05-15T10:01:00' },
+  { file_type: 'test_plan', uploaded_at: '2026-05-15T10:02:00' },
+  { file_type: 'test_schedule', uploaded_at: '2026-05-15T10:03:00' },
+]
+
+assert.deepEqual(
+  Object.keys(getBaseStatusMap(completeBaseFiles)).sort(),
+  ['checkpoint_schedule', 'sn_mapping', 'test_plan', 'test_schedule']
+)
+assert.equal(isBaseReadyForGeneration(completeBaseFiles), true)
+assert.deepEqual(getMissingRequiredBaseFiles(completeBaseFiles), [])
+
+const incompleteBaseFiles = [
+  { file_type: 'sn_mapping', uploaded_at: '2026-05-15T10:00:00' },
+]
+
+assert.equal(isBaseReadyForGeneration(incompleteBaseFiles), false)
+assert.deepEqual(
+  getMissingRequiredBaseFiles(incompleteBaseFiles),
+  ['checkpoint_schedule', 'test_plan']
+)
+assert.equal(isBaseReadyForGeneration(null), false)
+assert.deepEqual(getMissingRequiredBaseFiles(undefined), REQUIRED_BASE_FILE_TYPES)
 
 console.log('CheckItemDisplay tests passed')

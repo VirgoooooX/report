@@ -12,11 +12,11 @@
         <router-link to="/predictions">{{ t('nav.predictions') }}</router-link>
         <router-link to="/schedule">{{ t('nav.schedule') }}</router-link>
         <router-link to="/sn">{{ t('nav.queryCenter') }}</router-link>
-        <router-link to="/checkitem" class="nav-upload-btn">
-          <span class="upload-icon" aria-hidden="true">↑</span>
-          <span class="upload-label">{{ t('upload.idle') }}</span>
-        </router-link>
       </div>
+      <router-link to="/checkitem" class="nav-data-ops-btn">
+        <DatabaseOutlined class="data-ops-icon" />
+        <span>{{ t('nav.dataOperations') }}</span>
+      </router-link>
       <div class="nav-controls">
         <button
           class="nav-icon-btn"
@@ -73,16 +73,23 @@
       >
         {{ link.label }}
       </router-link>
+      <router-link
+        to="/checkitem"
+        class="mobile-data-ops-link"
+        @click="mobileOpen = false"
+      >
+        <DatabaseOutlined />
+        <span>{{ t('nav.dataOperations') }}</span>
+      </router-link>
     </div>
   </nav>
-  <!-- UploadDialog moved to CheckItemView -->
 </template>
 
 <script setup>
 import { ref, watch } from 'vue'
 import { useAppStore } from '@/stores/app'
 import { useI18n } from '@/i18n/useI18n'
-import { MenuOutlined, SettingOutlined } from '@ant-design/icons-vue'
+import { DatabaseOutlined, MenuOutlined, SettingOutlined } from '@ant-design/icons-vue'
 
 const store = useAppStore()
 const { t } = useI18n()
@@ -160,16 +167,8 @@ function toggleLanguage() {
   background: var(--accent-steel);
   border-radius: 1px;
 }
-.nav-links a.nav-upload-btn.router-link-active::after {
-  display: none;
-}
-.nav-links a.nav-upload-btn.router-link-active {
-  color: var(--accent-steel);
-  background: color-mix(in srgb, var(--accent-steel) 8%, transparent);
-  font-weight: 500;
-}
-/* ── Upload button ── */
-.nav-upload-btn {
+/* ── Data operations CTA ── */
+.nav-data-ops-btn {
   height: 32px;
   display: inline-flex;
   align-items: center;
@@ -182,55 +181,26 @@ function toggleLanguage() {
   font-size: 0.8rem;
   font-weight: 500;
   cursor: pointer;
-  margin-left: 8px;
+  text-decoration: none;
   transition:
     color 0.2s ease,
     background 0.2s ease,
     border-color 0.2s ease,
     box-shadow 0.2s ease;
 }
-.nav-upload-btn:hover {
+.nav-data-ops-btn:hover {
   background: color-mix(in srgb, var(--accent-steel) 14%, transparent);
   border-color: var(--accent-steel);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-steel) 10%, transparent);
 }
-.nav-upload-btn.uploading {
-  color: var(--text-muted);
-  cursor: default;
-  background: var(--bg-muted);
-  border-color: var(--border-input);
-  box-shadow: none;
+.nav-data-ops-btn.router-link-active {
+  color: #fff;
+  border-color: var(--accent-steel);
+  background: var(--accent-steel);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-steel) 12%, transparent);
 }
-.nav-upload-btn.uploading:hover {
-  background: var(--bg-muted);
-  border-color: var(--border-input);
-  box-shadow: none;
-}
-.nav-upload-btn.done {
-  color: var(--color-success);
-  border-color: color-mix(in srgb, var(--color-success) 30%, transparent);
-  background: color-mix(in srgb, var(--color-success) 8%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-success) 10%, transparent);
-}
-.upload-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  font-size: 14px;
-  line-height: 1;
-}
-.upload-spinner {
-  display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--border-input);
-  border-top-color: var(--text-muted);
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-.upload-label {
+.data-ops-icon {
+  font-size: 15px;
   line-height: 1;
 }
 
@@ -333,6 +303,10 @@ function toggleLanguage() {
     display: none;
   }
 
+  .nav-data-ops-btn {
+    display: none;
+  }
+
   .nav-menu-btn {
     display: inline-flex;
   }
@@ -375,6 +349,27 @@ function toggleLanguage() {
   .mobile-nav-link.router-link-active,
   .mobile-nav-link:hover {
     background: var(--bg-row-hover);
+  }
+
+  .mobile-data-ops-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 11px 12px;
+    border: 1px solid color-mix(in srgb, var(--accent-steel) 28%, transparent);
+    border-radius: var(--radius-full);
+    background: color-mix(in srgb, var(--accent-steel) 9%, transparent);
+    color: var(--accent-steel);
+    text-decoration: none;
+    font-weight: 600;
+  }
+
+  .mobile-data-ops-link.router-link-active,
+  .mobile-data-ops-link:hover {
+    color: #fff;
+    background: var(--accent-steel);
   }
 }
 </style>

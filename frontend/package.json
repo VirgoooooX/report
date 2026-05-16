@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "build:check": "vite build --outDir dist-check --emptyOutDir true",
-    "test": "node src/views/failureDisplay.spec.js && node src/views/testSummaryDisplay.spec.js && node src/views/testSummaryModal.spec.js && node src/views/dailyUpdateDisplay.spec.js && node src/views/failureTheme.spec.js && node src/views/scheduleDisplay.spec.js && node src/views/scheduleLayout.spec.js && node src/composables/lifecycle.spec.js && node src/views/ScheduleTimeline.spec.js && node src/views/CheckItemDisplay.spec.js && node src/views/CheckItemQueryDisplay.spec.js",
+    "test": "node src/components/NavBar.spec.js && node src/views/failureDisplay.spec.js && node src/views/testSummaryDisplay.spec.js && node src/views/testSummaryModal.spec.js && node src/views/dailyUpdateDisplay.spec.js && node src/views/failureTheme.spec.js && node src/views/scheduleDisplay.spec.js && node src/views/scheduleLayout.spec.js && node src/composables/lifecycle.spec.js && node src/views/ScheduleTimeline.spec.js && node src/views/CheckItemDisplay.spec.js && node src/views/CheckItemQueryDisplay.spec.js",
     "preview": "vite preview"
   },
   "dependencies": {

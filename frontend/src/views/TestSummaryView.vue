@@ -1,5 +1,9 @@
 <template>
   <div class="page-container ts-page">
+    <div v-if="store.activeReport" class="data-source-bar">
+      <span>{{ t('common.activeReport') }}: {{ store.activeReport.report_date || '—' }} v{{ store.activeReport.report_version || '—' }}</span>
+      <span v-if="store.activeReport.source_file_name">{{ t('common.sourceFile') }}: {{ store.activeReport.source_file_name }}</span>
+    </div>
     <LoadingState v-if="loading && !store.summaryData" />
     <ErrorState v-else-if="error && !store.summaryData" :message="error" @retry="load" />
     <TestSummary v-else :summary-data="store.summaryData" @cell-click="onCellClick" />
@@ -91,5 +95,14 @@ watch(() => store.refreshCounter, () => { load(true) })
 <style scoped>
 .page-container {
   color: var(--text-primary);
+}
+
+.data-source-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 </style>
