@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
+const globalStyles = readFileSync(new URL('../assets/styles/global.css', import.meta.url), 'utf8')
 const scheduleView = readFileSync(new URL('./ScheduleView.vue', import.meta.url), 'utf8')
 const scheduleTimeline = readFileSync(new URL('../components/ScheduleTimeline.vue', import.meta.url), 'utf8')
 
@@ -122,12 +123,37 @@ assert.ok(
 
 const pageRule = ruleBody(scheduleViewStyles, '.schedule-page')
 assert.ok(
-  hasDeclaration(pageRule, 'height', '100%'),
-  'schedule-page should fill the available viewport below the nav'
+  hasDeclaration(pageRule, 'width', '100%') &&
+    hasDeclaration(pageRule, 'height', '100%') &&
+    hasDeclaration(pageRule, 'padding', '4px 5px 8px'),
+  'schedule-page should directly fill the app viewport container'
 )
 assert.ok(
   hasDeclaration(pageRule, 'overflow', 'hidden'),
   'schedule-page should prevent the outer page from creating a second vertical scrollbar'
+)
+assert.ok(
+  !/:global\((?:html|body|\.main):has\(\.schedule-page\)\)/.test(scheduleViewStyles),
+  'schedule view should not change the shared app shell through global :has() selectors'
+)
+
+const mainRule = ruleBody(globalStyles, '.main')
+assert.ok(
+  hasDeclaration(mainRule, 'width', '100%') &&
+    hasDeclaration(mainRule, 'height', 'calc\\(100vh - 56px\\)') &&
+    hasDeclaration(mainRule, 'max-width', 'none') &&
+    hasDeclaration(mainRule, 'margin', '0') &&
+    hasDeclaration(mainRule, 'padding', '0') &&
+    hasDeclaration(mainRule, 'overflow', 'auto'),
+  'main should be a stable full-viewport container for every route'
+)
+
+const pageContainerRule = ruleBody(globalStyles, '.main > .page-container')
+assert.ok(
+  /width\s*:\s*min\(100%, var\(--layout-max-width\)\)\s*;/.test(pageContainerRule) &&
+    hasDeclaration(pageContainerRule, 'margin', '0 auto') &&
+    /padding\s*:\s*var\(--page-padding-y\) var\(--page-padding-x\) var\(--page-padding-bottom\)\s*;/.test(pageContainerRule),
+  'ordinary pages should keep the old centered shell inside the full-viewport main container'
 )
 
 const scrollRule = ruleBody(scheduleTimelineStyles, '.sheet-scroll')

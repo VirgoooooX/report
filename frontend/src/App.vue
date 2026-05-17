@@ -45,12 +45,3 @@ html {
   scrollbar-gutter: stable;
 }
 </style>
-
-<style scoped>
-.main--test-summary {
-  max-width: 1680px;
-}
-.main--query-center {
-  max-width: 1680px;
-}
-</style>

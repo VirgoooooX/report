@@ -86,29 +86,13 @@ watch(() => store.refreshCounter, () => { loadData(true) })
 </script>
 
 <style scoped>
-:global(html:has(.schedule-page)) {
-  overflow: hidden;
-  scrollbar-gutter: auto;
-}
-
-:global(body:has(.schedule-page)) {
-  overflow: hidden;
-  height: 100vh;
-}
-
-:global(.main:has(.schedule-page)) {
-  width: 100%;
-  height: calc(100vh - 56px);
-  max-width: none;
-  padding: 4px 5px 8px;
-  overflow: hidden;
-}
-
 .schedule-page {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  width: 100%;
   height: 100%;
+  padding: 4px 5px 8px;
   min-height: 0;
   overflow: hidden;
 }
