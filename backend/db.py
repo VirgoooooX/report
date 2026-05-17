@@ -777,7 +777,8 @@ def get_sn_lifecycle_history(sn):
         wf_set = set(r['wf_num'] for r in rows)
         for wf in wf_set:
             count = conn.execute(
-                "SELECT COUNT(*) as c FROM current_cp_definitions WHERE wf_num = ?",
+                "SELECT COUNT(*) as c FROM current_cp_definitions "
+                "WHERE wf_num = ? AND is_boundary = 0",
                 (wf,),
             ).fetchone()['c']
             cp_counts[wf] = count
@@ -873,7 +874,7 @@ def get_cell_failures(report_id, wf_num, config, test_idx, sns):
         # Fallback: try current_cp_definitions
         last_cp_row = conn.execute(
             """SELECT MAX(cp_idx) AS last_cp FROM current_cp_definitions
-               WHERE wf_num = ? AND test_idx = ?""",
+               WHERE wf_num = ? AND test_idx = ? AND is_boundary = 0""",
             (wf_num, test_idx),
         ).fetchone()
         last_cp = last_cp_row['last_cp'] if last_cp_row and last_cp_row['last_cp'] is not None else None
@@ -2030,6 +2031,7 @@ def get_wf_config_progress_from_lifecycle(conn, report_id):
         cp_totals AS (
             SELECT wf_num, COUNT(*) as total_cps
             FROM current_cp_definitions
+            WHERE is_boundary = 0
             GROUP BY wf_num
         )
         SELECT p.wf_num, p.config, p.max_cp_idx,
@@ -2149,7 +2151,8 @@ def get_completion_stats_from_lifecycle(report_id=None):
 
     # Get total CPs from current definitions
     cp_total_rows = conn.execute(
-        "SELECT wf_num, COUNT(*) as total_cps FROM current_cp_definitions GROUP BY wf_num"
+        "SELECT wf_num, COUNT(*) as total_cps FROM current_cp_definitions "
+        "WHERE is_boundary = 0 GROUP BY wf_num"
     ).fetchall()
     cp_totals = {r['wf_num']: r['total_cps'] for r in cp_total_rows}
 

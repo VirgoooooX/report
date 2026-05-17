@@ -696,5 +696,112 @@ class ApiConsistencyTests(unittest.TestCase):
         self.assertNotIn('SN_REAPPEAR', issue_sns)
 
 
+class ApiScheduleBoundaryFilteringTests(unittest.TestCase):
+    """Batch B step 3.4 — boundary CPs (is_boundary=1) MUST NOT appear in
+    /api/schedule's cps_by_key. They live in current_cp_definitions only so
+    cp_idx aligns with daily lifecycle rows.
+
+    See docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md.
+    """
+
+    def setUp(self):
+        self.conn = db.get_conn()
+        for table in (
+            'sn_check_state_history',
+            'sn_cp_results',
+            'sn_check_results',
+            'report_cps',
+            'report_schedule_segments',
+            'wf_results',
+            'reports',
+            'current_cp_definitions',
+            'current_test_definitions',
+            'current_schedule_segments',
+            'base_file_meta',
+        ):
+            try:
+                self.conn.execute(f"DELETE FROM {table}")
+            except Exception:
+                pass
+        self.conn.commit()
+
+    def tearDown(self):
+        self.conn.close()
+
+    def _seed_base(self):
+        """Seed Plan layer with REL_T0 (boundary) + 3 real CPs + REL_TFINAL."""
+        cur = self.conn.execute(
+            """INSERT INTO reports (report_date, version, is_active, excel_path)
+               VALUES ('2026-05-17', 1, 1, 'test.xlsx')"""
+        )
+        rid = cur.lastrowid
+
+        self.conn.execute(
+            """INSERT INTO base_file_meta
+               (file_type, original_filename, stored_path, uploaded_at, parsed_summary)
+               VALUES ('checkpoint_schedule', 'cs.csv', '', '2026-05-17', '{}'),
+                      ('test_schedule', 'ts.xlsx', '', '2026-05-17', '{}')"""
+        )
+        self.conn.execute(
+            """INSERT INTO current_schedule_segments
+               (wf_num, config, test_idx, test_name, schedule_test_item,
+                planned_start_date, planned_end_date, confidence,
+                inference_reason, marker_labels, updated_run_id)
+               VALUES ('16.1', 'R3', 0, 'Thermal', 'Thermal',
+                       '2026-05-01', '2026-05-10', 'high', 'seed', '[]', ?)""",
+            (rid,),
+        )
+        # Persistence shape: REL_T0 cp_idx=0 (boundary), 3 real CPs cp_idx=1..3,
+        # REL_TFINAL cp_idx=4 (boundary). cps_by_key MUST contain only the 3 real CPs.
+        rows = [
+            (0, 'REL_T0', 1),
+            (1, 'CP_A', 0),
+            (2, 'CP_B', 0),
+            (3, 'CP_C', 0),
+            (4, 'REL_TFINAL', 1),
+        ]
+        for cp_idx, cp_name, is_boundary in rows:
+            self.conn.execute(
+                """INSERT INTO current_cp_definitions
+                   (wf_num, cp_idx, cp_name, test_idx, check_items,
+                    is_boundary, updated_run_id)
+                   VALUES ('16.1', ?, ?, 0, '[]', ?, ?)""",
+                (cp_idx, cp_name, is_boundary, rid),
+            )
+        self.conn.commit()
+        return rid
+
+    def test_api_schedule_excludes_boundary_cps_from_cps_by_key(self):
+        rid = self._seed_base()
+        # Seed minimal lifecycle data so total_cps is populated via the
+        # progress path (get_wf_config_progress_from_lifecycle).
+        for sn, cp_idx in [('SN001', 1), ('SN002', 2)]:
+            self.conn.execute(
+                """INSERT INTO sn_check_state_history
+                   (wf_num, config, sn, unit_num, test_idx, cp_idx,
+                    check_item_idx, check_item, state_hash, status, failure_type,
+                    first_report_id, first_report_date,
+                    last_seen_report_id, last_seen_report_date)
+                   VALUES ('16.1', 'R3', ?, '', 0, ?, 0,
+                           'FACT', '["pass","","","",""]', 'pass', NULL,
+                           ?, '2026-05-17', ?, '2026-05-17')""",
+                (sn, cp_idx, rid, rid),
+            )
+        self.conn.commit()
+
+        data = api.app.test_client().get('/api/schedule').get_json()
+        segment = next(
+            row for row in data['segments']
+            if row['wf_num'] == '16.1' and row['config'] == 'R3'
+        )
+        cp_names = [cp['cp_name'] for cp in segment['cps']]
+        # Only the 3 real CPs are placed as dots.
+        self.assertEqual(cp_names, ['CP_A', 'CP_B', 'CP_C'])
+        self.assertNotIn('REL_T0', cp_names)
+        self.assertNotIn('REL_TFINAL', cp_names)
+        # total_cps reports non-boundary count (3 real CPs, not 5).
+        self.assertEqual(segment['total_cps'], 3)
+
+
 if __name__ == '__main__':
     unittest.main()

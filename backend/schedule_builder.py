@@ -213,6 +213,14 @@ def build_schedule_segments(segments, wf_meta=None, cps_by_key=None, progress_by
     ``current_cp_definitions`` in ``api_schedule``). This builder does not
     fall back to ``report_cps`` and never reads from the database.
 
+    Boundary CPs (rows with ``is_boundary=1`` in ``current_cp_definitions``,
+    e.g. T0 / REL_T0 / End / TFinal / REL_TFINAL) MUST be filtered out by
+    the caller. This function assumes every entry in ``cps_by_key`` is a
+    placement-eligible test CP. T0/End anchors come from
+    ``current_schedule_segments`` (the ``segments`` argument), not from
+    ``cps_by_key``. See
+    docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md.
+
     As a defensive guard, this function:
 
     - skips lanes whose ``wf_num`` normalizes to ``{"43", "44"}`` even if the

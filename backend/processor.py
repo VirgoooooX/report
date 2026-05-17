@@ -546,7 +546,7 @@ def _prediction_daily_bulk_progress(conn, wf_num, config, test_idx, days, thresh
         cp_totals AS (
             SELECT wf_num, COUNT(*) AS total_cps
             FROM current_cp_definitions
-            WHERE wf_num = ?
+            WHERE wf_num = ? AND is_boundary = 0
             GROUP BY wf_num
         )
         SELECT sc.report_date,
@@ -685,6 +685,7 @@ def _prediction_targets(conn):
         JOIN current_cp_definitions ccp
           ON ccp.wf_num = sc.wf_num
          AND ccp.cp_idx = sc.current_cp_idx
+         AND ccp.is_boundary = 0
         GROUP BY sc.wf_num, sc.config, ccp.test_idx
     """).fetchall()
 

@@ -921,13 +921,20 @@ def api_schedule():
                 'missing': ['test_schedule_segments'],
             }), 400
 
-        # cps_by_key from current_cp_definitions (Plan layer single source)
+        # cps_by_key from current_cp_definitions (Plan layer single source).
+        # Boundary rows (T0/REL_T0/End/TFinal/REL_TFINAL) are persisted with
+        # is_boundary=1 so cp_idx aligns with daily lifecycle rows; they are
+        # filtered out here because the schedule view only ever places real
+        # test CPs as dots between the lane-bar T0/End anchors.
+        # See docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md.
         cp_defs = get_current_cp_definitions(conn)
         cps_by_key = {}
         for wf_num, cp_list in cp_defs.items():
             if str(wf_num) in {'43', '44'}:
                 continue
             for cp in cp_list:
+                if cp.get('is_boundary'):
+                    continue
                 key = (str(wf_num), cp.get('test_idx'))
                 cps_by_key.setdefault(key, []).append({
                     'cp_idx': cp.get('cp_idx'),
@@ -1064,7 +1071,8 @@ def api_sn_timeline():
                     'fail_type': fail_type,
                     'items': items,
                 })
-            # Get CP names
+            # Get CP names — keep boundary rows here so REL_T0 lifecycle
+            # data resolves to its real name in the timeline.
             cp_names = {}
             cp_defs = conn.execute(
                 "SELECT cp_idx, cp_name FROM current_cp_definitions WHERE wf_num = ?",
@@ -1072,7 +1080,13 @@ def api_sn_timeline():
             ).fetchall()
             for cd in cp_defs:
                 cp_names[cd['cp_idx']] = cd['cp_name']
-            total_cps = len(cp_defs)
+            # total_cps reports non-boundary count (Batch B step 3.4b Class A).
+            total_cps_row = conn.execute(
+                "SELECT COUNT(*) AS c FROM current_cp_definitions "
+                "WHERE wf_num = ? AND is_boundary = 0",
+                (wf_key,),
+            ).fetchone()
+            total_cps = total_cps_row['c'] if total_cps_row else 0
 
             for cp in cp_list:
                 cp['cp_name'] = cp_names.get(cp['cp_idx'], f"CP{cp['cp_idx']}")
@@ -1129,7 +1143,8 @@ def api_query_by_wf():
 
     # Get CP definitions
     cp_defs = conn.execute(
-        "SELECT cp_idx, cp_name FROM current_cp_definitions WHERE wf_num = ? ORDER BY cp_idx",
+        "SELECT cp_idx, cp_name FROM current_cp_definitions "
+        "WHERE wf_num = ? AND is_boundary = 0 ORDER BY cp_idx",
         (wf,),
     ).fetchall()
     cp_names = {cd['cp_idx']: cd['cp_name'] for cd in cp_defs}
@@ -1138,7 +1153,8 @@ def api_query_by_wf():
     # Get check items list (from first CP definition)
     check_items_list = []
     ci_row = conn.execute(
-        "SELECT check_items FROM current_cp_definitions WHERE wf_num = ? LIMIT 1",
+        "SELECT check_items FROM current_cp_definitions "
+        "WHERE wf_num = ? AND is_boundary = 0 LIMIT 1",
         (wf,),
     ).fetchone()
     if ci_row:
@@ -1685,10 +1701,12 @@ def api_test_summary():
            test_slots AS (
                SELECT DISTINCT wf_num, test_idx
                FROM current_cp_definitions
+               WHERE is_boundary = 0
            ),
            cp_test_ranges AS (
                SELECT wf_num, test_idx, MIN(cp_idx) AS first_cp, MAX(cp_idx) AS last_cp
                FROM current_cp_definitions
+               WHERE is_boundary = 0
                GROUP BY wf_num, test_idx
            ),
            sn_current AS (
@@ -1823,6 +1841,7 @@ def api_test_summary():
     for row in conn.execute(
         """SELECT wf_num, test_idx, MIN(cp_idx) AS first_cp_idx, MAX(cp_idx) AS last_cp_idx
            FROM current_cp_definitions
+           WHERE is_boundary = 0
            GROUP BY wf_num, test_idx""",
     ).fetchall():
         cp_ranges[(row['wf_num'], row['test_idx'])] = {
