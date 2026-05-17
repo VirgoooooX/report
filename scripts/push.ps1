@@ -1,12 +1,25 @@
 param(
   [ValidateSet("patch", "minor", "major")]
   [string]$Level = "patch",
+  [string]$Version = "",
   [string]$Remote = "origin",
   [string]$Branch = "",
   [string]$Message = ""
 )
 
 $ErrorActionPreference = "Stop"
+
+# 互斥校验：-Version 与 -Level 不能同时显式指定
+if ($Version -and $PSBoundParameters.ContainsKey('Level')) {
+  Write-Error "-Version and -Level are mutually exclusive."
+  exit 1
+}
+
+# semver 格式校验（与 bump-version.mjs 保持一致）
+if ($Version -and $Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$') {
+  Write-Error "Invalid -Version: $Version (expect x.y.z[-prerelease][+build])"
+  exit 1
+}
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RootDir = Resolve-Path "$ScriptDir\.."
 
@@ -62,7 +75,11 @@ Pop-Location
 # 6. 版本号提升
 Write-Host "=== Bumping version ===" -ForegroundColor Cyan
 Push-Location $RootDir
-$newVersion = node scripts/bump-version.mjs $Level
+if ($Version) {
+  $newVersion = node scripts/bump-version.mjs --version $Version
+} else {
+  $newVersion = node scripts/bump-version.mjs $Level
+}
 if ($LASTEXITCODE -ne 0) { Write-Error "Version bump failed"; exit 1 }
 Pop-Location
 

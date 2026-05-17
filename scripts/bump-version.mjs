@@ -9,6 +9,24 @@ const args = process.argv.slice(2)
 const dryRun = args.includes('--dry-run')
 const level = args.find(a => ['patch', 'minor', 'major'].includes(a)) || 'patch'
 
+// Explicit version override: --version=x.y.z[-prerelease][+build] or --version x.y.z...
+const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
+
+function findExplicitVersion(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a.startsWith('--version=')) return a.slice('--version='.length)
+    if (a === '--version') return argv[i + 1]
+  }
+  return null
+}
+
+const explicitVersion = findExplicitVersion(args)
+if (explicitVersion && !SEMVER_RE.test(explicitVersion)) {
+  console.error(`Invalid version: ${explicitVersion} (expect x.y.z[-prerelease][+build])`)
+  process.exit(1)
+}
+
 function readVersion(filePath) {
   const content = readFileSync(filePath, 'utf-8').trim()
   return content
@@ -39,10 +57,11 @@ function updatePackageJson(v) {
 }
 
 const currentVersion = readVersion(resolve(root, 'VERSION'))
-const nextVersion = bump(currentVersion, level)
+const nextVersion = explicitVersion ?? bump(currentVersion, level)
+const reason = explicitVersion ? 'explicit' : level
 
 if (dryRun) {
-  console.log(`[dry-run] ${currentVersion} -> ${nextVersion} (${level})`)
+  console.log(`[dry-run] ${currentVersion} -> ${nextVersion} (${reason})`)
 } else {
   writeVersion(resolve(root, 'VERSION'), nextVersion)
   updatePackageJson(nextVersion)
