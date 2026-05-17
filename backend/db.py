@@ -1546,9 +1546,6 @@ def init_db(drop_all=False, conn=None):
         CREATE INDEX IF NOT EXISTS idx_sn_cp_sn ON sn_cp_results(sn, report_id);
         CREATE INDEX IF NOT EXISTS idx_sn_check_report_wf_cfg ON sn_check_results(report_id, wf_num, config, test_idx, cp_idx);
         CREATE INDEX IF NOT EXISTS idx_sn_check_sn ON sn_check_results(sn, report_id);
-        CREATE INDEX IF NOT EXISTS idx_sn_check_hist_point ON sn_check_state_history(
-            wf_num, config, sn, cp_idx, check_item_idx, first_report_id, closed_before_report_id
-        );
         CREATE INDEX IF NOT EXISTS idx_sn_check_hist_failures ON sn_check_state_history(
             wf_num, config, test_idx, sn, first_report_id, closed_before_report_id, failure_type
         );
@@ -1561,14 +1558,6 @@ def init_db(drop_all=False, conn=None):
         
         CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_window
         ON sn_check_state_history(first_report_id, closed_before_report_id);
-        
-        CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_current_failure
-        ON sn_check_state_history(wf_num, config, test_idx, failure_type)
-        WHERE closed_before_report_id IS NULL AND failure_type IS NOT NULL;
-        
-        CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_current_progress
-        ON sn_check_state_history(wf_num, config, sn, cp_idx)
-        WHERE closed_before_report_id IS NULL;
     """)
     # ── Cache table policy (Phase 7) ──────────────────────────────────
     # These tables are derived caches, rebuilt during full --rebuild:
@@ -1585,6 +1574,15 @@ def init_db(drop_all=False, conn=None):
         conn.execute("DROP INDEX IF EXISTS idx_sn_check_hist_open")
     except Exception:
         pass
+    for index_name in (
+        "idx_sn_lifecycle_current_progress",
+        "idx_sn_lifecycle_current_failure",
+        "idx_sn_check_hist_point",
+    ):
+        try:
+            conn.execute(f"DROP INDEX IF EXISTS {index_name}")
+        except Exception:
+            pass
     try:
         conn.execute("ALTER TABLE reports ADD COLUMN ts_test_names TEXT DEFAULT '{}'")
     except:

@@ -436,6 +436,82 @@ class LifecycleIndexMigrationTests(unittest.TestCase):
             conn.close()
             os.remove(path)
 
+    def test_init_db_does_not_create_second_cut_candidate_indexes(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+
+            for index_name in (
+                'idx_sn_lifecycle_current_progress',
+                'idx_sn_lifecycle_current_failure',
+                'idx_sn_check_hist_point',
+            ):
+                row = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+                    (index_name,),
+                ).fetchone()
+                self.assertIsNone(row, index_name)
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_init_db_keeps_required_lifecycle_indexes(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+
+            for index_name in (
+                'idx_sn_lifecycle_open_point',
+                'idx_sn_lifecycle_sn',
+                'idx_sn_lifecycle_window',
+                'idx_sn_check_hist_failures',
+            ):
+                row = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+                    (index_name,),
+                ).fetchone()
+                self.assertIsNotNone(row, index_name)
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_init_db_drops_existing_second_cut_candidate_indexes(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            conn.executescript("""
+                CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_current_progress
+                ON sn_check_state_history(wf_num, config, sn, cp_idx)
+                WHERE closed_before_report_id IS NULL;
+
+                CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_current_failure
+                ON sn_check_state_history(wf_num, config, test_idx, failure_type)
+                WHERE closed_before_report_id IS NULL AND failure_type IS NOT NULL;
+
+                CREATE INDEX IF NOT EXISTS idx_sn_check_hist_point
+                ON sn_check_state_history(
+                    wf_num, config, sn, cp_idx, check_item_idx,
+                    first_report_id, closed_before_report_id
+                );
+            """)
+            conn.commit()
+
+            db.init_db(conn=conn)
+
+            for index_name in (
+                'idx_sn_lifecycle_current_progress',
+                'idx_sn_lifecycle_current_failure',
+                'idx_sn_check_hist_point',
+            ):
+                row = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+                    (index_name,),
+                ).fetchone()
+                self.assertIsNone(row, index_name)
+        finally:
+            conn.close()
+            os.remove(path)
+
 
 class FactAggregateTests(unittest.TestCase):
     def test_get_sn_cp_current_progress_uses_current_marker(self):
