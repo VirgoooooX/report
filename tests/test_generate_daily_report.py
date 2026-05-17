@@ -557,3 +557,178 @@ class TestExcelGenerationIntegration:
             )
 
         wb.close()
+
+
+
+class TestGenerateDailyReportBoundaryFiltering:
+    """Batch B step 3.5 — generated Daily Report Excel must include REL_T0
+    columns (carries real check-item data) but exclude other schedule
+    boundaries (REL_TFINAL/End/TFinal/T0).
+
+    See docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md.
+    """
+
+    def _make_csv_file(self, filename, content):
+        mock_file = MagicMock()
+        mock_file.filename = filename
+        if isinstance(content, str):
+            content = content.encode('utf-8')
+        mock_file.read.return_value = content
+        return mock_file
+
+    def _make_csv_content(self, sn, cp, status="PASS",
+                          end_time="2026-05-15 10:00:00"):
+        header = (
+            "Site,Product,SerialNumber,Special Build Name,REL Event,"
+            "Test Pass/Fail Status,EndTime,List of Failing Tests,Station ID,"
+            "Version,Col10,Col11,Col12"
+        )
+        data = (
+            f"Site1,Prod1,{sn},Build1,{cp},{status},{end_time},,"
+            "Station1,1.0.0,,,,"
+        )
+        return f"{header}\n{data}\n"
+
+    def _mock_sn_mapping(self):
+        return {
+            'sn_mapping': {
+                'SN001': {'config': 'R1FNF', 'wf_id': '1', 'unit_number': 'ER1-1-1'},
+            },
+            'config_quantities': {'R1FNF': 1},
+            'sn_count': 1,
+        }
+
+    def _mock_sn_lookup_dicts(self):
+        return (
+            {'SN001': '1'},
+            {'SN001': 'ER1-1-1'},
+            {'SN001': 'R1FNF'},
+        )
+
+    @patch('checkitem_generator.db')
+    @patch('checkitem_generator.get_sn_lookup_dicts')
+    @patch('checkitem_generator.get_sn_mapping_from_db')
+    def test_rel_t0_column_appears_in_generated_excel(
+        self, mock_sn_mapping, mock_lookup, mock_db,
+    ):
+        """Base CPs include REL_T0 (boundary) + CP_A. Generator keeps both."""
+        from checkitem_generator import generate_daily_report
+
+        mock_sn_mapping.return_value = self._mock_sn_mapping()
+        mock_lookup.return_value = self._mock_sn_lookup_dicts()
+
+        mock_conn = MagicMock()
+        mock_db.get_conn.return_value = mock_conn
+        mock_db.get_current_cp_definitions.return_value = {
+            '1': [
+                {'cp_idx': 0, 'cp_name': 'REL_T0', 'test_idx': 0,
+                 'check_items': [], 'is_boundary': 1},
+                {'cp_idx': 1, 'cp_name': 'CP_A', 'test_idx': 0,
+                 'check_items': [], 'is_boundary': 0},
+            ],
+        }
+        mock_db.get_current_wf_definitions.return_value = {'1': 'ISB'}
+        mock_db.get_current_test_definitions.return_value = {'1': ['ISB']}
+
+        content = self._make_csv_content(sn='SN001', cp='REL_T0', status='PASS')
+        csv_file = self._make_csv_file('ORT-ISB.csv', content)
+        excel_bytes, _, _ = generate_daily_report([csv_file])
+
+        wb = load_workbook(io.BytesIO(excel_bytes))
+        wf_sheet = next(name for name in wb.sheetnames if 'WF1' in name)
+        ws = wb[wf_sheet]
+        # Row 1 is the CP header row. Collect all CP labels.
+        cp_labels_in_row = {
+            str(c.value).strip() for c in ws[2] if c.value
+        }
+        assert 'REL_T0' in cp_labels_in_row
+        assert 'CP_A' in cp_labels_in_row
+        wb.close()
+
+    @patch('checkitem_generator.db')
+    @patch('checkitem_generator.get_sn_lookup_dicts')
+    @patch('checkitem_generator.get_sn_mapping_from_db')
+    def test_rel_tfinal_column_excluded_from_generated_excel(
+        self, mock_sn_mapping, mock_lookup, mock_db,
+    ):
+        """REL_TFINAL is a boundary but NOT in DAILY_RESULT_BOUNDARY_LABELS;
+        it must NOT render as a column even though it's persisted."""
+        from checkitem_generator import generate_daily_report
+
+        mock_sn_mapping.return_value = self._mock_sn_mapping()
+        mock_lookup.return_value = self._mock_sn_lookup_dicts()
+
+        mock_conn = MagicMock()
+        mock_db.get_conn.return_value = mock_conn
+        mock_db.get_current_cp_definitions.return_value = {
+            '1': [
+                {'cp_idx': 0, 'cp_name': 'REL_T0', 'test_idx': 0,
+                 'check_items': [], 'is_boundary': 1},
+                {'cp_idx': 1, 'cp_name': 'CP_A', 'test_idx': 0,
+                 'check_items': [], 'is_boundary': 0},
+                {'cp_idx': 2, 'cp_name': 'REL_TFINAL', 'test_idx': 0,
+                 'check_items': [], 'is_boundary': 1},
+            ],
+        }
+        mock_db.get_current_wf_definitions.return_value = {'1': 'ISB'}
+        mock_db.get_current_test_definitions.return_value = {'1': ['ISB']}
+
+        content = self._make_csv_content(sn='SN001', cp='REL_T0', status='PASS')
+        csv_file = self._make_csv_file('ORT-ISB.csv', content)
+        excel_bytes, _, _ = generate_daily_report([csv_file])
+
+        wb = load_workbook(io.BytesIO(excel_bytes))
+        wf_sheet = next(name for name in wb.sheetnames if 'WF1' in name)
+        ws = wb[wf_sheet]
+        cp_labels_in_row = {
+            str(c.value).strip() for c in ws[2] if c.value
+        }
+        assert 'REL_T0' in cp_labels_in_row
+        assert 'CP_A' in cp_labels_in_row
+        assert 'REL_TFINAL' not in cp_labels_in_row
+        wb.close()
+
+    @patch('checkitem_generator.db')
+    @patch('checkitem_generator.get_sn_lookup_dicts')
+    @patch('checkitem_generator.get_sn_mapping_from_db')
+    def test_other_boundary_labels_excluded(
+        self, mock_sn_mapping, mock_lookup, mock_db,
+    ):
+        """T0 / End / TFinal also stay out of the generated Excel."""
+        from checkitem_generator import generate_daily_report
+
+        mock_sn_mapping.return_value = self._mock_sn_mapping()
+        mock_lookup.return_value = self._mock_sn_lookup_dicts()
+
+        mock_conn = MagicMock()
+        mock_db.get_conn.return_value = mock_conn
+        mock_db.get_current_cp_definitions.return_value = {
+            '1': [
+                {'cp_idx': 0, 'cp_name': 'T0', 'test_idx': 0,
+                 'check_items': [], 'is_boundary': 1},
+                {'cp_idx': 1, 'cp_name': 'CP_A', 'test_idx': 0,
+                 'check_items': [], 'is_boundary': 0},
+                {'cp_idx': 2, 'cp_name': 'End', 'test_idx': 0,
+                 'check_items': [], 'is_boundary': 1},
+                {'cp_idx': 3, 'cp_name': 'TFinal', 'test_idx': 0,
+                 'check_items': [], 'is_boundary': 1},
+            ],
+        }
+        mock_db.get_current_wf_definitions.return_value = {'1': 'ISB'}
+        mock_db.get_current_test_definitions.return_value = {'1': ['ISB']}
+
+        content = self._make_csv_content(sn='SN001', cp='CP_A', status='PASS')
+        csv_file = self._make_csv_file('ORT-ISB.csv', content)
+        excel_bytes, _, _ = generate_daily_report([csv_file])
+
+        wb = load_workbook(io.BytesIO(excel_bytes))
+        wf_sheet = next(name for name in wb.sheetnames if 'WF1' in name)
+        ws = wb[wf_sheet]
+        cp_labels_in_row = {
+            str(c.value).strip() for c in ws[2] if c.value
+        }
+        assert 'CP_A' in cp_labels_in_row
+        assert 'T0' not in cp_labels_in_row
+        assert 'End' not in cp_labels_in_row
+        assert 'TFinal' not in cp_labels_in_row
+        wb.close()

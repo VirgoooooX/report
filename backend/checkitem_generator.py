@@ -19,6 +19,7 @@ from openpyxl.utils import get_column_letter
 import db
 from app_paths import RAWDATA_DIR
 from base_manager import get_sn_mapping_from_db, get_sn_lookup_dicts
+from schedule_parser import DAILY_RESULT_BOUNDARY_LABELS
 
 
 # Mapping of filename keywords to canonical item type names.
@@ -1196,9 +1197,23 @@ def generate_daily_report(csv_files: list) -> tuple[bytes, str, dict]:
         conn.close()
 
     # Build cp_schedule: {wf_id: [cp_name, ...]}
+    # Boundary CPs are persisted with is_boundary=1 in current_cp_definitions
+    # so cp_idx aligns with daily lifecycle rows. The Daily Report Excel only
+    # renders boundaries that are in DAILY_RESULT_BOUNDARY_LABELS (currently
+    # REL_T0) — those carry actual check-item results. Other boundaries
+    # (REL_TFINAL/End/TFinal/T0) stay out of the rendered column list.
+    # See docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md.
     cp_schedule = {}
     for wf_num, cp_list in cp_defs.items():
-        cp_schedule[wf_num] = [cp['cp_name'] for cp in cp_list]
+        kept = []
+        for cp in cp_list:
+            if not cp.get('is_boundary'):
+                kept.append(cp['cp_name'])
+                continue
+            normalized = re.sub(r'[^a-z0-9]+', '', str(cp['cp_name']).lower())
+            if normalized in DAILY_RESULT_BOUNDARY_LABELS:
+                kept.append(cp['cp_name'])
+        cp_schedule[wf_num] = kept
 
     # --- Step 2: Parse CSV files ---
     all_records: list[dict] = []
