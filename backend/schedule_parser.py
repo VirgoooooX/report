@@ -21,6 +21,18 @@ CONFIG_COLUMNS = {'R1FNF': 6, 'R2CNM': 7, 'R3': 8, 'R4': 9}
 # Test Schedule parser.
 SCHEDULE_BOUNDARY_LABELS = frozenset({'t0', 'relt0', 'end', 'tfinal', 'reltfinal'})
 
+# Strict subset of SCHEDULE_BOUNDARY_LABELS — boundaries that ALSO carry
+# Daily-report check-item results (PASS/FAIL with color). Daily ingest call
+# sites pass ``allow_result_boundaries=True`` to ``engine.is_cp_header_label``
+# so headers in this set are treated as real CPs in the daily lifecycle and
+# in the generated Excel; everything else in SCHEDULE_BOUNDARY_LABELS stays
+# excluded from the result plane.
+#
+# Adding a label here changes the Daily ingest contract — see
+# docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md and
+# .kiro/steering/schedule-plan-logic.md.
+DAILY_RESULT_BOUNDARY_LABELS = frozenset({'relt0'})
+
 # Subsets used by the two boundary predicates below. Defined as strict
 # subsets of SCHEDULE_BOUNDARY_LABELS so the master set remains the single
 # fact source.

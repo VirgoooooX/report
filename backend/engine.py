@@ -7,7 +7,7 @@ from collections import defaultdict
 import re, datetime, os
 import logging
 
-from schedule_parser import SCHEDULE_BOUNDARY_LABELS
+from schedule_parser import SCHEDULE_BOUNDARY_LABELS, DAILY_RESULT_BOUNDARY_LABELS
 
 try:
     from custom_rules import failure_type_for_colors, is_wf_ignored, resolve_config_alias
@@ -51,8 +51,18 @@ def _validation_error_message(errors):
     )
 
 
-def is_cp_header_label(value):
-    """Return True when a header cell is a real CP label, not a boundary/check column."""
+def is_cp_header_label(value, allow_result_boundaries=False):
+    """Return True when a header cell is a real CP label, not a boundary/check column.
+
+    When ``allow_result_boundaries=True``, headers whose normalized form is
+    in ``DAILY_RESULT_BOUNDARY_LABELS`` (currently ``{'relt0'}``) are also
+    accepted. This is used by daily ingest / fact-row writers / rawdata
+    validation so REL_T0 result data lands in ``sn_check_state_history`` and
+    in the generated Daily Report Excel. Other schedule boundaries
+    (``end`` / ``tfinal`` / ``reltfinal`` / ``t0``) stay rejected even when
+    the flag is True. See
+    docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md.
+    """
     if not value or not isinstance(value, str):
         return False
     label = value.strip()
@@ -60,8 +70,12 @@ def is_cp_header_label(value):
         return False
     if label in CHECK_NAMES or label in NON_CP_HEADERS:
         return False
-    if re.sub(r'[^a-z0-9]+', '', label.lower()) in SCHEDULE_BOUNDARY_LABELS:
-        return False
+    normalized = re.sub(r'[^a-z0-9]+', '', label.lower())
+    if normalized in SCHEDULE_BOUNDARY_LABELS:
+        return (
+            allow_result_boundaries
+            and normalized in DAILY_RESULT_BOUNDARY_LABELS
+        )
     return True
 
 
@@ -257,7 +271,10 @@ def _find_rawdata_anomalies_for_sheet(ws, wf_num, ts_names, report_date='', sour
                 v = ws.cell(r, c).value
                 if v and isinstance(v, str) and v.strip():
                     cv = v.strip()
-                    if is_cp_header_label(cv):
+                    # Batch B step 3.3: rawdata validation must mirror daily
+                    # ingest. Allow REL_T0 (DAILY_RESULT_BOUNDARY_LABELS) so
+                    # validation shape matches what extract_wf_fact_rows sees.
+                    if is_cp_header_label(cv, allow_result_boundaries=True):
                         if ls is not None:
                             cp_list.append((ls, c - 1, ln))
                         ls = c
@@ -625,7 +642,10 @@ def extract_cp_structure(ws, header_row=1, cp_range_start=7):
         v = ws.cell(header_row, c).value
         if v and isinstance(v, str) and v.strip():
             cv = v.strip()
-            if is_cp_header_label(cv):
+            # Batch B step 3.3: extract_cp_structure feeds mapped_cps →
+            # report_cps; allow REL_T0 so cp_idx aligns with the lifecycle
+            # writer and current_cp_definitions.
+            if is_cp_header_label(cv, allow_result_boundaries=True):
                 if ls is not None:
                     cp_list.append((ls, c - 1, ln))
                 ls = c
@@ -1701,7 +1721,10 @@ def extract_wf_fact_rows(ws, wf_num, report_id, report_date, ts_names):
                 v = ws.cell(r, c).value
                 if v and isinstance(v, str) and v.strip():
                     cv = v.strip()
-                    if is_cp_header_label(cv):
+                    # Batch B step 3.3: lifecycle writer keeps REL_T0 columns
+                    # so daily check-item results land in
+                    # sn_check_state_history aligned with current_cp_definitions.
+                    if is_cp_header_label(cv, allow_result_boundaries=True):
                         if ls is not None:
                             cp_list.append((ls, c - 1, ln))
                         ls = c
