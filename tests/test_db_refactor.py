@@ -342,6 +342,101 @@ class SnFactPersistenceTests(unittest.TestCase):
             os.remove(path)
 
 
+class LifecycleIndexMigrationTests(unittest.TestCase):
+    def test_init_db_keeps_lifecycle_open_point_index(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+
+            row = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?",
+                ('idx_sn_lifecycle_open_point',),
+            ).fetchone()
+
+            self.assertIsNotNone(row)
+            self.assertIn(
+                'ON sn_check_state_history(wf_num, config, sn, cp_idx, check_item_idx)',
+                ' '.join(row['sql'].split()),
+            )
+            self.assertIn(
+                'WHERE closed_before_report_id IS NULL',
+                ' '.join(row['sql'].split()),
+            )
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_init_db_does_not_create_legacy_duplicate_open_index(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+
+            row = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+                ('idx_sn_check_hist_open',),
+            ).fetchone()
+
+            self.assertIsNone(row)
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_init_db_drops_existing_legacy_duplicate_open_index(self):
+        conn, path = temp_conn()
+        try:
+            conn.executescript("""
+                CREATE TABLE sn_check_state_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    wf_num TEXT NOT NULL,
+                    config TEXT NOT NULL,
+                    sn TEXT NOT NULL,
+                    unit_num TEXT DEFAULT '',
+                    test_idx INTEGER NOT NULL,
+                    cp_idx INTEGER NOT NULL,
+                    check_item_idx INTEGER NOT NULL,
+                    check_item TEXT NOT NULL,
+                    state_hash TEXT NOT NULL,
+                    raw_value TEXT,
+                    normalized_value TEXT,
+                    status TEXT NOT NULL,
+                    failure_type TEXT,
+                    fill_color TEXT,
+                    font_color TEXT,
+                    first_report_id INTEGER NOT NULL,
+                    first_report_date TEXT NOT NULL,
+                    last_seen_report_id INTEGER NOT NULL,
+                    last_seen_report_date TEXT NOT NULL,
+                    closed_before_report_id INTEGER,
+                    closed_before_report_date TEXT,
+                    first_source_row INTEGER,
+                    first_source_col INTEGER,
+                    last_source_row INTEGER,
+                    last_source_col INTEGER
+                );
+                CREATE INDEX idx_sn_check_hist_open
+                ON sn_check_state_history(wf_num, config, sn, cp_idx, check_item_idx)
+                WHERE closed_before_report_id IS NULL;
+            """)
+            conn.commit()
+
+            db.init_db(conn=conn)
+
+            old_index = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+                ('idx_sn_check_hist_open',),
+            ).fetchone()
+            new_index = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = ?",
+                ('idx_sn_lifecycle_open_point',),
+            ).fetchone()
+
+            self.assertIsNone(old_index)
+            self.assertIsNotNone(new_index)
+        finally:
+            conn.close()
+            os.remove(path)
+
+
 class FactAggregateTests(unittest.TestCase):
     def test_get_sn_cp_current_progress_uses_current_marker(self):
         conn, path = temp_conn()

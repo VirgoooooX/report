@@ -1552,10 +1552,6 @@ def init_db(drop_all=False, conn=None):
         CREATE INDEX IF NOT EXISTS idx_sn_check_hist_failures ON sn_check_state_history(
             wf_num, config, test_idx, sn, first_report_id, closed_before_report_id, failure_type
         );
-        CREATE INDEX IF NOT EXISTS idx_sn_check_hist_open ON sn_check_state_history(
-            wf_num, config, sn, cp_idx, check_item_idx
-        ) WHERE closed_before_report_id IS NULL;
-        
         CREATE INDEX IF NOT EXISTS idx_sn_lifecycle_open_point
         ON sn_check_state_history(wf_num, config, sn, cp_idx, check_item_idx)
         WHERE closed_before_report_id IS NULL;
@@ -1585,6 +1581,10 @@ def init_db(drop_all=False, conn=None):
     # Rebuild rule: full --rebuild regenerates them from Excel sources.
     # Do NOT delete these tables — API endpoints depend on them.
     # Migrations for existing databases
+    try:
+        conn.execute("DROP INDEX IF EXISTS idx_sn_check_hist_open")
+    except Exception:
+        pass
     try:
         conn.execute("ALTER TABLE reports ADD COLUMN ts_test_names TEXT DEFAULT '{}'")
     except:
