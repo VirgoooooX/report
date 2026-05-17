@@ -36,6 +36,7 @@ from db import (
     get_current_schedule_segments,
     get_report_test_names, get_current_wf_definitions, get_current_test_definitions,
     get_current_cp_definitions,
+    get_real_cp_ordinal,
 )
 from processor import process_newest, process_report_file, compute_auto_predictions, REPORT_PATTERN, FA_PATTERN
 
@@ -1291,6 +1292,23 @@ def api_sn_lookup(sn):
     if not history:
         return jsonify({'sn': sn, 'records': [], 'message': 'SN not found'}), 404
     
+    # Pre-compute real-CP ordinals for every distinct (wf, cp_idx) seen in
+    # history so the percentage uses the non-boundary rank rather than raw
+    # cp_idx+1. Without this, an SN at the first real CP (cp_idx=1, with
+    # REL_T0 at cp_idx=0) would show as "2/N" instead of "1/N". See
+    # docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md §3.4b Class B.
+    ordinal_lookup = {}
+    distinct_keys = {(h['wf'], h['cp_idx'] or 0) for h in history}
+    if distinct_keys:
+        ord_conn = get_conn()
+        try:
+            for wf_key, cp_idx_key in distinct_keys:
+                ordinal_lookup[(wf_key, cp_idx_key)] = get_real_cp_ordinal(
+                    ord_conn, wf_key, cp_idx_key,
+                )
+        finally:
+            ord_conn.close()
+
     # Group by WF for cleaner display
     by_wf = {}
     for h in history:
@@ -1303,6 +1321,7 @@ def api_sn_lookup(sn):
             }
         total_cps = h.get('total_cps') or 0
         cp_idx = h['cp_idx'] or 0
+        real_ordinal = ordinal_lookup.get((wf, cp_idx), 0)
         entry = {
             'date': h['date'],
             'config': h['config'],
@@ -1314,7 +1333,7 @@ def api_sn_lookup(sn):
             'status': h['status'],
             'failure_type': h['failure_type'],
             'total_cps': total_cps,
-            'pct': round((cp_idx + 1) / total_cps * 100, 1) if total_cps else 0,
+            'pct': round(real_ordinal / total_cps * 100, 1) if total_cps else 0,
             'cp_status': h['status'],
         }
         by_wf[wf]['history'].append(entry)

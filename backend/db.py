@@ -440,6 +440,36 @@ def get_current_cp_definitions(conn, wf_num=None):
     return result
 
 
+def get_real_cp_ordinal(conn, wf_num, cp_idx):
+    """Return the 1-based ordinal of a non-boundary CP within a WF.
+
+    With REL_T0 persisted as ``is_boundary=1`` at ``cp_idx=0`` (Batch B
+    step 3.1+3.2), the raw ``cp_idx + 1`` no longer represents "this is
+    the Nth real CP". This helper returns the correct denominator-aligned
+    rank used for percentage / progress display:
+
+      • For non-boundary cp_idx: count of non-boundary CPs at or before
+        the given cp_idx → 1-based ordinal.
+      • For boundary cp_idx (e.g. an SN currently sitting at REL_T0):
+        count of non-boundary CPs strictly before it → 0 when REL_T0 is
+        the first row, which renders correctly as "0/N done".
+
+    See docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md §3.4b
+    Class B.
+    """
+    row = conn.execute(
+        """SELECT
+               COUNT(*) AS ord,
+               MAX(CASE WHEN cp_idx = ? THEN is_boundary ELSE 0 END) AS at_boundary
+           FROM current_cp_definitions
+           WHERE wf_num = ?
+             AND cp_idx <= ?
+             AND is_boundary = 0""",
+        (int(cp_idx), str(wf_num), int(cp_idx)),
+    ).fetchone()
+    return int(row['ord'] or 0) if row else 0
+
+
 def get_report_wf_meta(conn, report_id):
     rows = conn.execute(
         "SELECT wf_num, wf_name FROM report_wf_meta WHERE report_id = ?",
