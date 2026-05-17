@@ -469,8 +469,15 @@ def parse_checkpoint_schedule(file_path):
         wf_id, wf id_cp, rel event cp, wf test, ...
 
     Reads the CSV sorted by (wf_id, wf id_cp), groups by wf_id, extracts
-    the ordered list of CP names from 'rel event cp', and filters out
-    excluded CPs (REL FA RETEST, SEND TO FA, STOP TEST, RETURN TO REL, REL_TFINAL).
+    the ordered list of CP names from 'rel event cp', and tags each row.
+    Operational CPs (REL FA RETEST / SEND TO FA / STOP TEST / RETURN TO REL)
+    are filtered out hard. Schedule-boundary CPs
+    (T0 / REL_T0 / End / TFinal / REL_TFINAL) are tagged ``is_boundary=1``
+    in ``cp_details`` and persisted to ``current_cp_definitions`` so cp_idx
+    stays aligned with daily lifecycle rows; they are NOT included in the
+    name-only ``cp_schedule`` list for back-compat with existing readers.
+    Consumer planes filter boundary rows per their own rules
+    (see docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md).
 
     Args:
         file_path: Path to the WaterfallCheckpointSchedule CSV file.
@@ -478,10 +485,13 @@ def parse_checkpoint_schedule(file_path):
     Returns:
         dict with keys:
             'cp_schedule': {wf_id_str: [cp_name_1, cp_name_2, ...]}
-            'wf_count': int — number of unique WFs
-            'cp_count': int — total number of CPs (after filtering)
-            'cp_details': {wf_id_str: [{'cp_name': str, 'test_idx': int}, ...]}
-                — detailed info including test_idx for each CP
+                — non-boundary test CPs only, name list, ordered.
+            'wf_count': int — number of unique WFs in cp_schedule.
+            'cp_count': int — total number of non-boundary CPs.
+            'cp_details': {wf_id_str: [{'cp_name': str, 'test_idx': int,
+                                        'is_boundary': int}, ...]}
+                — full ordered list including boundary rows tagged
+                ``is_boundary=1``. Persisted to current_cp_definitions.
     """
     # Read all rows
     rows = []
@@ -532,20 +542,29 @@ def parse_checkpoint_schedule(file_path):
 
         cp_name = row['cp_name']
 
-        # Filter out excluded CPs (operational + schedule boundary markers).
-        # T0 / REL_T0 / End / TFinal / REL_TFINAL are WF-level boundary
-        # markers on the Test Schedule, not real test CPs.
-        if _is_excluded_cp(cp_name):
+        # Operational CPs (FA / STOP / RETURN) are administrative and never
+        # belong in current_cp_definitions.
+        if cp_name in _OPERATIONAL_EXCLUDED_CPS:
             continue
+
+        # Schedule-boundary CPs (T0/REL_T0/End/TFinal/REL_TFINAL) are kept
+        # in cp_details and persisted to current_cp_definitions tagged
+        # is_boundary=1, so cp_idx aligns with daily lifecycle rows. They
+        # are NOT added to cp_schedule (the name-only list) — that one
+        # keeps its old "test CPs only" semantics for back-compat.
+        # See docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md.
+        is_boundary = 1 if _is_schedule_boundary_cp_name(cp_name) else 0
 
         # Deduplicate while maintaining order
         if cp_name not in seen_cps:
             seen_cps.add(cp_name)
-            current_cps.append(cp_name)
             current_details.append({
                 'cp_name': cp_name,
                 'test_idx': row['test_idx'],
+                'is_boundary': is_boundary,
             })
+            if not is_boundary:
+                current_cps.append(cp_name)
 
     # Don't forget the last WF
     if current_wf is not None and current_cps:
@@ -646,7 +665,8 @@ def save_cp_schedule_to_db(parsed_result, conn=None):
     """Write parsed CP schedule to current_cp_definitions table.
 
     Converts the parsed result into the format expected by
-    db.save_current_cp_definitions: {wf_num: [{'cp_idx', 'cp_name', 'test_idx', 'check_items'}]}
+    db.save_current_cp_definitions:
+    {wf_num: [{'cp_idx', 'cp_name', 'test_idx', 'check_items', 'is_boundary'}]}
 
     Args:
         parsed_result: Output from parse_checkpoint_schedule()
@@ -669,6 +689,7 @@ def save_cp_schedule_to_db(parsed_result, conn=None):
                     'cp_name': detail['cp_name'],
                     'test_idx': detail['test_idx'],
                     'check_items': [],  # Check items are not defined in the schedule
+                    'is_boundary': int(detail.get('is_boundary') or 0),
                 })
             cps_by_wf[str(wf_id)] = cp_list
 

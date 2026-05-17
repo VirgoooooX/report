@@ -681,5 +681,113 @@ class VacuumTests(unittest.TestCase):
             os.remove(path)
 
 
+class CurrentCpDefinitionsBoundaryColumnTests(unittest.TestCase):
+    """Batch B step 3.1 — schema migration that adds is_boundary column.
+
+    See docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md.
+    """
+
+    def test_init_db_creates_is_boundary_column(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            cols = {
+                row['name']
+                for row in conn.execute(
+                    "PRAGMA table_info(current_cp_definitions)"
+                ).fetchall()
+            }
+            self.assertIn('is_boundary', cols)
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_init_db_migrates_pre_existing_table_without_is_boundary(self):
+        """Pre-Batch-B databases must gain is_boundary on init_db without errors."""
+        conn, path = temp_conn()
+        try:
+            # Simulate the old schema (no is_boundary column).
+            conn.executescript("""
+                CREATE TABLE current_cp_definitions (
+                    wf_num TEXT NOT NULL,
+                    cp_idx INTEGER NOT NULL,
+                    cp_name TEXT NOT NULL,
+                    test_idx INTEGER,
+                    check_items TEXT DEFAULT '[]',
+                    updated_run_id INTEGER,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (wf_num, cp_idx)
+                );
+                INSERT INTO current_cp_definitions
+                    (wf_num, cp_idx, cp_name, test_idx, check_items)
+                VALUES ('1', 0, 'CP_A', 0, '[]');
+            """)
+            conn.commit()
+
+            db.init_db(conn=conn)
+
+            cols = {
+                row['name']
+                for row in conn.execute(
+                    "PRAGMA table_info(current_cp_definitions)"
+                ).fetchall()
+            }
+            self.assertIn('is_boundary', cols)
+
+            # Existing row still readable; default value is 0.
+            row = conn.execute(
+                "SELECT cp_name, is_boundary FROM current_cp_definitions WHERE wf_num=? AND cp_idx=?",
+                ('1', 0),
+            ).fetchone()
+            self.assertEqual(row['cp_name'], 'CP_A')
+            self.assertEqual(row['is_boundary'], 0)
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_save_and_get_round_trip_preserves_is_boundary(self):
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            db.save_current_cp_definitions(conn, 0, {
+                '1': [
+                    {'cp_idx': 0, 'cp_name': 'REL_T0', 'test_idx': 0,
+                     'check_items': [], 'is_boundary': 1},
+                    {'cp_idx': 1, 'cp_name': 'CP_A', 'test_idx': 0,
+                     'check_items': [], 'is_boundary': 0},
+                    {'cp_idx': 2, 'cp_name': 'REL_TFINAL', 'test_idx': 0,
+                     'check_items': [], 'is_boundary': 1},
+                ],
+            })
+            result = db.get_current_cp_definitions(conn)
+            self.assertEqual(len(result['1']), 3)
+            self.assertEqual(result['1'][0]['cp_name'], 'REL_T0')
+            self.assertEqual(result['1'][0]['is_boundary'], 1)
+            self.assertEqual(result['1'][1]['cp_name'], 'CP_A')
+            self.assertEqual(result['1'][1]['is_boundary'], 0)
+            self.assertEqual(result['1'][2]['cp_name'], 'REL_TFINAL')
+            self.assertEqual(result['1'][2]['is_boundary'], 1)
+        finally:
+            conn.close()
+            os.remove(path)
+
+    def test_save_treats_missing_is_boundary_as_zero(self):
+        """Backward compat: callers that don't pass is_boundary write 0."""
+        conn, path = temp_conn()
+        try:
+            db.init_db(conn=conn)
+            db.save_current_cp_definitions(conn, 0, {
+                '1': [
+                    {'cp_idx': 0, 'cp_name': 'CP_A', 'test_idx': 0,
+                     'check_items': []},
+                ],
+            })
+            result = db.get_current_cp_definitions(conn)
+            self.assertEqual(result['1'][0]['is_boundary'], 0)
+        finally:
+            conn.close()
+            os.remove(path)
+
+
 if __name__ == '__main__':
     unittest.main()

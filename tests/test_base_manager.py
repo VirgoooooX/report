@@ -327,9 +327,12 @@ class ParseCheckpointScheduleBasicTests(unittest.TestCase):
         try:
             result = base_manager.parse_checkpoint_schedule(path)
             details = result['cp_details']['4']
-            # REL_T0 / REL_TFINAL are filtered (boundary markers).
+            # Boundary rows (REL_T0 / REL_TFINAL) are kept in cp_details
+            # tagged is_boundary=1 (Batch B step 3.2). Real test CPs have
+            # is_boundary=0. The non-boundary test_idx sequence is 0/0/1.
+            non_boundary = [d for d in details if not d.get('is_boundary')]
             self.assertEqual(
-                [detail['test_idx'] for detail in details],
+                [detail['test_idx'] for detail in non_boundary],
                 [0, 0, 1],
             )
         finally:
@@ -348,9 +351,12 @@ class ParseCheckpointScheduleBasicTests(unittest.TestCase):
         try:
             result = base_manager.parse_checkpoint_schedule(path)
             details = result['cp_details']['14.2']
-            # REL_T0 / REL_TFINAL are filtered (boundary markers).
+            # Boundary rows (REL_T0 / REL_TFINAL) are kept in cp_details
+            # tagged is_boundary=1 (Batch B step 3.2). Margin-category logic
+            # applies only to non-boundary CPs.
+            non_boundary = [d for d in details if not d.get('is_boundary')]
             self.assertEqual(
-                [detail['test_idx'] for detail in details],
+                [detail['test_idx'] for detail in non_boundary],
                 [0, 1, 2, 1],
             )
         finally:
@@ -546,13 +552,174 @@ class ParseCheckpointScheduleDetailsTests(unittest.TestCase):
         try:
             result = base_manager.parse_checkpoint_schedule(path)
             details = result['cp_details']['1']
-            # REL_T0 / REL_TFINAL are boundary markers and filtered out.
-            self.assertEqual(len(details), 3)
-            self.assertEqual(details[0], {'cp_name': 'CP_A', 'test_idx': 0})
-            self.assertEqual(details[1], {'cp_name': 'CP_B', 'test_idx': 0})
-            self.assertEqual(details[2], {'cp_name': 'CP_C', 'test_idx': 1})
+            # Boundary rows (REL_T0 / REL_TFINAL) appear in cp_details with
+            # is_boundary=1 (Batch B step 3.2); real CPs have is_boundary=0.
+            self.assertEqual(len(details), 5)
+            non_boundary = [d for d in details if not d.get('is_boundary')]
+            self.assertEqual(len(non_boundary), 3)
+            self.assertEqual(
+                non_boundary[0],
+                {'cp_name': 'CP_A', 'test_idx': 0, 'is_boundary': 0},
+            )
+            self.assertEqual(
+                non_boundary[1],
+                {'cp_name': 'CP_B', 'test_idx': 0, 'is_boundary': 0},
+            )
+            self.assertEqual(
+                non_boundary[2],
+                {'cp_name': 'CP_C', 'test_idx': 1, 'is_boundary': 0},
+            )
+            # Boundary rows preserve their cp_name and is_boundary tag.
+            boundary = [d for d in details if d.get('is_boundary')]
+            self.assertEqual(len(boundary), 2)
+            self.assertEqual({d['cp_name'] for d in boundary}, {'REL_T0', 'REL_TFINAL'})
         finally:
             os.remove(path)
+
+
+class ParseCheckpointScheduleBoundaryTaggingTests(unittest.TestCase):
+    """Batch B step 3.2 — schedule-boundary CPs must be retained in cp_details
+    with is_boundary=1, and excluded from cp_schedule (name list).
+
+    See docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md.
+    """
+
+    def test_boundary_rows_kept_in_cp_details_tagged(self):
+        rows = [
+            _make_cp_row(1, 0, 'REL_T0'),
+            _make_cp_row(1, 1, 'CP_A'),
+            _make_cp_row(1, 2, 'CP_B'),
+            _make_cp_row(1, 3, 'REL_TFINAL'),
+        ]
+        path = _write_cp_csv(rows)
+        try:
+            result = base_manager.parse_checkpoint_schedule(path)
+            details = result['cp_details']['1']
+            # All 4 rows retained in cp_details.
+            self.assertEqual(
+                [(d['cp_name'], d['is_boundary']) for d in details],
+                [
+                    ('REL_T0', 1),
+                    ('CP_A', 0),
+                    ('CP_B', 0),
+                    ('REL_TFINAL', 1),
+                ],
+            )
+            # cp_schedule still contains only non-boundary CPs (back-compat).
+            self.assertEqual(result['cp_schedule']['1'], ['CP_A', 'CP_B'])
+            # cp_count counts non-boundary only.
+            self.assertEqual(result['cp_count'], 2)
+        finally:
+            os.remove(path)
+
+    def test_t0_and_end_variants_all_tagged(self):
+        """All five SCHEDULE_BOUNDARY_LABELS variants must be tagged."""
+        rows = [
+            _make_cp_row(1, 0, 'T0'),
+            _make_cp_row(1, 1, 'CP_REAL'),
+            _make_cp_row(1, 2, 'End'),
+            _make_cp_row(2, 0, 'REL_T0'),
+            _make_cp_row(2, 1, 'CP_REAL2'),
+            _make_cp_row(2, 2, 'TFinal'),
+            _make_cp_row(3, 0, 'REL_T0'),
+            _make_cp_row(3, 1, 'CP_REAL3'),
+            _make_cp_row(3, 2, 'REL_TFINAL'),
+        ]
+        path = _write_cp_csv(rows)
+        try:
+            result = base_manager.parse_checkpoint_schedule(path)
+            for wf_id in ('1', '2', '3'):
+                details = result['cp_details'][wf_id]
+                self.assertEqual(len(details), 3)
+                self.assertEqual(details[0]['is_boundary'], 1)
+                self.assertEqual(details[1]['is_boundary'], 0)
+                self.assertEqual(details[2]['is_boundary'], 1)
+        finally:
+            os.remove(path)
+
+    def test_operational_excluded_cps_dropped_not_tagged(self):
+        """FA / STOP / RETURN are dropped (not tagged) — they don't belong
+        in current_cp_definitions at all."""
+        rows = [
+            _make_cp_row(1, 0, 'REL_T0'),
+            _make_cp_row(1, 1, 'CP_A'),
+            _make_cp_row(1, 2, 'STOP TEST'),
+            _make_cp_row(1, 3, 'REL FA RETEST'),
+            _make_cp_row(1, 4, 'SEND TO FA'),
+            _make_cp_row(1, 5, 'RETURN TO REL'),
+            _make_cp_row(1, 6, 'CP_B'),
+            _make_cp_row(1, 7, 'REL_TFINAL'),
+        ]
+        path = _write_cp_csv(rows)
+        try:
+            result = base_manager.parse_checkpoint_schedule(path)
+            details = result['cp_details']['1']
+            cp_names = [d['cp_name'] for d in details]
+            # Operational CPs are gone entirely.
+            self.assertNotIn('STOP TEST', cp_names)
+            self.assertNotIn('REL FA RETEST', cp_names)
+            self.assertNotIn('SEND TO FA', cp_names)
+            self.assertNotIn('RETURN TO REL', cp_names)
+            # Boundary CPs remain, tagged.
+            self.assertEqual(
+                cp_names,
+                ['REL_T0', 'CP_A', 'CP_B', 'REL_TFINAL'],
+            )
+            self.assertEqual(
+                [d['is_boundary'] for d in details],
+                [1, 0, 0, 1],
+            )
+        finally:
+            os.remove(path)
+
+    def test_save_cp_schedule_to_db_persists_boundary_tag(self):
+        """Round-trip through save_cp_schedule_to_db preserves is_boundary."""
+        import db as dbmod
+        import tempfile
+
+        # Use an isolated temp DB so we don't touch the real one.
+        fd, db_path = tempfile.mkstemp(suffix='.db')
+        os.close(fd)
+        old_db_path = dbmod.DB_PATH
+        dbmod.DB_PATH = db_path
+        try:
+            conn = dbmod.get_conn()
+            dbmod.init_db(conn=conn)
+            conn.commit()
+            conn.close()
+
+            rows = [
+                _make_cp_row(1, 0, 'REL_T0'),
+                _make_cp_row(1, 1, 'CP_A'),
+                _make_cp_row(1, 2, 'REL_TFINAL'),
+            ]
+            csv_path = _write_cp_csv(rows)
+            try:
+                parsed = base_manager.parse_checkpoint_schedule(csv_path)
+                base_manager.save_cp_schedule_to_db(parsed)
+
+                conn = dbmod.get_conn()
+                try:
+                    persisted = dbmod.get_current_cp_definitions(conn)
+                finally:
+                    conn.close()
+            finally:
+                os.remove(csv_path)
+
+            self.assertEqual(
+                [(cp['cp_name'], cp['is_boundary']) for cp in persisted['1']],
+                [
+                    ('REL_T0', 1),
+                    ('CP_A', 0),
+                    ('REL_TFINAL', 1),
+                ],
+            )
+        finally:
+            dbmod.DB_PATH = old_db_path
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
 
 
 class ParseCheckpointScheduleEdgeCaseTests(unittest.TestCase):

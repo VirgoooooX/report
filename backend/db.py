@@ -382,7 +382,14 @@ def get_current_test_definitions(conn, wf_num=None):
 def save_current_cp_definitions(conn, run_id, cps_by_wf):
     """Replace all current CP definitions (latest-only table).
 
-    cps_by_wf: {wf_num: [{'cp_idx': int, 'cp_name': str, 'test_idx': int, 'check_items': list}, ...]}
+    cps_by_wf: {wf_num: [{'cp_idx': int, 'cp_name': str, 'test_idx': int,
+                          'check_items': list, 'is_boundary': int}, ...]}
+
+    ``is_boundary`` defaults to 0 when absent. Schedule-boundary CPs
+    (T0/REL_T0/End/TFinal/REL_TFINAL) are persisted with ``is_boundary=1``
+    so cp_idx stays aligned with daily lifecycle rows; downstream consumers
+    decide whether to keep or filter them per plane (see
+    docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md).
     """
     conn.execute("DELETE FROM current_cp_definitions")
     rows = []
@@ -394,18 +401,23 @@ def save_current_cp_definitions(conn, run_id, cps_by_wf):
                 str(cp['cp_name']),
                 cp.get('test_idx'),
                 json.dumps(cp.get('check_items', [])),
+                int(cp.get('is_boundary') or 0),
                 run_id,
             ))
     conn.executemany(
-        """INSERT INTO current_cp_definitions (wf_num, cp_idx, cp_name, test_idx, check_items, updated_run_id)
-           VALUES (?, ?, ?, ?, ?, ?)""",
+        """INSERT INTO current_cp_definitions
+           (wf_num, cp_idx, cp_name, test_idx, check_items, is_boundary, updated_run_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?)""",
         rows,
     )
 
 
 def get_current_cp_definitions(conn, wf_num=None):
-    """Return {wf_num: [{cp_idx, cp_name, test_idx, check_items}, ...]} dict."""
-    sql = "SELECT wf_num, cp_idx, cp_name, test_idx, check_items FROM current_cp_definitions"
+    """Return {wf_num: [{cp_idx, cp_name, test_idx, check_items, is_boundary}, ...]} dict."""
+    sql = (
+        "SELECT wf_num, cp_idx, cp_name, test_idx, check_items, is_boundary "
+        "FROM current_cp_definitions"
+    )
     params = []
     if wf_num is not None:
         sql += " WHERE wf_num = ?"
@@ -423,6 +435,7 @@ def get_current_cp_definitions(conn, wf_num=None):
             'cp_name': r['cp_name'],
             'test_idx': r['test_idx'],
             'check_items': check_items,
+            'is_boundary': int(r['is_boundary'] or 0),
         })
     return result
 
@@ -1410,6 +1423,7 @@ def init_db(drop_all=False, conn=None):
             cp_name TEXT NOT NULL,
             test_idx INTEGER,
             check_items TEXT DEFAULT '[]',
+            is_boundary INTEGER NOT NULL DEFAULT 0,
             updated_run_id INTEGER REFERENCES reports(id),
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (wf_num, cp_idx)
@@ -1604,6 +1618,18 @@ def init_db(drop_all=False, conn=None):
         conn.execute("ALTER TABLE wf_names ADD COLUMN test_names TEXT DEFAULT '[]'")
     except:
         pass
+    # Daily-result boundary persistence (Batch B step 3.1):
+    # current_cp_definitions now keeps schedule-boundary rows (T0/REL_T0/
+    # End/TFinal/REL_TFINAL) so cp_idx aligns between Plan and the daily
+    # lifecycle table. The is_boundary tag lets each consumer plane decide
+    # whether to keep them. See docs/plans/2026-05-17-rel-t0-daily-report-second-cut.md.
+    try:
+        conn.execute(
+            "ALTER TABLE current_cp_definitions "
+            "ADD COLUMN is_boundary INTEGER NOT NULL DEFAULT 0"
+        )
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     try:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS wf_cps (
