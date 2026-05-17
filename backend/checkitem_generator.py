@@ -869,6 +869,45 @@ def store_raw_records(records: list[dict], summary: dict):
 # ---------------------------------------------------------------------------
 
 
+def _normalize_lifecycle_status(status, failure_type):
+    """Translate lifecycle storage values into render-schema (status, failure_type).
+
+    Lifecycle / sn_check_results store:
+      status        ∈ {'pass', 'spec_fail', 'strife_fail', 'pending', 'skip', '/'}
+      failure_type  ∈ {'spec', 'strife', None}  (note: NOT 'spec_fail'/'strife_fail')
+
+    Render schema (consumed by populate_wf_data):
+      status        ∈ {'PASS', 'FAIL'}
+      failure_type  ∈ {'spec_fail', 'strife_fail', None}
+
+    Returns:
+        Tuple (status, failure_type) in render schema, or None if the row is
+        not a meaningful previous result (pending/skip/empty) — those should
+        be skipped so generate_daily_report does not back-fill blanks with
+        'pending' literals into the Excel cells.
+    """
+    raw = (status or '').strip().lower()
+    if raw in ('', 'pending', 'skip', '/'):
+        return None
+    if raw == 'pass':
+        return ('PASS', None)
+    # Anything else (spec_fail, strife_fail, fail) → FAIL.
+    # Prefer the explicit failure_type column for sub-classification; fall
+    # back to inferring from the status spelling for legacy rows that lack it.
+    ft_raw = (failure_type or '').strip().lower()
+    if ft_raw in ('spec', 'spec_fail'):
+        ft = 'spec_fail'
+    elif ft_raw in ('strife', 'strife_fail'):
+        ft = 'strife_fail'
+    elif raw == 'spec_fail':
+        ft = 'spec_fail'
+    elif raw == 'strife_fail':
+        ft = 'strife_fail'
+    else:
+        ft = None
+    return ('FAIL', ft)
+
+
 def _get_previous_results(sn_mapping: dict, cp_schedule: dict) -> dict:
     """Retrieve previous report results for manual edit preservation.
 
@@ -880,7 +919,10 @@ def _get_previous_results(sn_mapping: dict, cp_schedule: dict) -> dict:
         cp_schedule: Dict of {wf_num: [cp_name, ...]} from DB.
 
     Returns:
-        Dict of {(serial_number, cp_name, item): status_string}.
+        Dict of {(serial_number, cp_name, item): (status, failure_type)} where
+        status ∈ {'PASS', 'FAIL'} and failure_type ∈ {'spec_fail',
+        'strife_fail', None}. Pending/skip/empty results are deliberately
+        omitted so they don't get back-filled into the new report.
     """
     # --- Priority 1: DB query ---
     prev_results = _get_previous_results_from_db()
@@ -898,7 +940,8 @@ def _get_previous_results_from_db() -> dict:
     to sn_check_state_history if sn_check_results has no data.
 
     Returns:
-        Dict of {(serial_number, cp_name, item): status_string}, or empty dict.
+        Dict of {(serial_number, cp_name, item): (status, failure_type)} in
+        render schema (see ``_normalize_lifecycle_status``), or empty dict.
     """
     conn = db.get_conn()
     try:
@@ -923,10 +966,11 @@ def _get_previous_results_from_db() -> dict:
         ).fetchall()
 
         if rows:
-            # sn_check_results has cp_idx — we need to resolve cp_name
-            # Re-query with cp_name from report_cps
+            # sn_check_results has cp_idx — we need to resolve cp_name and
+            # also pull failure_type so spec/strife coloring stays correct.
             rows = conn.execute(
-                """SELECT scr.sn, rcp.cp_name, scr.check_item, scr.status
+                """SELECT scr.sn, rcp.cp_name, scr.check_item,
+                          scr.status, scr.failure_type
                    FROM sn_check_results scr
                    JOIN report_cps rcp
                      ON rcp.report_id = scr.report_id
@@ -938,13 +982,18 @@ def _get_previous_results_from_db() -> dict:
             if rows:
                 result = {}
                 for r in rows:
+                    norm = _normalize_lifecycle_status(r['status'], r['failure_type'])
+                    if norm is None:
+                        continue
                     key = (r['sn'], r['cp_name'], r['check_item'])
-                    result[key] = r['status']
-                return result
+                    result[key] = norm
+                if result:
+                    return result
 
         # Fallback: sn_check_state_history (lifecycle table, currently open rows)
         rows = conn.execute(
-            """SELECT h.sn, rcp.cp_name, h.check_item, h.status
+            """SELECT h.sn, rcp.cp_name, h.check_item,
+                      h.status, h.failure_type
                FROM sn_check_state_history h
                JOIN current_cp_definitions rcp
                  ON rcp.wf_num = h.wf_num AND rcp.cp_idx = h.cp_idx
@@ -955,8 +1004,11 @@ def _get_previous_results_from_db() -> dict:
         if rows:
             result = {}
             for r in rows:
+                norm = _normalize_lifecycle_status(r['status'], r['failure_type'])
+                if norm is None:
+                    continue
                 key = (r['sn'], r['cp_name'], r['check_item'])
-                result[key] = r['status']
+                result[key] = norm
             return result
 
         return {}
@@ -968,11 +1020,18 @@ def _get_previous_results_from_excel() -> dict:
     """Parse the most recent M60 EVT Rel Daily Report Excel file from rawdata.
 
     Reads Row 1 for CP names (forward-filled across merged cells),
-    Row 2 for item names, Row 3+ for data.
+    Row 2 for item names, Row 3+ for data. Cell color is inspected via
+    ``engine.get_failure_type`` so spec / strife failures stay distinguishable
+    even when the cell text is just "FAIL".
 
     Returns:
-        Dict of {(serial_number, cp_name, item): status_string}, or empty dict.
+        Dict of {(serial_number, cp_name, item): (status, failure_type)} in
+        render schema (PASS/FAIL + spec_fail/strife_fail/None), or empty dict.
+        Pending/skip/blank cells are deliberately omitted.
     """
+    # Local import to avoid circular dependency at module load time.
+    from engine import get_failure_type as _engine_get_failure_type
+
     # Find the most recent Daily Report file
     pattern = os.path.join(RAWDATA_DIR, 'M60 EVT Rel Daily Report_*.xlsx')
     report_files = glob.glob(pattern)
@@ -990,7 +1049,8 @@ def _get_previous_results_from_excel() -> dict:
 
     result = {}
     try:
-        wb = load_workbook(latest_file, read_only=True, data_only=True)
+        # NOTE: read_only=False so we can read cell fills via engine.get_failure_type.
+        wb = load_workbook(latest_file, data_only=True)
         for sheet_name in wb.sheetnames:
             ws = wb[sheet_name]
             rows_data = list(ws.iter_rows(values_only=True))
@@ -1059,7 +1119,30 @@ def _get_previous_results_from_excel() -> dict:
                         continue
 
                     status_str = str(val).strip()
-                    result[(sn, cp_name, item_name)] = status_str
+                    status_upper = status_str.upper()
+
+                    if status_upper == 'PASS':
+                        result[(sn, cp_name, item_name)] = ('PASS', None)
+                        continue
+                    if status_upper == 'FAIL':
+                        # Inspect fill color to disambiguate spec vs strife.
+                        ft = None
+                        try:
+                            cell = ws.cell(row=row_idx + 1, column=col_idx + 1)
+                            color_ft = _engine_get_failure_type(cell)
+                            if color_ft == 'spec':
+                                ft = 'spec_fail'
+                            elif color_ft == 'strife':
+                                ft = 'strife_fail'
+                        except Exception:
+                            ft = None
+                        # Fall back to CP-name strife heuristic if color is unknown.
+                        if ft is None:
+                            ft = 'strife_fail' if _is_strife_failure(cp_name) else 'spec_fail'
+                        result[(sn, cp_name, item_name)] = ('FAIL', ft)
+                        continue
+                    # Anything else (pending / skip / unknown) → drop, we don't
+                    # want to back-fill blanks into the new report.
 
         wb.close()
     except Exception:
@@ -1170,6 +1253,11 @@ def generate_daily_report(csv_files: list) -> tuple[bytes, str, dict]:
     final_records = detect_strife_failures(deduped_records, cp_schedule)
 
     # --- Step 3.5: Merge previous results (回填机制) ---
+    # prev_results values are (status, failure_type) tuples in render schema:
+    #   status        ∈ {'PASS', 'FAIL'}
+    #   failure_type  ∈ {'spec_fail', 'strife_fail', None}
+    # Pending / skip / blank cells were already filtered out at the source so
+    # they will never overwrite a real CSV observation here.
     prev_results = _get_previous_results(sn_mapping, cp_schedule)
     if prev_results:
         # Build a lookup of existing records for fast matching
@@ -1178,18 +1266,15 @@ def generate_daily_report(csv_files: list) -> tuple[bytes, str, dict]:
             key = (rec.get('serial_number', ''), rec.get('effective_cp', ''), rec.get('item', ''))
             existing_keys[key] = idx
 
-        for key, prev_status in prev_results.items():
+        for key, prev_value in prev_results.items():
             sn, cp, item = key
+            prev_status, prev_failure_type = prev_value
 
             if key in existing_keys:
                 # Override with previous value
                 rec = final_records[existing_keys[key]]
                 rec['status'] = prev_status
-                # Update failure_type based on new status
-                if 'FAIL' in prev_status.upper():
-                    rec['failure_type'] = 'strife_fail' if _is_strife_failure(cp) else 'spec_fail'
-                else:
-                    rec['failure_type'] = None
+                rec['failure_type'] = prev_failure_type
             else:
                 # Append as new record (manual edit that has no CSV counterpart)
                 # Only add if SN is valid
@@ -1199,10 +1284,7 @@ def generate_daily_report(csv_files: list) -> tuple[bytes, str, dict]:
                         'effective_cp': cp,
                         'item': item,
                         'status': prev_status,
-                        'failure_type': (
-                            'strife_fail' if ('FAIL' in prev_status.upper() and _is_strife_failure(cp))
-                            else ('spec_fail' if 'FAIL' in prev_status.upper() else None)
-                        ),
+                        'failure_type': prev_failure_type,
                         'rel_event': cp,
                         'end_time': '',
                         'failing_tests': '',

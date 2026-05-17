@@ -1545,3 +1545,73 @@ class TestPopulateWfData:
         # Strife Fail: yellow background, black font
         assert STRIFE_FAIL_FILL.start_color.rgb == "00FFFF00"
         assert STRIFE_FAIL_FONT.color.rgb == "00000000"
+
+
+class TestNormalizeLifecycleStatus:
+    """Tests for _normalize_lifecycle_status — translates lifecycle storage
+    values (lowercase status + spec/strife failure_type) into the render
+    schema (PASS/FAIL + spec_fail/strife_fail/None) used by populate_wf_data.
+    """
+
+    def test_pass_returns_PASS_with_no_failure_type(self):
+        from checkitem_generator import _normalize_lifecycle_status
+
+        assert _normalize_lifecycle_status("pass", None) == ("PASS", None)
+        # Stored failure_type should be ignored for PASS rows.
+        assert _normalize_lifecycle_status("pass", "spec") == ("PASS", None)
+
+    def test_spec_fail_storage_to_FAIL_spec_fail(self):
+        from checkitem_generator import _normalize_lifecycle_status
+
+        # Lifecycle stores failure_type as 'spec' (without _fail suffix).
+        assert _normalize_lifecycle_status("spec_fail", "spec") == ("FAIL", "spec_fail")
+
+    def test_strife_fail_storage_to_FAIL_strife_fail(self):
+        from checkitem_generator import _normalize_lifecycle_status
+
+        assert _normalize_lifecycle_status("strife_fail", "strife") == ("FAIL", "strife_fail")
+
+    def test_pending_skip_blank_return_None(self):
+        from checkitem_generator import _normalize_lifecycle_status
+
+        # Pending / skip / blank must NOT be back-filled into the new report.
+        assert _normalize_lifecycle_status("pending", None) is None
+        assert _normalize_lifecycle_status("skip", None) is None
+        assert _normalize_lifecycle_status("/", None) is None
+        assert _normalize_lifecycle_status("", None) is None
+        assert _normalize_lifecycle_status(None, None) is None
+
+    def test_failure_type_already_suffixed_still_works(self):
+        """Defensive: if some path stores 'spec_fail' in failure_type column."""
+        from checkitem_generator import _normalize_lifecycle_status
+
+        assert _normalize_lifecycle_status("spec_fail", "spec_fail") == ("FAIL", "spec_fail")
+        assert _normalize_lifecycle_status("strife_fail", "strife_fail") == (
+            "FAIL", "strife_fail"
+        )
+
+    def test_fail_status_without_failure_type_falls_back_via_status_word(self):
+        """Legacy rows where failure_type is NULL: classify from status spelling."""
+        from checkitem_generator import _normalize_lifecycle_status
+
+        assert _normalize_lifecycle_status("spec_fail", None) == ("FAIL", "spec_fail")
+        assert _normalize_lifecycle_status("strife_fail", None) == ("FAIL", "strife_fail")
+
+    def test_unknown_fail_word_returns_FAIL_with_none_failure_type(self):
+        """Bare 'fail' status with no failure_type produces a generic FAIL.
+
+        populate_wf_data treats failure_type=None as spec-by-default visually
+        only when status=='PASS' — for FAIL it requires an explicit type, so
+        unknown classification will simply not get a colored fill. That is the
+        correct outcome: the data is preserved but the source is unclear.
+        """
+        from checkitem_generator import _normalize_lifecycle_status
+
+        assert _normalize_lifecycle_status("fail", None) == ("FAIL", None)
+
+    def test_uppercase_input_still_normalizes(self):
+        """Just in case some caller passes uppercase by accident."""
+        from checkitem_generator import _normalize_lifecycle_status
+
+        assert _normalize_lifecycle_status("PASS", None) == ("PASS", None)
+        assert _normalize_lifecycle_status("SPEC_FAIL", "SPEC") == ("FAIL", "spec_fail")
