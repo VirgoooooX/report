@@ -256,6 +256,7 @@ def get_report_schedule_segments(conn, report_id, wf_num=None):
             item['marker_labels'] = json.loads(item.get('marker_labels') or '[]')
         except (TypeError, json.JSONDecodeError):
             item['marker_labels'] = []
+        item.pop('marker_details', None)
         result.append(item)
     return result
 
@@ -322,6 +323,7 @@ def get_current_schedule_segments(conn, wf_num=None):
             item['marker_labels'] = json.loads(item.get('marker_labels') or '[]')
         except (TypeError, json.JSONDecodeError):
             item['marker_labels'] = []
+        item.pop('marker_details', None)
         result.append(item)
     return result
 

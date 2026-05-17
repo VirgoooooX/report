@@ -10,7 +10,9 @@ import {
   distributeCpsAcrossDays,
   enumerateScheduleDays,
   sampleIndexes,
-  summarizeDailyCpMarkers
+  summarizeDailyCpMarkers,
+  buildSchedulePreviewRows,
+  buildSchedulePreviewLanes
 } from './scheduleDisplay.js'
 
 assert.deepEqual(
@@ -255,5 +257,33 @@ assert.deepEqual(columns.map((column) => column.date), [
 ])
 assert.equal(columns.find((column) => column.date === '2026-05-02').isSaturday, true)
 assert.equal(columns.find((column) => column.date === '2026-05-03').isSunday, true)
+
+const backendRows = buildScheduleRows([
+  {
+    wf_num: '14.2',
+    config: 'R1FNF',
+    test_idx: 1,
+    test_name: 'Main Drop',
+    planned_start_date: '2026-04-25',
+    planned_end_date: '2026-05-01',
+    actual_progress: {
+      current_cp_idx: 2,
+      current_cp_name: 'Drop 3',
+      total_cps: 4,
+      sn_count: 2,
+      is_complete: false,
+      end_date: '2026-04-28'
+    },
+    cps: [
+      { cp_idx: 1, cp_name: 'Drop 1', planned_date: '2026-04-25', display_cp_idx: 1 },
+      { cp_idx: 2, cp_name: 'Drop 3', planned_date: '2026-04-28', display_cp_idx: 2, is_current: true }
+    ]
+  }
+])
+assert.deepEqual(backendRows[0].visible_cps.map((cp) => cp.planned_date), ['2026-04-25', '2026-04-28'])
+const backendLane = buildScheduleLanes(backendRows)[0]
+assert.equal(backendLane.actual_progress.end_date, '2026-04-28')
+assert.equal(backendLane.visible_cps[1].is_current, true)
+assert.equal(buildSchedulePreviewLanes(buildSchedulePreviewRows(backendRows)).length, 1)
 
 console.log('scheduleDisplay tests passed')

@@ -210,40 +210,59 @@ class ApiConsistencyTests(unittest.TestCase):
     def test_schedule_includes_wf_config_current_progress(self):
         """/api/schedule should include latest WF+config current CP progress per segment."""
         rid = self._seed_report()
+        # Plan layer (Base): base_file_meta + current_schedule_segments + current_cp_definitions
+        self.conn.execute("DELETE FROM base_file_meta")
+        self.conn.execute("DELETE FROM current_schedule_segments")
         self.conn.execute(
-            """INSERT INTO report_schedule_segments
-               (report_id, wf_num, config, test_idx, test_name, schedule_test_item,
-                planned_start_date, planned_end_date, confidence, inference_reason, marker_labels)
-               VALUES (?, '16.1', 'R3', 0, 'Thermal', 'Thermal',
-                       '2026-05-01', '2026-05-03', 'high', 'seed', '[]')""",
+            """INSERT INTO base_file_meta (file_type, original_filename, stored_path, uploaded_at, parsed_summary)
+               VALUES ('checkpoint_schedule', 'cs.csv', '', '2025-01-01', '{}'),
+                      ('test_schedule', 'ts.xlsx', '', '2025-01-01', '{}')"""
+        )
+        self.conn.execute(
+            """INSERT INTO current_schedule_segments
+               (wf_num, config, test_idx, test_name, schedule_test_item,
+                planned_start_date, planned_end_date, confidence, inference_reason, marker_labels, updated_run_id)
+               VALUES ('16.1', 'R3', 0, 'Thermal', 'Thermal',
+                       '2026-05-01', '2026-05-03', 'high', 'seed', '[]', ?)""",
             (rid,),
         )
         for cp_idx in range(3):
             self.conn.execute(
-                "INSERT INTO report_cps (report_id, wf_num, cp_idx, cp_name, test_idx) VALUES (?, '16.1', ?, ?, 0)",
-                (rid, cp_idx, f'CP{cp_idx + 1}'),
+                """INSERT INTO current_cp_definitions
+                   (wf_num, cp_idx, cp_name, test_idx, check_items, updated_run_id)
+                   VALUES ('16.1', ?, ?, 0, '[]', ?)""",
+                (cp_idx, f'CP{cp_idx + 1}', rid),
             )
-        self.conn.execute(
-            """INSERT INTO sn_progress
-               (report_id, wf_num, config, sn, current_cp_idx, current_cp_name, total_cps)
-               VALUES (?, 'WF16.1', 'R3', 'SN001', 1, 'CP2', 3)""",
-            (rid,),
-        )
-        self.conn.execute(
-            """INSERT INTO sn_progress
-               (report_id, wf_num, config, sn, current_cp_idx, current_cp_name, total_cps)
-               VALUES (?, 'WF16.1', 'R3', 'SN002', 2, 'CP3', 3)""",
-            (rid,),
-        )
+
+        # Actual layer: sn_check_state_history rows so progress lifecycle finds CPs
+        for sn, max_cp in [('SN001', 1), ('SN002', 2)]:
+            for cp_idx in range(max_cp + 1):
+                self.conn.execute(
+                    """INSERT INTO sn_check_state_history
+                       (wf_num, config, sn, unit_num, test_idx, cp_idx, check_item_idx,
+                        check_item, state_hash, status, failure_type,
+                        first_report_id, first_report_date,
+                        last_seen_report_id, last_seen_report_date)
+                       VALUES ('16.1', 'R3', ?, '', 0, ?, 0,
+                               'FACT', '["pass","","","",""]', 'pass', NULL,
+                               ?, '2025-01-01', ?, '2025-01-01')""",
+                    (sn, cp_idx, rid, rid),
+                )
         self.conn.commit()
 
         data = api.app.test_client().get('/api/schedule').get_json()
-        segment = data['segments'][0]
+        segment = next(
+            row for row in data['segments']
+            if row['wf_num'] == '16.1' and row['config'] == 'R3'
+        )
 
         self.assertEqual(segment['current_cp_idx'], 2)
         self.assertEqual(segment['current_cp_name'], 'CP3')
         self.assertEqual(segment['total_cps'], 3)
         self.assertEqual(segment['sn_count'], 2)
+        self.assertNotIn('marker_details', segment)
+        self.assertEqual([cp['display_cp_idx'] for cp in segment['cps']], [1, 2, 3])
+        self.assertTrue(segment['actual_progress']['is_complete'])
 
     def test_summary_in_progress(self):
         """WF 16.1, config R3, Test1 CP range 0..1, latest current CP 0 → status 'in_progress'."""

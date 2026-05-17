@@ -198,13 +198,20 @@ assert.ok(
 )
 
 assert.ok(
-  !scheduleTimelineStyles.includes('.day-cell.sunday'),
-  'Sunday date cells should not have a separate CSS rule (handled by the default gray base)'
+  !/\.day-cell\.sunday\s*\{/.test(scheduleTimelineStyles),
+  'Sunday date cells should not have a separate CSS rule on themselves (handled by the default gray base)'
 )
 
 assert.ok(
   !scheduleTimelineStyles.includes('.day-cell.sunday::after'),
   'Sunday date cells should not have a ::after pseudo-element overlay (requirement 2.1)'
+)
+
+const sundayPlanRailRule = ruleBody(scheduleTimelineStyles, '.day-cell.sunday .plan-progress-rail')
+assert.ok(
+  /opacity\s*:\s*0?\.[0-9]+\s*;/.test(sundayPlanRailRule) ||
+    /color-mix\([^)]*var\(--plan-color\)[^)]*var\(--bg-card\)/.test(sundayPlanRailRule),
+  'plan rail should be visually dimmed when crossing Sunday columns'
 )
 
 const hiddenScrollbarRule = pseudoRuleBody(scheduleTimelineStyles, '.sheet-scroll::-webkit-scrollbar')

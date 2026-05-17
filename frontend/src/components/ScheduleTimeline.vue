@@ -316,6 +316,16 @@ async function scrollTodayIntoView() {
 }
 
 function cpMarkerClass(row, cp) {
+  if (cp.is_completed !== undefined || cp.is_current !== undefined) {
+    const completed = Boolean(cp.is_completed)
+    const current = Boolean(cp.is_current)
+    return {
+      'cp-completed': completed && !current,
+      'cp-pending': !completed && !current,
+      'cp-current': current
+    }
+  }
+
   const progress = row.actual_progress
   if (!progress || progress.current_cp_idx == null) {
     return { 'cp-completed': false, 'cp-pending': true, 'cp-current': false }
@@ -716,6 +726,11 @@ thead .sticky-col {
     inset 1px 0 0 rgb(146, 191, 63),
     inset -1px 0 0 rgb(146, 191, 63);
   pointer-events: none;
+}
+
+.day-cell.sunday .plan-progress-rail {
+  background: color-mix(in srgb, var(--plan-color) 55%, var(--bg-card));
+  opacity: 0.85;
 }
 
 .plan-progress-start {

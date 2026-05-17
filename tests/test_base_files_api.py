@@ -124,7 +124,8 @@ class BaseFilesUploadTests(unittest.TestCase):
         result = resp.get_json()
         self.assertTrue(result['success'])
         self.assertEqual(result['parsed']['wf_count'], 1)
-        self.assertEqual(result['parsed']['cp_count'], 2)
+        # CSV has REL_T0 (boundary, filtered) + CP_A. Only CP_A counts.
+        self.assertEqual(result['parsed']['cp_count'], 1)
 
     def test_upload_test_plan(self):
         """Upload Test Plan CSV — type detected from filename."""

@@ -272,8 +272,8 @@ class ParseCheckpointScheduleBasicTests(unittest.TestCase):
             result = base_manager.parse_checkpoint_schedule(path)
             self.assertEqual(result['wf_count'], 1)
             self.assertIn('1', result['cp_schedule'])
-            # REL_TFINAL should be filtered out
-            self.assertEqual(result['cp_schedule']['1'], ['REL_T0', 'LTHS_100HRS', 'LTHS_200HRS'])
+            # Schedule boundary markers (REL_T0, REL_TFINAL) should be filtered out
+            self.assertEqual(result['cp_schedule']['1'], ['LTHS_100HRS', 'LTHS_200HRS'])
         finally:
             os.remove(path)
 
@@ -291,8 +291,8 @@ class ParseCheckpointScheduleBasicTests(unittest.TestCase):
         try:
             result = base_manager.parse_checkpoint_schedule(path)
             self.assertEqual(result['wf_count'], 2)
-            self.assertEqual(result['cp_schedule']['1'], ['REL_T0', 'CP_A'])
-            self.assertEqual(result['cp_schedule']['2'], ['REL_T0', 'CP_B', 'CP_C'])
+            self.assertEqual(result['cp_schedule']['1'], ['CP_A'])
+            self.assertEqual(result['cp_schedule']['2'], ['CP_B', 'CP_C'])
         finally:
             os.remove(path)
 
@@ -309,8 +309,50 @@ class ParseCheckpointScheduleBasicTests(unittest.TestCase):
         path = _write_cp_csv(rows)
         try:
             result = base_manager.parse_checkpoint_schedule(path)
-            # WF1: REL_T0, CP_A = 2; WF2: REL_T0, CP_B, CP_C = 3; total = 5
-            self.assertEqual(result['cp_count'], 5)
+            # WF1: CP_A = 1; WF2: CP_B, CP_C = 2; total = 3
+            # (REL_T0 / REL_TFINAL are schedule boundaries and filtered out.)
+            self.assertEqual(result['cp_count'], 3)
+        finally:
+            os.remove(path)
+
+    def test_normalizes_real_checkpoint_test_numbers_to_zero_based(self):
+        rows = [
+            _make_cp_row(4, 0, 'REL_T0', test_idx=0),
+            _make_cp_row(4, 1, 'ALT_PROFILE1', test_idx=1),
+            _make_cp_row(4, 2, 'ALT_PROFILE2', test_idx=1),
+            _make_cp_row(4, 3, 'RT_15MIN', test_idx=2),
+            _make_cp_row(4, 4, 'REL_TFINAL', test_idx=0),
+        ]
+        path = _write_cp_csv(rows)
+        try:
+            result = base_manager.parse_checkpoint_schedule(path)
+            details = result['cp_details']['4']
+            # REL_T0 / REL_TFINAL are filtered (boundary markers).
+            self.assertEqual(
+                [detail['test_idx'] for detail in details],
+                [0, 0, 1],
+            )
+        finally:
+            os.remove(path)
+
+    def test_uses_margin_category_when_checkpoint_test_number_repeats(self):
+        rows = [
+            _make_cp_row(14.2, 0, 'REL_T0', test_idx=0, category='REL_T0'),
+            _make_cp_row(14.2, 1, 'HS_72HRS', test_idx=1, category='HS 65/90/72'),
+            _make_cp_row(14.2, 2, 'SIDED_DROP_SEQB_1ST_DROP3', test_idx=2, category='18 Sided Drop 1m PB SeqB'),
+            _make_cp_row(14.2, 3, 'SIDED_DROP_SEQB_2ND_DROP3', test_idx=2, category='18 Sided Drop 1m PB SeqB - Margin'),
+            _make_cp_row(14.2, 4, 'SIDED_DROP_SEQB_3RD_DROP3', test_idx=2, category='18 Sided Drop 1m PB SeqB'),
+            _make_cp_row(14.2, 5, 'REL_TFINAL', test_idx=0, category='REL_TFINAL'),
+        ]
+        path = _write_cp_csv(rows)
+        try:
+            result = base_manager.parse_checkpoint_schedule(path)
+            details = result['cp_details']['14.2']
+            # REL_T0 / REL_TFINAL are filtered (boundary markers).
+            self.assertEqual(
+                [detail['test_idx'] for detail in details],
+                [0, 1, 2, 1],
+            )
         finally:
             os.remove(path)
 
@@ -342,7 +384,7 @@ class ParseCheckpointScheduleFilterTests(unittest.TestCase):
         try:
             result = base_manager.parse_checkpoint_schedule(path)
             self.assertNotIn('REL FA RETEST', result['cp_schedule']['1'])
-            self.assertEqual(result['cp_schedule']['1'], ['REL_T0', 'CP_A'])
+            self.assertEqual(result['cp_schedule']['1'], ['CP_A'])
         finally:
             os.remove(path)
 
@@ -389,7 +431,7 @@ class ParseCheckpointScheduleFilterTests(unittest.TestCase):
             os.remove(path)
 
     def test_filters_all_excluded_cps(self):
-        """All 5 excluded CPs should be filtered in a single WF."""
+        """All excluded CPs (operational + boundary markers) should be filtered in a single WF."""
         rows = [
             _make_cp_row(1, 0, 'REL_T0'),
             _make_cp_row(1, 1, 'CP_A'),
@@ -403,10 +445,13 @@ class ParseCheckpointScheduleFilterTests(unittest.TestCase):
         path = _write_cp_csv(rows)
         try:
             result = base_manager.parse_checkpoint_schedule(path)
-            excluded = {'REL FA RETEST', 'SEND TO FA', 'STOP TEST', 'RETURN TO REL', 'REL_TFINAL'}
+            excluded = {
+                'REL FA RETEST', 'SEND TO FA', 'STOP TEST', 'RETURN TO REL',
+                'T0', 'REL_T0', 'End', 'TFinal', 'REL_TFINAL',
+            }
             for cp in result['cp_schedule']['1']:
                 self.assertNotIn(cp, excluded)
-            self.assertEqual(result['cp_schedule']['1'], ['REL_T0', 'CP_A', 'CP_B'])
+            self.assertEqual(result['cp_schedule']['1'], ['CP_A', 'CP_B'])
         finally:
             os.remove(path)
 
@@ -425,7 +470,7 @@ class ParseCheckpointScheduleOrderingTests(unittest.TestCase):
         path = _write_cp_csv(rows)
         try:
             result = base_manager.parse_checkpoint_schedule(path)
-            self.assertEqual(result['cp_schedule']['1'], ['REL_T0', 'ALPHA', 'BETA', 'GAMMA'])
+            self.assertEqual(result['cp_schedule']['1'], ['ALPHA', 'BETA', 'GAMMA'])
         finally:
             os.remove(path)
 
@@ -443,7 +488,7 @@ class ParseCheckpointScheduleOrderingTests(unittest.TestCase):
         path = _write_cp_csv(rows)
         try:
             result = base_manager.parse_checkpoint_schedule(path)
-            self.assertEqual(result['cp_schedule']['1'], ['REL_T0', 'CP_A', 'CP_B', 'CP_C'])
+            self.assertEqual(result['cp_schedule']['1'], ['CP_A', 'CP_B', 'CP_C'])
         finally:
             os.remove(path)
 
@@ -458,8 +503,9 @@ class ParseCheckpointScheduleOrderingTests(unittest.TestCase):
         path = _write_cp_csv(rows)
         try:
             result = base_manager.parse_checkpoint_schedule(path)
-            # Should be sorted by cp_order (wf id_cp): 0=REL_T0, 1=CP_B, 2=CP_A
-            self.assertEqual(result['cp_schedule']['1'], ['REL_T0', 'CP_B', 'CP_A'])
+            # Should be sorted by cp_order (wf id_cp); REL_T0/REL_TFINAL boundary
+            # markers are filtered out, leaving CP_B (1) and CP_A (2).
+            self.assertEqual(result['cp_schedule']['1'], ['CP_B', 'CP_A'])
         finally:
             os.remove(path)
 
@@ -500,11 +546,11 @@ class ParseCheckpointScheduleDetailsTests(unittest.TestCase):
         try:
             result = base_manager.parse_checkpoint_schedule(path)
             details = result['cp_details']['1']
-            self.assertEqual(len(details), 4)
-            self.assertEqual(details[0], {'cp_name': 'REL_T0', 'test_idx': 0})
-            self.assertEqual(details[1], {'cp_name': 'CP_A', 'test_idx': 1})
-            self.assertEqual(details[2], {'cp_name': 'CP_B', 'test_idx': 1})
-            self.assertEqual(details[3], {'cp_name': 'CP_C', 'test_idx': 2})
+            # REL_T0 / REL_TFINAL are boundary markers and filtered out.
+            self.assertEqual(len(details), 3)
+            self.assertEqual(details[0], {'cp_name': 'CP_A', 'test_idx': 0})
+            self.assertEqual(details[1], {'cp_name': 'CP_B', 'test_idx': 0})
+            self.assertEqual(details[2], {'cp_name': 'CP_C', 'test_idx': 1})
         finally:
             os.remove(path)
 
@@ -553,8 +599,11 @@ class ParseCheckpointScheduleEdgeCaseTests(unittest.TestCase):
         self.assertGreater(result['wf_count'], 40)
         # Should have many CPs
         self.assertGreater(result['cp_count'], 500)
-        # No excluded CPs should be present
-        excluded = {'REL FA RETEST', 'SEND TO FA', 'STOP TEST', 'RETURN TO REL', 'REL_TFINAL'}
+        # No excluded CPs (operational + boundary markers) should be present
+        excluded = {
+            'REL FA RETEST', 'SEND TO FA', 'STOP TEST', 'RETURN TO REL',
+            'T0', 'REL_T0', 'End', 'TFinal', 'REL_TFINAL',
+        }
         for wf, cps in result['cp_schedule'].items():
             for cp in cps:
                 self.assertNotIn(cp, excluded, f"Excluded CP '{cp}' found in WF {wf}")
@@ -1166,6 +1215,261 @@ class ParseTestScheduleEdgeCaseTests(unittest.TestCase):
             os.remove(path)
 
 
+class ParseTestScheduleBasedataFirstRegressionTests(unittest.TestCase):
+    """Regression tests for BaseData-first schedule extraction."""
+
+    def setUp(self):
+        import importlib
+        import app_paths
+        self._db_fd, self._db_path = tempfile.mkstemp(suffix='.db')
+        os.close(self._db_fd)
+        os.environ['REPORT_DB_PATH'] = self._db_path
+        importlib.reload(app_paths)
+        importlib.reload(db)
+        db.init_db()
+        importlib.reload(base_manager)
+
+    def tearDown(self):
+        if 'REPORT_DB_PATH' in os.environ:
+            del os.environ['REPORT_DB_PATH']
+        try:
+            os.remove(self._db_path)
+        except OSError:
+            pass
+
+    def test_full_extraction_handles_rel_t0_and_one_based_cp_test_indices(self):
+        tp_path = _write_tp_csv([
+            {'wf id': '4', 'wf test_1': 'Altitude', 'wf test_2': 'Rock Tumble', 'wf test_3': ''},
+        ])
+        cp_path = _write_cp_csv([
+            _make_cp_row(4, 0, 'REL_T0', test_idx=0),
+            _make_cp_row(4, 1, 'ALT_PROFILE1', test_idx=1),
+            _make_cp_row(4, 2, 'ALT_PROFILE2', test_idx=1),
+            _make_cp_row(4, 3, 'RT_15MIN', test_idx=2),
+            _make_cp_row(4, 4, 'RT_30MIN', test_idx=2),
+            _make_cp_row(4, 5, 'REL_TFINAL', test_idx=0),
+        ])
+        schedule_path = _create_test_schedule_excel(
+            [
+                {
+                    'wf_num': '4',
+                    'test_item': 'Altitude + Rock tumble',
+                    'duration': '5 days',
+                    'config': 'R1FNF',
+                    'allocation': 1,
+                    'markers': [
+                        (0, 'REL_T0'),
+                        (1, 'Op1'),
+                        (2, 'Op2'),
+                        (3, '15min'),
+                        (4, 'End'),
+                    ],
+                },
+            ],
+            dates=['2026-04-16', '2026-04-17', '2026-04-18', '2026-04-19', '2026-04-20'],
+        )
+        try:
+            base_manager.save_test_plan_to_db(base_manager.parse_test_plan(tp_path))
+            base_manager.save_cp_schedule_to_db(base_manager.parse_checkpoint_schedule(cp_path))
+
+            result = base_manager.parse_test_schedule(schedule_path)
+            self.assertEqual(result['segment_count'], 2)
+
+            segments = sorted(result['segments'], key=lambda seg: seg['test_idx'])
+            altitude, tumble = segments
+
+            self.assertEqual(altitude['test_idx'], 0)
+            self.assertEqual(altitude['test_name'], 'Altitude')
+            self.assertEqual(altitude['planned_start_date'], '2026-04-16')
+            self.assertEqual(altitude['planned_end_date'], '2026-04-18')
+
+            self.assertEqual(tumble['test_idx'], 1)
+            self.assertEqual(tumble['test_name'], 'Rock Tumble')
+            self.assertEqual(tumble['planned_start_date'], '2026-04-19')
+            self.assertEqual(tumble['planned_end_date'], '2026-04-20')
+        finally:
+            os.remove(tp_path)
+            os.remove(cp_path)
+            os.remove(schedule_path)
+
+    def test_full_extraction_splits_drop_margin_from_checkpoint_category(self):
+        tp_path = _write_tp_csv([
+            {
+                'wf id': '14.2',
+                'wf test_1': 'HS 65/90/72',
+                'wf test_2': '18 Sided Drop 1m PB SeqB',
+                'wf test_3': '18 Sided Drop 1m PB SeqB - Margin',
+            },
+        ])
+        cp_path = _write_cp_csv([
+            _make_cp_row(14.2, 0, 'REL_T0', test_idx=0, category='REL_T0'),
+            _make_cp_row(14.2, 1, 'HS_72HRS', test_idx=1, category='HS 65/90/72'),
+            _make_cp_row(14.2, 2, 'SIDED_DROP_SEQB_1ST_DROP3', test_idx=2, category='18 Sided Drop 1m PB SeqB'),
+            _make_cp_row(14.2, 3, 'SIDED_DROP_SEQB_1ST_DROP6', test_idx=2, category='18 Sided Drop 1m PB SeqB'),
+            _make_cp_row(14.2, 4, 'SIDED_DROP_SEQB_1ST_DROP18', test_idx=2, category='18 Sided Drop 1m PB SeqB'),
+            _make_cp_row(14.2, 5, 'SIDED_DROP_SEQB_2ND_DROP3', test_idx=2, category='18 Sided Drop 1m PB SeqB - Margin'),
+            _make_cp_row(14.2, 6, 'SIDED_DROP_SEQB_2ND_DROP6', test_idx=2, category='18 Sided Drop 1m PB SeqB - Margin'),
+            _make_cp_row(14.2, 7, 'REL_TFINAL', test_idx=0, category='REL_TFINAL'),
+        ])
+        schedule_path = _create_test_schedule_excel(
+            [
+                {
+                    'wf_num': '14.2',
+                    'test_item': 'HS + Drop + Margin',
+                    'duration': '7 days',
+                    'config': 'R1FNF',
+                    'allocation': 1,
+                    'markers': [
+                        (0, 'REL_T0'),
+                        (1, 'HS 72 hrs'),
+                        (2, '3rd drop'),
+                        (3, '6th drop'),
+                        (4, '18th drop'),
+                        (5, '3rd drop'),
+                        (6, '6th drop'),
+                        (7, 'End'),
+                    ],
+                },
+            ],
+            dates=[
+                '2026-04-17',
+                '2026-04-18',
+                '2026-04-19',
+                '2026-04-20',
+                '2026-04-21',
+                '2026-04-22',
+                '2026-04-23',
+                '2026-04-24',
+            ],
+        )
+        try:
+            base_manager.save_test_plan_to_db(base_manager.parse_test_plan(tp_path))
+            base_manager.save_cp_schedule_to_db(base_manager.parse_checkpoint_schedule(cp_path))
+
+            result = base_manager.parse_test_schedule(schedule_path)
+            self.assertEqual(result['segment_count'], 3)
+
+            segments = sorted(result['segments'], key=lambda seg: seg['test_idx'])
+            hs, drop, margin = segments
+
+            self.assertEqual((hs['test_idx'], hs['planned_start_date'], hs['planned_end_date']), (0, '2026-04-17', '2026-04-18'))
+            self.assertEqual((drop['test_idx'], drop['planned_start_date'], drop['planned_end_date']), (1, '2026-04-19', '2026-04-21'))
+            self.assertEqual((margin['test_idx'], margin['planned_start_date'], margin['planned_end_date']), (2, '2026-04-22', '2026-04-24'))
+            self.assertEqual(margin['marker_labels'][0], '3rd drop')
+        finally:
+            os.remove(tp_path)
+            os.remove(cp_path)
+            os.remove(schedule_path)
+
+    def test_full_extraction_keeps_main_button_cycling_between_hs_and_margin(self):
+        tp_path = _write_tp_csv([
+            {
+                'wf id': '6',
+                'wf test_1': 'HS 65/90/72',
+                'wf test_2': 'Button Cycling - CW',
+                'wf test_3': 'Button Cycling - CW - Margin',
+            },
+        ])
+        cp_path = _write_cp_csv([
+            _make_cp_row(6, 0, 'REL_T0', test_idx=0, category='REL_T0'),
+            _make_cp_row(6, 1, 'HS_72HRS', test_idx=1, category='HS 65/90/72'),
+            _make_cp_row(6, 2, 'BC_CWCB_SHORT_10%', test_idx=2, category='Button Cycling - CW'),
+            _make_cp_row(6, 3, 'BC_CWCB_LONG_50%', test_idx=2, category='Button Cycling - CW'),
+            _make_cp_row(6, 4, 'BC_CWCB_SHORT_100%', test_idx=2, category='Button Cycling - CW'),
+            _make_cp_row(6, 5, 'BC_CWCB_SHORT_140%', test_idx=3, category='Button Cycling - CW - Margin'),
+            _make_cp_row(6, 6, 'BC_CWCB_LONG_200%', test_idx=3, category='Button Cycling - CW - Margin'),
+            _make_cp_row(6, 7, 'REL_TFINAL', test_idx=0, category='REL_TFINAL'),
+        ])
+        schedule_path = _create_test_schedule_excel(
+            [
+                {
+                    'wf_num': '6',
+                    'test_item': 'HS 65C 90RH 72 hrs + Button Cycling CW',
+                    'duration': '10 days',
+                    'config': 'R1FNF',
+                    'allocation': 1,
+                    'markers': [
+                        (0, 'T0'),
+                        (1, 'HS 72 hrs'),
+                        (2, '0.1'),
+                        (3, '0.5'),
+                        (4, '1'),
+                        (5, '1.4'),
+                        (6, '2'),
+                        (7, 'End'),
+                    ],
+                },
+            ],
+            dates=[
+                '2026-04-17',
+                '2026-04-25',
+                '2026-04-27',
+                '2026-05-09',
+                '2026-05-20',
+                '2026-05-23',
+                '2026-05-29',
+                '2026-05-30',
+            ],
+        )
+        try:
+            base_manager.save_test_plan_to_db(base_manager.parse_test_plan(tp_path))
+            base_manager.save_cp_schedule_to_db(base_manager.parse_checkpoint_schedule(cp_path))
+
+            result = base_manager.parse_test_schedule(schedule_path)
+            self.assertEqual(result['segment_count'], 3)
+
+            segments = sorted(result['segments'], key=lambda seg: seg['test_idx'])
+            hs, main, margin = segments
+
+            self.assertEqual((hs['test_idx'], hs['planned_start_date'], hs['planned_end_date']), (0, '2026-04-17', '2026-04-25'))
+            self.assertEqual((main['test_idx'], main['planned_start_date'], main['planned_end_date']), (1, '2026-04-27', '2026-05-20'))
+            self.assertEqual((margin['test_idx'], margin['planned_start_date'], margin['planned_end_date']), (2, '2026-05-23', '2026-05-30'))
+        finally:
+            os.remove(tp_path)
+            os.remove(cp_path)
+            os.remove(schedule_path)
+
+    def test_full_extraction_preserves_cleaning_markers_for_single_test_rows(self):
+        tp_path = _write_tp_csv([
+            {'wf id': '29.1', 'wf test_1': 'Cleaning Spray OP1', 'wf test_2': '', 'wf test_3': ''},
+        ])
+        cp_path = _write_cp_csv([
+            _make_cp_row(29.1, 0, 'REL_T0', test_idx=0, category='REL_T0'),
+            _make_cp_row(29.1, 1, 'CLEANING_SPRAY_OP1_AFTER 18HRS', test_idx=1, category='Cleaning Spray OP1'),
+            _make_cp_row(29.1, 2, 'CLEANING_SPRAY_OP1_AFTER 36HRS', test_idx=1, category='Cleaning Spray OP1'),
+            _make_cp_row(29.1, 3, 'REL_TFINAL', test_idx=0, category='REL_TFINAL'),
+        ])
+        schedule_path = _create_test_schedule_excel(
+            [
+                {
+                    'wf_num': '29.1',
+                    'test_item': 'Cleaning Spray OP1',
+                    'duration': '3 days',
+                    'config': 'R1FNF',
+                    'allocation': 1,
+                    'markers': [
+                        (0, 'T0'),
+                        (1, '1st A'),
+                        (2, '1st B'),
+                        (3, 'End'),
+                    ],
+                },
+            ],
+            dates=['2026-04-17', '2026-04-18', '2026-04-19', '2026-04-20'],
+        )
+        try:
+            base_manager.save_test_plan_to_db(base_manager.parse_test_plan(tp_path))
+            base_manager.save_cp_schedule_to_db(base_manager.parse_checkpoint_schedule(cp_path))
+
+            result = base_manager.parse_test_schedule(schedule_path)
+            self.assertEqual(result['segment_count'], 1)
+            self.assertEqual(result['segments'][0]['marker_labels'], ['T0', '1st A', '1st B', 'End'])
+        finally:
+            os.remove(tp_path)
+            os.remove(cp_path)
+            os.remove(schedule_path)
+
+
 class SaveTestScheduleToDbTests(unittest.TestCase):
     """Test save_test_schedule_to_db writes correctly to DB."""
 
@@ -1475,7 +1779,7 @@ class UploadBaseFileTests(unittest.TestCase):
         stored_path = os.path.join(base_manager.RAWDATA_DIR, 'base', 'checkpoint_schedule.csv')
         self.assertTrue(os.path.exists(stored_path))
         self.assertEqual(result['wf_count'], 1)
-        self.assertEqual(result['cp_count'], 2)  # REL_T0 + CP_A (REL_TFINAL excluded)
+        self.assertEqual(result['cp_count'], 1)  # CP_A only (REL_T0 / REL_TFINAL are boundary markers, filtered out)
 
         # Verify DB was updated
         conn = db.get_conn()

@@ -196,18 +196,24 @@ class TestSnMappingRoundTrip:
 # Property 2: CP exclusion invariant
 # ---------------------------------------------------------------------------
 
-# Excluded CP names (must match base_manager.EXCLUDED_CPS)
+# Excluded CP names (must match base_manager.EXCLUDED_CPS, including
+# schedule boundary markers — T0 / REL_T0 / End / TFinal / REL_TFINAL —
+# which are now filtered alongside the operational CPs).
 EXCLUDED_CP_NAMES = [
     'REL FA RETEST',
     'SEND TO FA',
     'STOP TEST',
     'RETURN TO REL',
+    'T0',
+    'REL_T0',
+    'End',
+    'TFinal',
     'REL_TFINAL',
 ]
 
 # Valid CP names (realistic alphanumeric names)
 VALID_CP_NAMES = [
-    'REL_T0',
+    'AAB_T0',
     'LTHS_100HRS',
     'LTHS_200HRS',
     'LTHS_300HRS',

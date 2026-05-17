@@ -20,35 +20,40 @@ import logging
 sys.path.insert(0, os.path.dirname(__file__))
 from app_paths import RAWDATA_DIR, ensure_runtime_dirs, iter_rawdata_files
 from engine import (
-    analyze, extract_sn_progress, extract_sn_fact_rows, build_failure_detail,
-    read_test_schedule, read_test_summary, extract_all_cp_structures,
-    attach_test_idx_to_cps, extract_test_schedule_segments, DailyReportParseResult,
+    extract_sn_fact_rows, build_failure_detail,
+    read_test_schedule, read_test_summary,
     parse_daily_report, RawDataValidationError,
 )
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
 from db import (
-    init_db, save_report, save_wf_names, save_wf_cps, get_completion_stats,
-    get_failure_rate_stats, get_daily_changes_by_cp,
+    init_db, save_report, save_wf_names,
     save_predictions, init_categories, get_conn,
     create_report_version, save_report_wf_meta, save_report_test_names,
-    save_report_cps, save_report_schedule_segments, save_current_schedule_segments,
-    save_current_wf_definitions, save_current_test_definitions, save_current_cp_definitions,
+    save_report_cps, save_report_schedule_segments,
     save_sn_check_state_history,
     detect_definition_changes, save_definition_changes,
-    vacuum_db
+    vacuum_db,
 )
 
 # ═══════════════════════════════════════════════════════════════════════
-#  Final Write Set (Phase 5+):
-#    - reports (via save_report + create_report_version)
-#    - sn_check_state_history (lifecycle — via save_sn_check_state_history)
-#    - current_wf_definitions (via save_current_wf_definitions)
-#    - current_test_definitions (via save_current_test_definitions)
-#    - current_cp_definitions (via save_current_cp_definitions)
-#    - current_schedule_segments (via save_current_schedule_segments)
-#    - wf_names, wf_cps (global caches — retained for compatibility)
-#    - report_wf_meta, report_test_names, report_cps (report-scoped — retained for compatibility)
-#    - wf_results, report_stats, daily_changes (derived — computed by save_report)
+#  Final Write Set (Plan/Actual split):
+#    Daily ingest writes ONLY:
+#      - reports (via save_report + create_report_version)
+#      - sn_check_state_history (lifecycle — via save_sn_check_state_history)
+#      - report_wf_meta, report_test_names, report_cps,
+#        report_schedule_segments (per-report tables)
+#      - wf_names (global cache — retained for category/compat views)
+#      - wf_results, report_stats, daily_changes (derived — by save_report)
+#
+#    Daily ingest does NOT write:
+#      - current_wf_definitions / current_test_definitions /
+#        current_cp_definitions / current_schedule_segments
+#        (Base upload via base_manager is the sole writer)
+#      - wf_cps (legacy table; daily ingest stopped writing it)
+#
+#    report_cps rows have cp_idx/test_idx aligned to Base via
+#    normalize_daily_cps_to_base; CPs absent from Base are dropped.
+#
 #  Retired writes: sn_progress, sn_cp_results, sn_check_results
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -106,33 +111,6 @@ def _find_fa_tracker(date_str=None):
     return fas[-1][1], fas[-1][0]
 
 
-def save_report_definitions(conn, report_id, daily_path):
-    wf_names = read_test_schedule(daily_path)
-    _, _, ts_test_names, _ = read_test_summary(daily_path)
-    cp_structures = extract_all_cp_structures(daily_path)
-    mapped_cps = attach_test_idx_to_cps(cp_structures, ts_test_names)
-    schedule_segments = extract_test_schedule_segments(daily_path, ts_test_names, mapped_cps)
-
-    save_report_wf_meta(conn, report_id, wf_names)
-    save_report_test_names(conn, report_id, ts_test_names)
-    save_report_cps(conn, report_id, mapped_cps)
-    save_report_schedule_segments(conn, report_id, schedule_segments)
-    save_current_schedule_segments(conn, report_id, schedule_segments)
-
-    # Also write to current-only definition tables
-    save_current_wf_definitions(conn, report_id, wf_names)
-    save_current_test_definitions(conn, report_id, ts_test_names)
-    save_current_cp_definitions(conn, report_id, mapped_cps)
-
-    # Keep latest/global caches for existing category and compatibility views.
-    if wf_names:
-        save_wf_names(wf_names, ts_test_names, conn=conn)
-    for wfn, cp_list in cp_structures.items():
-        save_wf_cps(wfn, cp_list, conn=conn)
-
-    return wf_names, ts_test_names, mapped_cps, schedule_segments
-
-
 # ═══════════════════════════════════════════════════════════════════════
 #  process_all — 完整批次处理
 # ═══════════════════════════════════════════════════════════════════════
@@ -153,7 +131,7 @@ def process_all(rebuild=False):
         return {'files_processed': 0, 'total_wfs': 0,
                 'total_sn_records': 0, 'total_failures': 0}
 
-        print(f"[OK] Found {len(reports)} Daily Report files")
+    print(f"[OK] Found {len(reports)} Daily Report files")
     if rebuild:
         print("[OK] Rebuilding database...")
 
@@ -161,7 +139,7 @@ def process_all(rebuild=False):
     init_db(drop_all=rebuild)
     init_categories()
 
-    # 从第一个 Daily Report 读取 WF 名称、TS 测试名和 CP 结构
+    # 从第一个 Daily Report 读取 WF 名称、TS 测试名（用于全局缓存）
     if reports:
         first_path = reports[0][1]
         try:
@@ -169,13 +147,7 @@ def process_all(rebuild=False):
             if wf_names:
                 _, _, ts_test_names, _ = read_test_summary(first_path)
                 save_wf_names(wf_names, ts_test_names)
-                # Extract and save CP structures
-                all_cps = extract_all_cp_structures(first_path)
-                cps_saved = 0
-                for wfn, cp_list in all_cps.items():
-                    save_wf_cps(wfn, cp_list)
-                    cps_saved += len(cp_list)
-                print(f"[OK] Loaded {len(wf_names)} WF names + {cps_saved} CP records from Test Schedule/TS")
+                print(f"[OK] Loaded {len(wf_names)} WF names from Test Schedule/TS")
         except Exception as e:
             print(f"[WARN] Could not read WF names: {e}")
 
@@ -229,21 +201,15 @@ def process_all(rebuild=False):
             conn = get_conn()
             report_id = create_report_version(conn, date_str, filepath, source_file_name=fname, ts_test_names=parsed.ts_test_names)
 
-            # Save definitions using already-parsed data
+            # Save definitions using already-parsed data (parsed.mapped_cps is
+            # already aligned to Base via normalize_daily_cps_to_base).
             save_report_wf_meta(conn, report_id, parsed.wf_names)
             save_report_test_names(conn, report_id, parsed.test_names_by_wf)
             save_report_cps(conn, report_id, parsed.mapped_cps)
             save_report_schedule_segments(conn, report_id, parsed.schedule_segments)
-            # Current-only tables
-            save_current_schedule_segments(conn, report_id, parsed.schedule_segments)
-            save_current_wf_definitions(conn, report_id, parsed.wf_names)
-            save_current_test_definitions(conn, report_id, parsed.test_names_by_wf)
-            save_current_cp_definitions(conn, report_id, parsed.mapped_cps)
-            # Global caches
+            # Global wf_names cache (retained for category/compat views)
             if parsed.wf_names:
                 save_wf_names(parsed.wf_names, parsed.ts_test_names, conn=conn)
-            for wfn, cp_list in parsed.cp_structures.items():
-                save_wf_cps(wfn, cp_list, conn=conn)
 
             previous = conn.execute(
                 """SELECT id FROM reports
@@ -393,14 +359,8 @@ def process_report_file(report_date, daily_path, fa_path=None, skip_validation=F
         save_report_test_names(conn, report_id, parsed.test_names_by_wf)
         save_report_cps(conn, report_id, parsed.mapped_cps)
         save_report_schedule_segments(conn, report_id, parsed.schedule_segments)
-        save_current_schedule_segments(conn, report_id, parsed.schedule_segments)
-        save_current_wf_definitions(conn, report_id, parsed.wf_names)
-        save_current_test_definitions(conn, report_id, parsed.test_names_by_wf)
-        save_current_cp_definitions(conn, report_id, parsed.mapped_cps)
         if parsed.wf_names:
             save_wf_names(parsed.wf_names, parsed.ts_test_names, conn=conn)
-        for wfn, cp_list in parsed.cp_structures.items():
-            save_wf_cps(wfn, cp_list, conn=conn)
 
         previous = conn.execute(
             """SELECT id FROM reports

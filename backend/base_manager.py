@@ -10,6 +10,7 @@ Manages:
 import csv
 import json
 import os
+import re
 import shutil
 import datetime
 from collections import defaultdict
@@ -17,6 +18,7 @@ from collections import defaultdict
 from openpyxl import load_workbook
 
 from app_paths import RAWDATA_DIR, BASE_DIR
+from schedule_parser import SCHEDULE_BOUNDARY_LABELS
 import db
 
 
@@ -130,6 +132,20 @@ def upload_base_file(file_storage, file_type):
 def _parse_and_save(file_type, file_path):
     """Parse a base file and save definitions to DB.
 
+    Re-parsing semantics: every Base upload is treated as a fresh source of
+    truth and fully replaces the corresponding ``current_*`` tables (the
+    ``db.save_current_*`` helpers are DELETE-then-INSERT, so re-uploading
+    any single file always reflects the new content immediately).
+
+    Cross-file re-derivation: ``parse_test_schedule`` reads
+    ``current_cp_definitions`` and ``current_test_definitions`` to do
+    boundary inference. So when ``checkpoint_schedule`` or ``test_plan`` is
+    re-uploaded, the previously persisted ``current_schedule_segments`` is
+    stale even though the underlying ``test_schedule.xlsx`` on disk has not
+    changed. To keep "upload one file → API reflects it" from forcing a full
+    DB rebuild, we automatically re-run ``parse_test_schedule`` against the
+    on-disk ``test_schedule.xlsx`` whenever a dependency is replaced.
+
     Args:
         file_type: The type of base file.
         file_path: Absolute path to the stored file.
@@ -149,6 +165,9 @@ def _parse_and_save(file_type, file_path):
     elif file_type == 'checkpoint_schedule':
         result = parse_checkpoint_schedule(file_path)
         save_cp_schedule_to_db(result)
+        # CP definitions feed parse_test_schedule's boundary inference; if
+        # test_schedule.xlsx is already on disk, re-derive its segments now.
+        _rederive_test_schedule_if_present()
         return {
             'wf_count': result['wf_count'],
             'cp_count': result['cp_count'],
@@ -157,6 +176,8 @@ def _parse_and_save(file_type, file_path):
     elif file_type == 'test_plan':
         result = parse_test_plan(file_path)
         save_test_plan_to_db(result)
+        # Test names feed parse_test_schedule's boundary inference too.
+        _rederive_test_schedule_if_present()
         return {
             'wf_count': result['wf_count'],
         }
@@ -169,6 +190,37 @@ def _parse_and_save(file_type, file_path):
         }
 
     return {}
+
+
+def _rederive_test_schedule_if_present():
+    """Re-run parse_test_schedule against the on-disk test_schedule.xlsx.
+
+    Called after a dependency (``checkpoint_schedule`` / ``test_plan``) is
+    re-uploaded so ``current_schedule_segments`` reflects the new CP / test
+    definitions without forcing the user to re-upload the schedule file.
+
+    Silent no-op when no Test Schedule has been uploaded yet (the standard
+    initial-bootstrap order is sn_mapping → checkpoint_schedule → test_plan →
+    test_schedule, and we don't want the first three uploads to fail just
+    because the fourth hasn't happened yet).
+    """
+    standardized_name = FILE_TYPE_NAMES.get('test_schedule')
+    if not standardized_name:
+        return
+    stored_path = os.path.join(_get_base_dir(), standardized_name)
+    if not os.path.isfile(stored_path):
+        return
+    try:
+        result = parse_test_schedule(stored_path)
+        save_test_schedule_to_db(result)
+    except Exception:
+        # Re-derivation is best-effort; a malformed on-disk file should not
+        # block the dependency upload that just succeeded. The user can
+        # always re-upload the Test Schedule explicitly to get a fresh error.
+        import logging
+        logging.getLogger(__name__).exception(
+            "Failed to re-derive test_schedule segments after dependency upload"
+        )
 
 
 def get_base_status():
@@ -319,14 +371,95 @@ def get_sn_lookup_dicts():
 # Checkpoint Schedule Parser
 # ---------------------------------------------------------------------------
 
-# CPs that should be excluded from the schedule
-EXCLUDED_CPS = frozenset([
+# CPs that should be excluded from the schedule.
+#
+# Operational CPs (FA / STOP / RETURN) are administrative steps, not test CPs.
+#
+# Schedule boundary labels (T0 / REL_T0 / End / TFinal / REL_TFINAL) are
+# segment markers, not test CPs — they delimit the start and end of a WF on
+# the Test Schedule and must NEVER appear in current_cp_definitions. The
+# boundary set is sourced from SCHEDULE_BOUNDARY_LABELS (the same set used by
+# engine.is_cp_header_label and schedule_parser._is_t0_marker /
+# _is_end_marker), so the Plan, Actual, and daily-header layers share a
+# single fact source for what counts as a boundary.
+_OPERATIONAL_EXCLUDED_CPS = frozenset([
     'REL FA RETEST',
     'SEND TO FA',
     'STOP TEST',
     'RETURN TO REL',
-    'REL_TFINAL',
 ])
+
+# Public exclusion set retained for downstream callers/tests. Membership is
+# the literal-uppercase canonical names of operational + schedule boundary
+# markers; for general filtering, prefer ``_is_excluded_cp`` which handles
+# separator/case variants too.
+EXCLUDED_CPS = _OPERATIONAL_EXCLUDED_CPS | frozenset([
+    'T0', 'REL_T0', 'End', 'TFinal', 'REL_TFINAL',
+])
+
+
+def _is_schedule_boundary_cp_name(cp_name):
+    return re.sub(r'[^a-z0-9]+', '', str(cp_name or '').lower()) in SCHEDULE_BOUNDARY_LABELS
+
+
+def _is_excluded_cp(cp_name):
+    return cp_name in _OPERATIONAL_EXCLUDED_CPS or _is_schedule_boundary_cp_name(cp_name)
+
+
+def _normalize_checkpoint_test_idx(raw_test_idx):
+    """Convert Base checkpoint CSV numbering to internal zero-based test_idx."""
+    try:
+        value = int(raw_test_idx)
+    except (TypeError, ValueError):
+        return 0
+    if value <= 0:
+        return 0
+    return value - 1
+
+
+_DROP_ROUND_RE = re.compile(r'_(\d+)(?:ST|ND|RD|TH)\s+DROP')
+
+
+def _infer_checkpoint_test_idx(raw_test_idx, test_category='', cp_name=''):
+    """Infer internal test_idx from Base checkpoint numbering and category hints.
+
+    Args:
+        raw_test_idx: Raw ``wf test`` value from the Base CSV.
+        test_category: Raw ``test category`` value from the Base CSV.
+        cp_name: Raw ``rel event cp`` value from the Base CSV. Used to detect
+            drop-round CPs (e.g. ``SIDED DROP 1M PB SEQA_2ND DROP1``) so that
+            WF14/WF15 third-round drops get promoted to Margin even when their
+            ``test category`` is ``SeqA`` rather than ``Margin``.
+    """
+    test_idx = _normalize_checkpoint_test_idx(raw_test_idx)
+    category = str(test_category or '').strip().lower()
+
+    # Some Base checkpoint exports keep WF14/WF15 drop-margin rows at wf test=2
+    # even though Test Plan defines Margin as the third test. Rows that already
+    # carry wf test=3, like WF6 button-margin data, should stay untouched.
+    if 'margin' in category and test_idx == 1:
+        return 2
+
+    # New rule: any drop CP whose Base row puts it at wf test=2 belongs to
+    # Margin, regardless of `test category`. This catches WF14/WF15 third-round
+    # drops (`SeqA` category) without disturbing WF6 button-margin (different
+    # cp_name shape) or non-drop CPs.
+    if test_idx == 1 and _DROP_ROUND_RE.search(str(cp_name or '')):
+        return 2
+
+    return test_idx
+
+
+def _schedule_boundary_label(value):
+    return re.sub(r'[^a-z0-9]+', '', str(value or '').strip().lower())
+
+
+def _is_schedule_t0_label(value):
+    return _schedule_boundary_label(value) in {'t0', 'relt0'}
+
+
+def _is_schedule_end_label(value):
+    return _schedule_boundary_label(value) in {'end', 'tfinal', 'reltfinal'}
 
 
 def parse_checkpoint_schedule(file_path):
@@ -359,6 +492,7 @@ def parse_checkpoint_schedule(file_path):
             cp_order = row.get('wf id_cp', '').strip()
             cp_name = row.get('rel event cp', '').strip()
             test_idx = row.get('wf test', '').strip()
+            test_category = row.get('test category', '').strip()
 
             if not wf_id or not cp_name:
                 continue
@@ -367,7 +501,7 @@ def parse_checkpoint_schedule(file_path):
                 'wf_id': wf_id,
                 'cp_order': int(cp_order) if cp_order else 0,
                 'cp_name': cp_name,
-                'test_idx': int(test_idx) if test_idx else 0,
+                'test_idx': _infer_checkpoint_test_idx(test_idx, test_category, cp_name),
             })
 
     # Sort by wf_id (numeric) then cp_order to maintain original ordering
@@ -398,8 +532,10 @@ def parse_checkpoint_schedule(file_path):
 
         cp_name = row['cp_name']
 
-        # Filter out excluded CPs
-        if cp_name in EXCLUDED_CPS:
+        # Filter out excluded CPs (operational + schedule boundary markers).
+        # T0 / REL_T0 / End / TFinal / REL_TFINAL are WF-level boundary
+        # markers on the Test Schedule, not real test CPs.
+        if _is_excluded_cp(cp_name):
             continue
 
         # Deduplicate while maintaining order
@@ -559,7 +695,7 @@ def parse_test_schedule(file_path):
       Requested (col E), Config allocations (R1FNF=col6, R2CNM=col7, R3=col8, R4=col9)
     - Markers at date columns (T0, End, percentage values, CP names, etc.)
 
-    This function delegates to engine.extract_test_schedule_segments_from_workbook
+    This function delegates to schedule_parser.extract_test_schedule_segments_from_workbook
     using current DB definitions (test names and CP definitions) for boundary
     inference. If DB definitions are not yet available, it falls back to a
     simplified extraction that produces one segment per schedule row.
@@ -581,7 +717,7 @@ def parse_test_schedule(file_path):
             'segment_count': 0,
         }
 
-    # Try to use the full extraction logic from engine.py with DB definitions
+    # Try to use the full schedule parser with DB definitions.
     conn = db.get_conn()
     try:
         ts_test_names = db.get_current_test_definitions(conn)
@@ -598,9 +734,8 @@ def parse_test_schedule(file_path):
         cps_by_wf[wf_num] = cp_list  # Already in correct format from get_current_cp_definitions
 
     if ts_test_names and cps_by_wf:
-        # Use the full engine extraction logic
-        import engine
-        segments = engine.extract_test_schedule_segments_from_workbook(
+        import schedule_parser
+        segments = schedule_parser.extract_test_schedule_segments_from_workbook(
             wb, ts_test_names, cps_by_wf
         )
     else:
@@ -686,8 +821,12 @@ def _extract_schedule_segments_simple(wb):
         markers = []
         for col_idx, date_value in date_columns:
             marker_value = ws.cell(row_idx, col_idx).value
-            if marker_value not in (None, ''):
-                markers.append({'date': date_value, 'label': str(marker_value).strip()})
+            if marker_value in (None, ''):
+                continue
+            label = str(marker_value).strip()
+            if not label:
+                continue
+            markers.append({'date': date_value, 'label': label})
 
         if not markers:
             continue
@@ -698,11 +837,10 @@ def _extract_schedule_segments_simple(wb):
         marker_labels = []
 
         for marker in markers:
-            label_lower = marker['label'].lower().replace(' ', '')
             marker_labels.append(marker['label'])
-            if label_lower == 't0':
+            if _is_schedule_t0_label(marker['label']):
                 t0_date = marker['date']
-            elif label_lower == 'end':
+            elif _is_schedule_end_label(marker['label']):
                 end_date = marker['date']
 
         if not t0_date or not end_date:

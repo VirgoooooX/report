@@ -9,12 +9,13 @@ import os, sys, json, io, csv, datetime, re, logging, shutil
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, os.path.dirname(__file__))
-from app_paths import RAWDATA_DIR, PARSED_DIR, ensure_runtime_dirs, iter_rawdata_files, find_rawdata_file
+from app_paths import RAWDATA_DIR, PARSED_DIR, ensure_runtime_dirs, iter_rawdata_files
 from custom_rules import DEFAULT_RULES, load_rules, save_rules, get_location_canonical
 from engine import (
-    analyze, build_summary_table, build_failure_detail, extract_test_schedule_segments,
+    analyze, build_summary_table, build_failure_detail,
     RawDataValidationError, validate_daily_report,
 )
+from schedule_builder import build_schedule_segments
 from fa_matcher import read_fa_tracker, match as fa_match, summary as fa_summary
 import fa_analysis
 from db import (
@@ -25,15 +26,16 @@ from db import (
     get_failure_rate_stats, get_failure_rate_stats_from_lifecycle,
     get_predictions, update_prediction,
     init_categories, get_category_wfs, export_sn_records,
-    wf_sort_key, get_wf_names, get_wf_cps, get_wf_config_progress_rows,
+    wf_sort_key, get_wf_names, get_wf_cps,
     get_wf_config_progress_from_lifecycle,
     get_sn_fact_history, get_sn_lifecycle_history, get_sn_check_details,
     get_latest_wf_config_progress, get_failure_rate_stats_from_facts,
     build_failure_rate_stats_from_facts,
     get_latest_active_report_id, get_previous_active_report_id,
-    get_cell_failures, get_report_schedule_segments, save_report_schedule_segments,
-    get_current_schedule_segments, save_current_schedule_segments,
+    get_cell_failures,
+    get_current_schedule_segments,
     get_report_test_names, get_current_wf_definitions, get_current_test_definitions,
+    get_current_cp_definitions,
 )
 from processor import process_newest, process_report_file, compute_auto_predictions, REPORT_PATTERN, FA_PATTERN
 
@@ -42,7 +44,6 @@ VUE_STATIC = os.path.join(BASE_DIR, 'static')
 VUE_INDEX = os.path.join(VUE_STATIC, 'index.html')
 
 app = Flask(__name__, static_folder=None)
-DATA_DIR = RAWDATA_DIR
 logger = logging.getLogger(__name__)
 
 # ── Init ────────────────────────────────────────────────────────────────
@@ -898,153 +899,83 @@ def api_predictions_update():
 #  API: Schedule
 # ═══════════════════════════════════════════════════════════════════════
 
-def _schedule_wf_sort_key(wf_num):
-    try:
-        return [int(part) for part in str(wf_num).split('.')]
-    except ValueError:
-        return [9999, str(wf_num)]
-
-
-def _find_report_excel_path(report):
-    candidates = []
-    if report and report.get('excel_path'):
-        candidates.append(report['excel_path'])
-    if report and report.get('source_file_name'):
-        candidates.append(os.path.join(DATA_DIR, report['source_file_name']))
-        candidates.append(find_rawdata_file(report['source_file_name']))
-    for path in candidates:
-        if path and os.path.exists(path):
-            return path
-    return None
-
-
-def _load_or_build_schedule_segments(conn, report):
-    # Try current schedule first
-    segments = get_current_schedule_segments(conn)
-    if segments:
-        return segments
-
-    # Fall back to old report_schedule_segments lazy-load logic
-    report_id = report['id']
-    segments = get_report_schedule_segments(conn, report_id)
-    if segments:
-        return segments
-
-    excel_path = _find_report_excel_path(report)
-    if not excel_path:
-        return []
-
-    test_names = get_report_test_names(conn, report_id)
-    cp_rows = conn.execute(
-        """SELECT wf_num, cp_idx, cp_name, test_idx, check_items
-           FROM report_cps
-           WHERE report_id = ?
-           ORDER BY CAST(wf_num AS REAL), cp_idx""",
-        (report_id,),
-    ).fetchall()
-    cps_by_wf = {}
-    for row in cp_rows:
-        try:
-            check_items = json.loads(row.get('check_items') or '[]')
-        except (TypeError, json.JSONDecodeError):
-            check_items = []
-        cps_by_wf.setdefault(row['wf_num'], []).append({
-            'cp_idx': row['cp_idx'],
-            'cp_name': row['cp_name'],
-            'test_idx': row['test_idx'],
-            'check_items': check_items,
-        })
-
-    segments = extract_test_schedule_segments(excel_path, test_names, cps_by_wf)
-    save_report_schedule_segments(conn, report_id, segments)
-    # Also save to current schedule on first build
-    save_current_schedule_segments(conn, report_id, segments)
-    conn.commit()
-    return get_report_schedule_segments(conn, report_id)
-
-
 @app.route('/api/schedule')
 def api_schedule():
+    # Plan layer must be present: require both checkpoint_schedule and test_schedule
+    base_status = base_manager.get_base_status()
+    available_types = {row.get('file_type') for row in base_status if row.get('file_type')}
+    required_types = {'checkpoint_schedule', 'test_schedule'}
+    missing_types = sorted(required_types - available_types)
+    if missing_types:
+        return jsonify({'error': 'base_data_missing', 'missing': missing_types}), 400
+
     conn = get_conn()
     try:
+        segments = [
+            segment for segment in get_current_schedule_segments(conn)
+            if str(segment.get('wf_num')) not in {'43', '44'}
+        ]
+        if not segments:
+            return jsonify({
+                'error': 'base_data_missing',
+                'missing': ['test_schedule_segments'],
+            }), 400
+
+        # cps_by_key from current_cp_definitions (Plan layer single source)
+        cp_defs = get_current_cp_definitions(conn)
+        cps_by_key = {}
+        for wf_num, cp_list in cp_defs.items():
+            if str(wf_num) in {'43', '44'}:
+                continue
+            for cp in cp_list:
+                key = (str(wf_num), cp.get('test_idx'))
+                cps_by_key.setdefault(key, []).append({
+                    'cp_idx': cp.get('cp_idx'),
+                    'cp_name': cp.get('cp_name'),
+                })
+        for entries in cps_by_key.values():
+            entries.sort(key=lambda c: int(c.get('cp_idx') or 0))
+
+        # Actual layer: optional. No daily report → null progress.
         report = conn.execute(
-            """SELECT * FROM reports
+            """SELECT id, report_date FROM reports
                WHERE is_active = 1
                ORDER BY report_date DESC, version DESC
                LIMIT 1"""
         ).fetchone()
-        if not report:
-            return jsonify({'report_id': None, 'report_date': None, 'segments': []})
+        report_id = report['id'] if report else None
+        report_date = report['report_date'] if report else None
 
-        segments = [
-            segment for segment in _load_or_build_schedule_segments(conn, report)
-            if segment['wf_num'] not in {'43', '44'}
-        ]
-        wf_meta = get_wf_names()
-        cp_rows = conn.execute(
-            """SELECT wf_num, cp_idx, cp_name, test_idx
-               FROM report_cps
-               WHERE report_id = ?
-               ORDER BY CAST(wf_num AS REAL), cp_idx""",
-            (report['id'],),
-        ).fetchall()
-        cps_by_key = {}
-        for row in cp_rows:
-            if row['wf_num'] in {'43', '44'}:
-                continue
-            key = (row['wf_num'], row['test_idx'])
-            cps_by_key.setdefault(key, []).append({
-                'cp_idx': row['cp_idx'],
-                'cp_name': row['cp_name'],
-            })
         progress_by_key = {}
-        progress_rows = get_wf_config_progress_from_lifecycle(conn, report['id'])
-        if not progress_rows:
-            progress_rows = get_wf_config_progress_rows(conn, report['id'])
-        for row in progress_rows:
-            normalized_wf = _normalize_wf(row['wf_num'])
-            if normalized_wf in {'43', '44'}:
-                continue
-            progress_by_key[(normalized_wf, row['config'])] = {
-                'current_cp_idx': row['max_cp_idx'],
-                'current_cp_name': row['cp_name'] or '',
-                'total_cps': row['total_cps'] or 0,
-                'sn_count': row['sn_count'] or 0,
-            }
+        if report_id is not None:
+            progress_rows = get_wf_config_progress_from_lifecycle(conn, report_id)
+            for row in progress_rows:
+                normalized_wf = _normalize_wf(row['wf_num'])
+                if normalized_wf in {'43', '44'}:
+                    continue
+                progress_by_key[(normalized_wf, row['config'])] = {
+                    'current_cp_idx': row['max_cp_idx'],
+                    'current_cp_name': row['cp_name'] or '',
+                    'total_cps': row['total_cps'] or 0,
+                    'sn_count': row['sn_count'] or 0,
+                }
 
-        payload_segments = []
-        for segment in segments:
-            wf_meta_value = wf_meta.get(segment['wf_num'], '')
-            if isinstance(wf_meta_value, dict):
-                wf_meta_value = wf_meta_value.get('name', '')
-            progress = progress_by_key.get((_normalize_wf(segment['wf_num']), segment['config']), {})
-            payload_segments.append({
-                'wf_num': segment['wf_num'],
-                'wf_name': wf_meta_value,
-                'config': segment['config'],
-                'test_idx': segment['test_idx'],
-                'test_name': segment['test_name'],
-                'schedule_test_item': segment.get('schedule_test_item', ''),
-                'planned_start_date': segment['planned_start_date'],
-                'planned_end_date': segment['planned_end_date'],
-                'confidence': segment.get('confidence', ''),
-                'inference_reason': segment.get('inference_reason', ''),
-                'marker_labels': segment.get('marker_labels', []),
-                'cps': cps_by_key.get((segment['wf_num'], segment['test_idx']), []),
-                'current_cp_idx': progress.get('current_cp_idx'),
-                'current_cp_name': progress.get('current_cp_name', ''),
-                'total_cps': progress.get('total_cps', 0),
-                'sn_count': progress.get('sn_count', 0),
-            })
-
-        payload_segments.sort(key=lambda row: (
-            _schedule_wf_sort_key(row['wf_num']),
-            row['config'],
-            row['test_idx'],
-        ))
+        # WF names: prefer Base-uploaded definitions (Plan layer single source).
+        # Fall back to the wf_names cache (populated by daily ingest) so existing
+        # WFs keep their display name when only a daily report has been ingested.
+        wf_meta = dict(get_current_wf_definitions(conn) or {})
+        for wf_num_key, info in (get_wf_names() or {}).items():
+            if wf_num_key not in wf_meta:
+                wf_meta[wf_num_key] = info
+        payload_segments = build_schedule_segments(
+            segments,
+            wf_meta=wf_meta,
+            cps_by_key=cps_by_key,
+            progress_by_key=progress_by_key,
+        )
         return jsonify({
-            'report_id': report['id'],
-            'report_date': report['report_date'],
+            'report_id': report_id,
+            'report_date': report_date,
             'segments': payload_segments,
         })
     finally:

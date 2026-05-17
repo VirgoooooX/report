@@ -2,9 +2,12 @@ import os
 import sqlite3
 import tempfile
 import unittest
+import datetime
 
 import db
 import engine
+import schedule_parser
+from openpyxl import Workbook
 
 
 DATA_PATH = os.path.join('rawdata', 'M60 EVT Rel Daily Report_20260509.xlsx')
@@ -13,8 +16,22 @@ DATA_PATH = os.path.join('rawdata', 'M60 EVT Rel Daily Report_20260509.xlsx')
 def build_schedule_segments():
     _, _, ts_test_names, _ = engine.read_test_summary(DATA_PATH)
     cp_structures = engine.extract_all_cp_structures(DATA_PATH)
-    mapped_cps = engine.attach_test_idx_to_cps(cp_structures, ts_test_names)
-    return engine.extract_test_schedule_segments(DATA_PATH, ts_test_names, mapped_cps)
+    # Attach test_idx via the legacy daily-only heuristic mapping. The
+    # Plan/Actual split moved daily ingest to normalize_daily_cps_to_base
+    # (which requires Base CP definitions in the DB), but this fixture-only
+    # test deliberately exercises schedule_parser against daily-derived CPs
+    # without touching the DB; we inline the few lines that engine.attach_test_idx_to_cps
+    # used to provide so the test stays self-contained.
+    mapped_cps = {}
+    for wfn, cps in cp_structures.items():
+        ts_names = ts_test_names.get(wfn, ['(unnamed)'])
+        cp_names = [(cp['cp_idx'], cp['cp_name']) for cp in cps]
+        cp_test_map = engine.map_cps_to_tests(cp_names, ts_names)
+        mapped_cps[wfn] = [
+            {**cp, 'test_idx': test_idx}
+            for cp, test_idx in zip(cps, cp_test_map)
+        ]
+    return schedule_parser.extract_test_schedule_segments(DATA_PATH, ts_test_names, mapped_cps)
 
 
 def find_segment(segments, wf_num, config, test_idx):
@@ -135,6 +152,102 @@ class ScheduleExtractionTests(unittest.TestCase):
         self.assertEqual(squeeze['confidence'], 'high')
 
 
+class ScheduleParserBoundaryUnitTests(unittest.TestCase):
+    def _workbook_for_rows(self, rows):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = 'Test Schedule'
+        ws.cell(1, 2).value = 'WF'
+        ws.cell(1, 3).value = 'Test Item'
+        dates = [
+            '2026-04-17',
+            '2026-04-24',
+            '2026-04-25',
+            '2026-05-01',
+            '2026-05-02',
+            '2026-05-09',
+        ]
+        for index, date_text in enumerate(dates, start=10):
+            ws.cell(1, index).value = datetime.datetime.fromisoformat(date_text)
+        for row_number, row in enumerate(rows, start=3):
+            ws.cell(row_number, 2).value = row['wf_num']
+            ws.cell(row_number, 3).value = row.get('test_item', 'Drop')
+            ws.cell(row_number, 6).value = 1
+            for offset, label in enumerate(row['labels'], start=10):
+                ws.cell(row_number, offset).value = label
+        return wb
+
+    def _drop_segments(self, wf_num):
+        wb = self._workbook_for_rows([{
+            'wf_num': wf_num,
+            'labels': ['T0', 'HS 72 hrs', '3rd drop', '18th drop', '3rd drop', 'End'],
+        }])
+        try:
+            return schedule_parser.extract_test_schedule_segments_from_workbook(
+                wb,
+                {wf_num: ['HS', 'Main Drop', 'Margin']},
+                {
+                    wf_num: [
+                        {'cp_idx': 0, 'cp_name': 'HS_72HRS', 'test_idx': 0},
+                        {'cp_idx': 1, 'cp_name': 'SIDED_DROP_SEQB_1ST_DROP3', 'test_idx': 1},
+                        {'cp_idx': 2, 'cp_name': 'SIDED_DROP_SEQB_18TH_DROP', 'test_idx': 1},
+                        {'cp_idx': 3, 'cp_name': 'SIDED_DROP_SEQB_MARGIN_DROP3', 'test_idx': 2},
+                    ]
+                },
+            )
+        finally:
+            wb.close()
+
+    def test_wf14_variants_split_hs_main_margin_without_marker_details(self):
+        for wf_num in ['14.1', '14.2', '14.3']:
+            with self.subTest(wf_num=wf_num):
+                segments = self._drop_segments(wf_num)
+                self.assertEqual(
+                    [(s['test_idx'], s['planned_start_date'], s['planned_end_date']) for s in segments],
+                    [
+                        (0, '2026-04-17', '2026-04-24'),
+                        (1, '2026-04-25', '2026-05-01'),
+                        (2, '2026-05-02', '2026-05-09'),
+                    ],
+                )
+                self.assertTrue(all('marker_details' not in segment for segment in segments))
+
+    def test_wf15_variants_split_hs_main_margin_without_marker_details(self):
+        for wf_num in ['15.1', '15.2', '15.3']:
+            with self.subTest(wf_num=wf_num):
+                segments = self._drop_segments(wf_num)
+                self.assertEqual(
+                    [(s['test_idx'], s['planned_start_date'], s['planned_end_date']) for s in segments],
+                    [
+                        (0, '2026-04-17', '2026-04-24'),
+                        (1, '2026-04-25', '2026-05-01'),
+                        (2, '2026-05-02', '2026-05-09'),
+                    ],
+                )
+                self.assertTrue(all('marker_details' not in segment for segment in segments))
+
+    def test_wf29_variants_stay_single_t0_to_end_segment(self):
+        for wf_num in ['29.1', '29.2', '29.3', '29.4']:
+            with self.subTest(wf_num=wf_num):
+                wb = self._workbook_for_rows([{
+                    'wf_num': wf_num,
+                    'labels': ['T0', '25%', '50%', '75%', '100%', 'End'],
+                }])
+                try:
+                    segments = schedule_parser.extract_test_schedule_segments_from_workbook(
+                        wb,
+                        {wf_num: ['Single Test']},
+                        {wf_num: [{'cp_idx': 0, 'cp_name': 'CP0', 'test_idx': 0}]},
+                    )
+                finally:
+                    wb.close()
+
+                self.assertEqual(len(segments), 1)
+                self.assertEqual(segments[0]['planned_start_date'], '2026-04-17')
+                self.assertEqual(segments[0]['planned_end_date'], '2026-05-09')
+                self.assertNotIn('marker_details', segments[0])
+
+
 class SchedulePersistenceTests(unittest.TestCase):
     def test_save_and_load_report_schedule_segments(self):
         fd, path = tempfile.mkstemp(suffix='.db')
@@ -165,6 +278,7 @@ class SchedulePersistenceTests(unittest.TestCase):
             self.assertEqual(rows[0]['test_name'], 'Altitude')
             self.assertEqual(rows[0]['planned_end_date'], '2026-04-27')
             self.assertEqual(rows[0]['marker_labels'], ['T0', 'Op1', 'Op2', 'Op3', 'Op5'])
+            self.assertNotIn('marker_details', rows[0])
         finally:
             conn.close()
             os.remove(path)
@@ -290,6 +404,7 @@ class CurrentScheduleTests(unittest.TestCase):
             filtered = db.get_current_schedule_segments(conn, wf_num='4')
             self.assertEqual(len(filtered), 1)
             self.assertEqual(filtered[0]['test_name'], 'Altitude')
+            self.assertNotIn('marker_details', filtered[0])
         finally:
             conn.close()
             os.remove(path)

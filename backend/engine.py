@@ -7,6 +7,8 @@ from collections import defaultdict
 import re, datetime, os
 import logging
 
+from schedule_parser import SCHEDULE_BOUNDARY_LABELS
+
 try:
     from custom_rules import failure_type_for_colors, is_wf_ignored, resolve_config_alias
 except Exception:
@@ -58,7 +60,7 @@ def is_cp_header_label(value):
         return False
     if label in CHECK_NAMES or label in NON_CP_HEADERS:
         return False
-    if re.sub(r'[^a-z0-9]+', '', label.lower()) == 't0':
+    if re.sub(r'[^a-z0-9]+', '', label.lower()) in SCHEDULE_BOUNDARY_LABELS:
         return False
     return True
 
@@ -481,18 +483,57 @@ def map_cps_to_tests(cp_names, ts_names):
     return [min(g2t[g], nt - 1) for g in groups]
 
 
-def attach_test_idx_to_cps(cp_structures, ts_test_names):
-    """Attach test_idx to each CP definition using the same mapping as result parsing."""
+def normalize_daily_cps_to_base(cp_structures, base_cps):
+    """Align daily-detected CPs to the canonical Base CP numbering.
+
+    Parameters
+    ----------
+    cp_structures : dict
+        ``{wf_num: [{'cp_idx': int, 'cp_name': str, 'check_items': list[str]}]}``
+        Daily-derived CP structures (``cp_idx`` here is the daily column order
+        and is NOT canonical).
+    base_cps : dict
+        ``{wf_num: [{'cp_idx': int, 'cp_name': str, 'test_idx': int}]}``
+        Base CP definitions loaded from ``current_cp_definitions``. The sole
+        source of truth for ``(cp_idx, test_idx)`` numbering.
+
+    Returns
+    -------
+    dict
+        ``{wf_num: [{'cp_idx', 'cp_name', 'test_idx', 'check_items'}]}`` with
+        entries sorted ascending by Base ``cp_idx``. Daily CPs whose
+        ``(wf_num, cp_name)`` is not present in ``base_cps`` are silently
+        dropped. When ``base_cps`` is empty (Base has not been uploaded yet),
+        every ``wf_num`` in ``cp_structures`` maps to an empty list and the
+        function does not raise.
+
+    Notes
+    -----
+    Only ``wf_num`` values that appear in ``cp_structures`` are emitted; WFs
+    that exist solely in ``base_cps`` are not synthesised here because the
+    daily side has no ``check_items`` to attach.
+
+    See spec ``schedule-plan-actual-split`` design §6 for the full design
+    rationale and Property P2 (``Daily report_cps are a subset of Base CP
+    definitions``).
+    """
     result = {}
+    base_cps = base_cps or {}
     for wfn, cps in cp_structures.items():
-        ts_names = ts_test_names.get(wfn, ['(unnamed)'])
-        cp_names = [(cp['cp_idx'], cp['cp_name']) for cp in cps]
-        cp_test_map = map_cps_to_tests(cp_names, ts_names)
+        base_for_wf = base_cps.get(wfn, []) or []
+        base_index = {cp['cp_name']: cp for cp in base_for_wf}
         mapped = []
-        for cp, test_idx in zip(cps, cp_test_map):
-            item = dict(cp)
-            item['test_idx'] = test_idx
-            mapped.append(item)
+        for cp in cps:
+            base = base_index.get(cp.get('cp_name'))
+            if base is None:
+                continue
+            mapped.append({
+                'cp_idx': base['cp_idx'],
+                'cp_name': base['cp_name'],
+                'test_idx': base['test_idx'],
+                'check_items': cp.get('check_items', []),
+            })
+        mapped.sort(key=lambda item: item['cp_idx'])
         result[wfn] = mapped
     return result
 
@@ -641,6 +682,14 @@ def _schedule_normalize(value):
     return re.sub(r'[^a-z0-9]+', '', str(value or '').strip().lower().replace('×', 'x'))
 
 
+def _schedule_is_t0_marker(value):
+    return _schedule_normalize(value) in {'t0', 'relt0'}
+
+
+def _schedule_is_end_marker(value):
+    return _schedule_normalize(value) in {'end', 'tfinal', 'reltfinal'}
+
+
 def _schedule_percent_value(label):
     text = str(label).strip()
     if re.fullmatch(r'\d+(?:\.\d+)?', text):
@@ -665,7 +714,7 @@ def _schedule_label_words(label):
 
 def _schedule_drop_number(label):
     text = str(label).strip().lower()
-    match = re.search(r'(\d+)(?:st|nd|rd|th)?\s*drop', text)
+    match = re.search(r'(\d+)\s*(?:st|nd|rd|th)?\s*drop', text)
     if match:
         return int(match.group(1))
     match = re.search(r'(\d+)\s*drops?', text)
@@ -739,7 +788,7 @@ def _schedule_is_reset(previous_signature, current_signature):
 
 def _schedule_marker_candidates(label, cp_list, test_names=None):
     normalized = _schedule_normalize(label)
-    if normalized in {'t0', 'end'}:
+    if _schedule_is_t0_marker(label) or _schedule_is_end_marker(label):
         return []
 
     matches = []
@@ -765,13 +814,6 @@ def _schedule_marker_candidates(label, cp_list, test_names=None):
             if matches:
                 return sorted(set(matches))
 
-    for cp in cp_list:
-        cp_normalized = _schedule_normalize(cp['cp_name'])
-        if normalized and normalized in cp_normalized:
-            matches.append(cp['test_idx'])
-    if matches:
-        return sorted(set(matches))
-
     drop_num = _schedule_drop_number(label)
     if drop_num is not None:
         token = f'drop{drop_num}'
@@ -780,6 +822,13 @@ def _schedule_marker_candidates(label, cp_list, test_names=None):
                 matches.append(cp['test_idx'])
         if matches:
             return sorted(set(matches))
+
+    for cp in cp_list:
+        cp_normalized = _schedule_normalize(cp['cp_name'])
+        if normalized and normalized in cp_normalized:
+            matches.append(cp['test_idx'])
+    if matches:
+        return sorted(set(matches))
 
     profile_num = _schedule_profile_number(label)
     if profile_num is not None:
@@ -899,8 +948,12 @@ def extract_test_schedule_segments_from_workbook(wb, ts_test_names, cps_by_wf):
         markers = []
         for col_idx, date_value in date_columns:
             marker_value = ws.cell(row_idx, col_idx).value
-            if marker_value not in (None, ''):
-                markers.append({'date': date_value, 'label': str(marker_value).strip()})
+            if marker_value in (None, ''):
+                continue
+            label = str(marker_value).strip()
+            if not label:
+                continue
+            markers.append({'date': date_value, 'label': label})
         if not markers:
             continue
 
@@ -926,8 +979,8 @@ def extract_test_schedule_segments_from_workbook(wb, ts_test_names, cps_by_wf):
         if not ordered_tests:
             continue
 
-        t0_marker = next((marker for marker in row['markers'] if _schedule_normalize(marker['label']) == 't0'), None)
-        end_marker = next((marker for marker in row['markers'] if _schedule_normalize(marker['label']) == 'end'), None)
+        t0_marker = next((marker for marker in row['markers'] if _schedule_is_t0_marker(marker['label'])), None)
+        end_marker = next((marker for marker in row['markers'] if _schedule_is_end_marker(marker['label'])), None)
         if not t0_marker or not end_marker:
             continue
 
@@ -945,13 +998,14 @@ def extract_test_schedule_segments_from_workbook(wb, ts_test_names, cps_by_wf):
                 'source_row': row['source_row'],
                 'confidence': 'high',
                 'inference_reason': 'single-test-row',
-                'marker_labels': ['T0', 'End'],
+                'marker_labels': [marker['label'] for marker in row['markers']],
             })
             continue
 
         non_boundary_markers = [
             marker for marker in row['markers']
-            if _schedule_normalize(marker['label']) not in {'t0', 'end'}
+            if not _schedule_is_t0_marker(marker['label'])
+            and not _schedule_is_end_marker(marker['label'])
         ]
         if not non_boundary_markers:
             continue
@@ -983,15 +1037,24 @@ def extract_test_schedule_segments_from_workbook(wb, ts_test_names, cps_by_wf):
             current_anchors = [pos for pos in anchor_positions.get(test_idx, []) if pos > last_boundary]
             usable_resets = [pos for pos in reset_positions if pos > last_boundary + 1]
 
-            if next_anchors:
-                boundary = min(next_anchors) - 1
-                reason = 'next-test-anchor'
-            elif current_anchors:
-                boundary = max(current_anchors)
+            next_start = min(next_anchors) if next_anchors else None
+            bounded_current_anchors = [
+                pos for pos in current_anchors
+                if next_start is None or pos < next_start
+            ]
+
+            if bounded_current_anchors:
+                boundary = max(bounded_current_anchors)
                 reason = 'current-test-anchor'
+            elif next_start is not None and next_start > last_boundary + 1:
+                boundary = next_start - 1
+                reason = 'next-test-anchor'
             elif usable_resets:
                 boundary = min(usable_resets) - 1
                 reason = 'sequence-reset'
+            elif next_start is not None:
+                boundary = next_start - 1
+                reason = 'next-test-anchor'
             else:
                 remaining_markers = len(non_boundary_markers) - last_boundary - 1
                 remaining_boundaries = len(ordered_tests) - boundary_index
@@ -1912,8 +1975,15 @@ def parse_daily_report(path, report_date=None, source_file_name=None, conn=None,
         # 4. Extract CP structures
         result.cp_structures = extract_all_cp_structures_from_workbook(wb)
 
-        # 5. Map CPs to tests
-        result.mapped_cps = attach_test_idx_to_cps(result.cp_structures, result.ts_test_names)
+        # 5. Normalize daily CPs to Base numbering (load base_cps once per report)
+        base_cps = _db.get_current_cp_definitions(conn)
+        if not base_cps:
+            logger.warning(
+                "current_cp_definitions is empty while parsing %s; "
+                "all WFs will produce empty mapped_cps until Base is uploaded.",
+                result.source_file_name,
+            )
+        result.mapped_cps = normalize_daily_cps_to_base(result.cp_structures, base_cps)
 
         # 6. Schedule segments: read exclusively from DB
         result.schedule_segments = _db.get_current_schedule_segments(conn)

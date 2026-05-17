@@ -562,6 +562,7 @@ async function handleFileChange(event, fileType) {
 
     // Refresh the file list
     await fetchBaseFiles()
+    store.triggerRefresh()
     generateStatus.value = ''
   } catch (e) {
     uploadError.value = e.message

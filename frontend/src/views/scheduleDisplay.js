@@ -205,21 +205,29 @@ export function sampleIndexes(count, maxVisible = 6) {
 export function buildScheduleRows(segments = [], maxVisibleCps = 6) {
   return segments.map((segment) => {
     const days = enumerateScheduleDays(segment.planned_start_date, segment.planned_end_date)
-    const scheduledCps = distributeCpsAcrossDays(
-      segment.cps || [],
-      segment.planned_start_date,
-      segment.planned_end_date,
-      maxVisibleCps
-    )
-    const dailyCps = distributeDailyCpLabels(
-      segment.cps || [],
-      segment.planned_start_date,
-      segment.planned_end_date
-    )
+    const backendScheduledCps = segment.scheduled_cps || segment.visible_cps || []
+    const hasBackendCpDates = backendScheduledCps.some((cp) => cp.planned_date)
+      || (segment.cps || []).some((cp) => cp.planned_date)
+    const scheduledCps = hasBackendCpDates
+      ? (backendScheduledCps.length ? backendScheduledCps : segment.cps || [])
+      : distributeCpsAcrossDays(
+        segment.cps || [],
+        segment.planned_start_date,
+        segment.planned_end_date,
+        maxVisibleCps
+      )
+    const dailyCps = hasBackendCpDates
+      ? scheduledCps
+      : distributeDailyCpLabels(
+        segment.cps || [],
+        segment.planned_start_date,
+        segment.planned_end_date
+      )
     return {
       ...segment,
       days,
       duration_days: days.length,
+      has_authoritative_cp_dates: hasBackendCpDates,
       scheduled_cps: scheduledCps,
       daily_cps: dailyCps,
       visible_cps: dailyCps
@@ -306,16 +314,19 @@ export function buildScheduleLanes(rows = []) {
       const plannedEnd = maxDate(tests.map((test) => test.planned_end_date))
       const days = enumerateScheduleDays(plannedStart, plannedEnd)
       const testsWithLaneLabels = tests.map((test) => {
-        const visibleCps = distributeTestCpLabels(
-          test.cps || [],
-          test.planned_start_date,
-          test.planned_end_date,
-          6,
-          {
-            avoidStartDate: test.planned_start_date === plannedStart,
-            avoidEndDate: test.planned_end_date === plannedEnd
-          }
-        )
+        const backendCps = test.visible_cps || test.scheduled_cps || test.cps || []
+        const visibleCps = test.has_authoritative_cp_dates && backendCps.some((cp) => cp.planned_date)
+          ? backendCps
+          : distributeTestCpLabels(
+            test.cps || [],
+            test.planned_start_date,
+            test.planned_end_date,
+            6,
+            {
+              avoidStartDate: test.planned_start_date === plannedStart,
+              avoidEndDate: test.planned_end_date === plannedEnd
+            }
+          )
         return {
           ...test,
           visible_cps: visibleCps,
@@ -325,7 +336,8 @@ export function buildScheduleLanes(rows = []) {
       const scheduledCps = testsWithLaneLabels.flatMap((test) => test.scheduled_cps || [])
       const visibleCps = testsWithLaneLabels.flatMap((test) => test.visible_cps || [])
       const progressSource = tests.find((test) => test.current_cp_idx !== undefined) || {}
-      const actualProgress = buildActualProgress(scheduledCps, progressSource, plannedEnd)
+      const backendActualProgress = tests.find((test) => test.actual_progress)?.actual_progress
+      const actualProgress = backendActualProgress || buildActualProgress(scheduledCps, progressSource, plannedEnd)
       const testNames = [...new Set(tests.map((test) => test.test_name).filter(Boolean))]
       const scheduleItems = [...new Set(tests.map((test) => test.schedule_test_item).filter(Boolean))]
 
@@ -395,4 +407,12 @@ export function groupScheduleByWf(rows = []) {
     group.planned_end_date = ends[ends.length - 1]
   }
   return [...groups.values()].sort((a, b) => Number(a.wf_num) - Number(b.wf_num))
+}
+
+export function buildSchedulePreviewRows(segments = [], maxVisibleCps = 6) {
+  return buildScheduleRows(segments, maxVisibleCps)
+}
+
+export function buildSchedulePreviewLanes(rows = []) {
+  return buildScheduleLanes(rows)
 }
