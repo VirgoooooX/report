@@ -27,7 +27,7 @@
           </div>
           <div class="bar-actions">
             <button class="search-btn" :disabled="loading || (!lookupTags.length && !lookupInput.trim())" @click="submitLookup">{{ loading ? t('common.loading') : t('actions.search') }}</button>
-            <button v-if="lookupTags.length || lookupResults.length" class="clear-btn" @click="clearLookup" :title="t('queryCenter.clear')">✕</button>
+            <button class="clear-btn" :class="{ 'is-hidden': !(lookupTags.length || lookupResults.length) }" :aria-hidden="!(lookupTags.length || lookupResults.length)" :tabindex="lookupTags.length || lookupResults.length ? 0 : -1" @click="clearLookup" :title="t('queryCenter.clear')">✕</button>
           </div>
         </div>
         <div v-if="lookupSuggestions.length" class="suggestions">
@@ -61,7 +61,7 @@
           </div>
           <div class="bar-actions">
             <button class="search-btn" :disabled="!wcfgWfSelection.length || loading" @click="doWfCfgSearch">{{ loading ? t('common.loading') : t('actions.search') }}</button>
-            <button v-if="wcfgData" class="clear-btn" @click="clearWcfg" :title="t('queryCenter.clear')">✕</button>
+            <button class="clear-btn" :class="{ 'is-hidden': !wcfgData }" :aria-hidden="!wcfgData" :tabindex="wcfgData ? 0 : -1" @click="clearWcfg" :title="t('queryCenter.clear')">✕</button>
           </div>
         </div>
         <ErrorState v-if="wcfgError" :message="wcfgError" @retry="doWfCfgSearch" />
@@ -111,13 +111,13 @@
           </div>
           <div class="bar-actions">
             <button class="search-btn" :disabled="faLoading || (!faTags.length && !faInput.trim() && !hasAnyFaFilter)" @click="submitFaSearch">{{ faLoading ? t('common.loading') : t('actions.search') }}</button>
-            <button v-if="faTags.length || faResults.length || hasAnyFaFilter" class="clear-btn" @click="clearFa" :title="t('queryCenter.clear')">✕</button>
+            <button class="clear-btn" :class="{ 'is-hidden': !(faTags.length || faResults.length || hasAnyFaFilter) }" :aria-hidden="!(faTags.length || faResults.length || hasAnyFaFilter)" :tabindex="faTags.length || faResults.length || hasAnyFaFilter ? 0 : -1" @click="clearFa" :title="t('queryCenter.clear')">✕</button>
           </div>
         </div>
         <ErrorState v-if="faError" :message="faError" @retry="submitFaSearch" />
       </div>
       <LoadingState v-if="faLoading && !faResults.length" />
-      <div v-if="faFlatEntries.length" class="fa-results">
+      <div v-if="faFlatEntries.length" class="fa-results scrollbar-stable-x">
         <table class="fa-table">
           <thead>
             <tr>
@@ -219,7 +219,7 @@
           </div>
           <div class="bar-actions">
             <button class="search-btn" :disabled="rawHistoryLoading || !rawHistoryInput.trim()" @click="submitRawHistory">{{ rawHistoryLoading ? t('common.loading') : t('actions.search') }}</button>
-            <button v-if="rawHistoryData || rawHistoryInput" class="clear-btn" @click="clearRawHistory" :title="t('queryCenter.clear')">✕</button>
+            <button class="clear-btn" :class="{ 'is-hidden': !(rawHistoryData || rawHistoryInput) }" :aria-hidden="!(rawHistoryData || rawHistoryInput)" :tabindex="rawHistoryData || rawHistoryInput ? 0 : -1" @click="clearRawHistory" :title="t('queryCenter.clear')">✕</button>
           </div>
         </div>
         <ErrorState v-if="rawHistoryError" :message="rawHistoryError" @retry="doRawHistorySearch" />
@@ -236,7 +236,7 @@
           <span class="raw-history-count">{{ rawHistoryData.records.length }} {{ t('queryCenter.faRecordCount') }}</span>
         </div>
 
-        <div v-if="rawHistoryData.records.length" class="raw-history-results">
+        <div v-if="rawHistoryData.records.length" class="raw-history-results scrollbar-stable-x">
           <table class="raw-history-table">
             <thead>
               <tr>
@@ -801,7 +801,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.page-container { color: var(--text-primary); }
+.page-container { color: var(--text-primary); --query-search-btn-width: 104px; }
 .mode-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; border-bottom: 2px solid var(--border-light); }
 .mode-tabs { display: flex; gap: 4px; }
 .mode-tab { padding: 10px 20px; font-size: 14px; font-weight: 500; color: var(--text-muted); background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -2px; cursor: pointer; transition: color var(--duration-fast), border-color var(--duration-fast); }
@@ -815,7 +815,13 @@ onMounted(async () => {
 .bar-filter-item { display: flex; flex-direction: column; gap: 3px; min-width: 130px; flex: 1; }
 .bar-filter-item label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.3px; font-weight: 600; }
 .bar-filter-grow { flex: 2; min-width: 200px; }
-.bar-actions { display: flex; gap: 6px; align-items: flex-end; flex-shrink: 0; }
+.bar-actions {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+  flex-shrink: 0;
+  inline-size: calc(var(--query-search-btn-width) + 6px + 40px);
+}
 
 .tag-input-box { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-height: 40px; padding: 4px 10px; border: 1px solid var(--border-input); border-radius: var(--radius-md); background: var(--bg-input); cursor: text; transition: border-color var(--duration-fast), box-shadow var(--duration-fast); }
 .tag-input-box:focus-within { border-color: var(--border-focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--border-focus) 14%, transparent); }
@@ -825,11 +831,25 @@ onMounted(async () => {
 .tag-input-field { border: none; outline: none; background: transparent; color: var(--text-primary); font-family: var(--font-mono); font-size: 14px; min-width: 140px; flex: 1; padding: 4px 2px; }
 .filter-select { padding: 8px 12px; font-size: 13px; min-height: 40px; border: 1px solid var(--border-input); border-radius: var(--radius-md); background: var(--bg-input); color: var(--text-primary); }
 .inline-filter { min-width: 140px; }
-.search-btn { padding: 0 24px; min-height: 40px; font-size: 14px; font-weight: 500; color: #fff; background: var(--accent-steel); border: none; border-radius: var(--radius-md); cursor: pointer; white-space: nowrap; }
+.search-btn {
+  inline-size: var(--query-search-btn-width);
+  padding: 0 12px;
+  min-height: 40px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #fff;
+  background: var(--accent-steel);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .search-btn:hover:not(:disabled) { opacity: 0.9; }
 .search-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .clear-btn {
-  width: 40px; min-height: 40px;
+  width: 40px; min-height: 40px; flex: 0 0 40px;
   display: flex; align-items: center; justify-content: center;
   font-size: 16px; font-weight: 500;
   color: var(--text-muted); background: var(--bg-muted);
@@ -837,6 +857,7 @@ onMounted(async () => {
   cursor: pointer; transition: color var(--duration-fast), background var(--duration-fast);
 }
 .clear-btn:hover { color: var(--color-danger); background: var(--color-danger-bg); border-color: var(--color-danger); }
+.clear-btn.is-hidden { visibility: hidden; pointer-events: none; }
 
 .suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 0 0; }
 .suggestion-chip { display: inline-flex; gap: 6px; align-items: center; padding: 4px 12px; font-family: var(--font-mono); font-size: 12px; background: var(--bg-tag); border: 1px solid var(--border-light); border-radius: var(--radius-full); color: var(--text-secondary); cursor: pointer; }
@@ -884,7 +905,7 @@ onMounted(async () => {
 .chip-progress .chip-dot { background: var(--accent-steel); } .chip-progress .chip-num { color: var(--accent-steel); }
 
 /* FA results table */
-.fa-results { overflow-x: auto; }
+.fa-results { width: 100%; min-width: 0; }
 .fa-table {
   width: 100%; border-collapse: collapse; font-size: 12px;
   background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-md);
@@ -987,7 +1008,7 @@ onMounted(async () => {
 .raw-history-meta { font-size: 12px; color: var(--text-muted); padding: 2px 8px; background: var(--bg-tag); border-radius: var(--radius-sm); }
 .raw-history-count { margin-left: auto; font-size: 12px; color: var(--text-muted); font-weight: 600; }
 
-.raw-history-results { overflow-x: auto; }
+.raw-history-results { width: 100%; min-width: 0; }
 .raw-history-table {
   width: 100%; border-collapse: collapse; font-size: 12px;
   background: var(--bg-card); border: 1px solid var(--border-card); border-radius: var(--radius-md);

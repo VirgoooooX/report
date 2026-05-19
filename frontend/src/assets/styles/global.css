@@ -113,6 +113,9 @@ tr:hover td { background: var(--bg-row-hover); }
   margin: 0;
   padding: 0;
   overflow: auto;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 24%, transparent) transparent;
 }
 
 .main > .page-container {
@@ -124,6 +127,63 @@ tr:hover td { background: var(--bg-row-hover); }
 .main--test-summary > .page-container,
 .main--query-center > .page-container {
   width: min(100%, var(--layout-wide-max-width));
+}
+
+/* Stable scroll surfaces */
+.scrollbar-stable,
+.scrollbar-stable-x,
+.scrollbar-stable-y {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.scrollbar-stable:hover,
+.scrollbar-stable-x:hover,
+.scrollbar-stable-y:hover {
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 32%, transparent) transparent;
+}
+
+.scrollbar-stable-x {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.scrollbar-stable-y {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.scrollbar-stable::-webkit-scrollbar,
+.scrollbar-stable-x::-webkit-scrollbar,
+.scrollbar-stable-y::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-stable::-webkit-scrollbar-track,
+.scrollbar-stable-x::-webkit-scrollbar-track,
+.scrollbar-stable-y::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-stable::-webkit-scrollbar-thumb,
+.scrollbar-stable-x::-webkit-scrollbar-thumb,
+.scrollbar-stable-y::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.scrollbar-stable:hover::-webkit-scrollbar-thumb,
+.scrollbar-stable-x:hover::-webkit-scrollbar-thumb,
+.scrollbar-stable-y:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 32%, transparent);
+}
+
+.scrollbar-stable:hover::-webkit-scrollbar-thumb:hover,
+.scrollbar-stable-x:hover::-webkit-scrollbar-thumb:hover,
+.scrollbar-stable-y:hover::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-muted) 48%, transparent);
 }
 
 /* Mobile page shell */
