@@ -4,6 +4,7 @@
     <div :class="['main', mainClass]">
       <router-view />
     </div>
+    <AssistantPanel />
   </a-config-provider>
 </template>
 
@@ -12,6 +13,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ConfigProvider, theme } from 'ant-design-vue'
 import { useAppStore } from '@/stores/app'
+import AssistantPanel from '@/components/AssistantPanel.vue'
 import NavBar from '@/components/NavBar.vue'
 
 const store = useAppStore()

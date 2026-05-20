@@ -39,6 +39,7 @@ from db import (
     get_real_cp_ordinal,
 )
 from processor import process_newest, process_report_file, compute_auto_predictions, REPORT_PATTERN, FA_PATTERN
+from assistant_service import AssistantService, LLMProviderError, ToolValidationError
 
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 VUE_STATIC = os.path.join(BASE_DIR, 'static')
@@ -46,6 +47,7 @@ VUE_INDEX = os.path.join(VUE_STATIC, 'index.html')
 
 app = Flask(__name__, static_folder=None)
 logger = logging.getLogger(__name__)
+assistant_service = AssistantService()
 
 # ── Init ────────────────────────────────────────────────────────────────
 ensure_runtime_dirs()
@@ -291,6 +293,72 @@ def api_version():
             'source_file_name': row['source_file_name'] or '',
         },
     })
+
+
+@app.route('/api/assistant/chat', methods=['POST'])
+def api_assistant_chat():
+    """Natural-language assistant backed by controlled read-only tools."""
+    data = request.get_json(silent=True) or {}
+    try:
+        result = assistant_service.chat(
+            data.get('message', ''),
+            session_id=data.get('session_id'),
+            page_context=data.get('page_context') or {},
+        )
+    except ToolValidationError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except LLMProviderError as exc:
+        logger.warning("Assistant provider error: %s", exc)
+        return jsonify({'error': str(exc)}), 502
+    except Exception as exc:
+        logger.exception("Assistant chat failed")
+        return jsonify({'error': f'Assistant failed: {exc}'}), 500
+    return jsonify(result)
+
+
+@app.route('/api/settings/llm')
+def api_settings_llm_get():
+    """Return current LLM provider configuration (API keys masked)."""
+    from llm_config import get_safe_llm_config
+    return jsonify(get_safe_llm_config())
+
+
+@app.route('/api/settings/llm', methods=['PUT'])
+def api_settings_llm_put():
+    """Update LLM provider configuration."""
+    from llm_config import save_llm_config, get_safe_llm_config, load_llm_config
+    data = request.get_json(silent=True) or {}
+    # Preserve api_key if it is masked or empty but we have an existing key
+    new_key = data.get('api_key', '')
+    if new_key.startswith('****') or new_key == '':
+        existing = load_llm_config()
+        if 'api_key' in data:
+            data['api_key'] = existing.get('api_key', '')
+    try:
+        save_llm_config(data)
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+    return jsonify(get_safe_llm_config())
+
+
+@app.route('/api/settings/llm/models', methods=['POST'])
+def api_settings_llm_models():
+    """Fetch available models from an OpenAI-compatible endpoint."""
+    from llm_config import fetch_models
+    data = request.get_json(silent=True) or {}
+    base_url = data.get('base_url', '')
+    api_key = data.get('api_key', '')
+    if api_key.startswith('****'):
+        # If frontend sent masked key, retrieve the real one from config
+        from llm_config import load_llm_config
+        existing = load_llm_config()
+        api_key = existing.get('api_key', '')
+    try:
+        models = fetch_models(base_url, api_key)
+        return jsonify({'models': models})
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 400
+
 
 
 # ═══════════════════════════════════════════════════════════════════════

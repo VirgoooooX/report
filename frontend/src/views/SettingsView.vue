@@ -12,6 +12,7 @@
 
     <div class="settings-tabs" role="tablist">
       <button :class="{ active: tab === 'rules' }" @click="tab = 'rules'">{{ t('settings.tabRules') }}</button>
+      <button :class="{ active: tab === 'assistant' }" @click="tab = 'assistant'">{{ t('settings.tabAssistant') }}</button>
       <button :class="{ active: tab === 'ideas' }" @click="tab = 'ideas'">{{ t('settings.tabIdeas') }}</button>
     </div>
 
@@ -150,6 +151,107 @@
       </div>
     </section>
 
+    <section v-else-if="tab === 'assistant'" class="rules-grid">
+      <div class="panel">
+        <div class="panel-title">
+          <RobotOutlined />
+          <span>{{ t('settings.llmProvider') }}</span>
+        </div>
+        <p class="panel-desc">{{ t('settings.llmProviderDesc') }}</p>
+        <div class="field-grid">
+          <label class="field">
+            <span>{{ t('settings.providerType') }}</span>
+            <select v-model="llmDraft.provider">
+              <option value="mock">{{ t('settings.providerMock') }}</option>
+              <option value="openai_compatible">{{ t('settings.providerOpenaiCompatible') }}</option>
+            </select>
+          </label>
+        </div>
+
+        <p v-if="llmDraft.provider === 'mock'" class="provider-hint">{{ t('settings.mockDesc') }}</p>
+
+        <div v-else-if="llmDraft.provider === 'openai_compatible'" class="field-grid provider-fields">
+          <label class="field">
+            <span>{{ t('settings.preset') }}</span>
+            <select v-model="llmDraft.preset" @change="onPresetChange">
+              <option value="openai">{{ t('settings.presetOpenai') }}</option>
+              <option value="deepseek">{{ t('settings.presetDeepseek') }}</option>
+              <option value="openrouter">{{ t('settings.presetOpenrouter') }}</option>
+              <option value="gemini">{{ t('settings.presetGemini') }}</option>
+              <option value="lmstudio">{{ t('settings.presetLmstudio') }}</option>
+              <option value="llama_cpp">{{ t('settings.presetLlamaCpp') }}</option>
+              <option value="custom">{{ t('settings.presetCustom') }}</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>{{ t('settings.baseUrl') }}</span>
+            <input 
+              v-model="llmDraft.base_url" 
+              :placeholder="t('settings.baseUrlPlaceholder')"
+              :disabled="llmDraft.preset !== 'custom'"
+            />
+          </label>
+
+          <label class="field">
+            <span>{{ t('settings.apiKey') }}</span>
+            <div class="input-with-toggle">
+              <input
+                v-model="llmDraft.api_key"
+                :type="showApiKey ? 'text' : 'password'"
+                :placeholder="t('settings.apiKeyPlaceholder')"
+                autocomplete="off"
+              />
+              <button class="toggle-btn" type="button" @click="showApiKey = !showApiKey">
+                <EyeOutlined v-if="!showApiKey" />
+                <EyeInvisibleOutlined v-else />
+              </button>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>{{ t('settings.llmModel') }}</span>
+            <div class="model-input-group">
+              <select 
+                v-if="availableModels.length > 0 && !isCustomModel"
+                v-model="llmDraft.model" 
+                @change="onModelSelect"
+              >
+                <option v-for="m in availableModels" :key="m" :value="m">{{ m }}</option>
+                <option value="__custom__">✍️ 自定义输入...</option>
+              </select>
+              <input 
+                v-else
+                v-model="llmDraft.model" 
+                :placeholder="t('settings.llmModelPlaceholder')" 
+              />
+              <button class="btn-secondary fetch-btn" :disabled="fetchingModels" @click="fetchModels">
+                <ReloadOutlined :class="{ 'spin': fetchingModels }" />
+                <span>{{ fetchingModels ? t('settings.fetchingModels') : t('settings.fetchModels') }}</span>
+              </button>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>{{ t('settings.timeout') }}</span>
+            <input v-model.number="llmDraft.timeout" type="number" min="10" max="600" />
+          </label>
+          <label class="field">
+            <span>{{ t('settings.maxTokens') }}</span>
+            <input v-model.number="llmDraft.max_tokens" type="number" min="64" max="65536" />
+          </label>
+        </div>
+
+        <div class="action-row">
+          <button class="btn-primary" :disabled="savingLlm" @click="saveLlm">
+            <SaveOutlined />
+            <span>{{ savingLlm ? t('settings.savingLlm') : t('settings.saveLlm') }}</span>
+          </button>
+          <span class="status-text" :class="{ error: llmStatusType === 'error' }">{{ llmStatusText }}</span>
+        </div>
+      </div>
+    </section>
+
     <section v-else class="ideas-grid">
       <div v-for="idea in ideas" :key="idea.title" class="idea-card">
         <div class="idea-title">{{ idea.title }}</div>
@@ -164,9 +266,11 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import {
   CodeOutlined,
   DeleteOutlined,
+  EyeInvisibleOutlined,
   EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RobotOutlined,
   SaveOutlined,
   SettingOutlined,
   SwapOutlined,
@@ -182,6 +286,26 @@ const savingRules = ref(false)
 const tab = ref('rules')
 const statusText = ref('')
 const statusType = ref('')
+const savingLlm = ref(false)
+const llmStatusText = ref('')
+const llmStatusType = ref('')
+const showApiKey = ref(false)
+const availableModels = ref([])
+const fetchingModels = ref(false)
+const isCustomModel = ref(false)
+const llmPresets = ref({})
+
+const emptyLlmConfig = () => ({
+  provider: 'mock',
+  preset: 'openai',
+  base_url: 'https://api.openai.com',
+  api_key: '',
+  model: 'gpt-4.1-mini',
+  timeout: 120,
+  max_tokens: 4096,
+})
+
+const llmDraft = reactive(emptyLlmConfig())
 
 const emptyRules = () => ({
   parse: {
@@ -237,8 +361,12 @@ async function loadAll() {
   loading.value = true
   statusText.value = ''
   try {
-    await store.fetchSettingsRules()
+    const [, llmData] = await Promise.all([
+      store.fetchSettingsRules(),
+      store.fetchLlmConfig(),
+    ])
     hydrateRules(store.settingsRules)
+    hydrateLlm(llmData)
   } catch (e) {
     showStatus(e.message || t('settings.loadFailed'), 'error')
   } finally {
@@ -249,6 +377,92 @@ async function loadAll() {
 function showStatus(message, type = '') {
   statusText.value = message
   statusType.value = type
+}
+
+function showLlmStatus(message, type = '') {
+  llmStatusText.value = message
+  llmStatusType.value = type
+}
+
+function hydrateLlm(config) {
+  if (!config) return
+  if (config.presets) {
+    llmPresets.value = config.presets
+  }
+  llmDraft.provider = config.provider || 'mock'
+  llmDraft.preset = config.preset || 'openai'
+  llmDraft.base_url = config.base_url || ''
+  llmDraft.api_key = config.api_key || ''
+  llmDraft.model = config.model || ''
+  llmDraft.timeout = config.timeout ?? 120
+  llmDraft.max_tokens = config.max_tokens ?? 4096
+}
+
+function onPresetChange() {
+  if (llmDraft.preset !== 'custom' && llmPresets.value[llmDraft.preset]) {
+    const p = llmPresets.value[llmDraft.preset]
+    llmDraft.base_url = p.base_url
+    llmDraft.model = p.model
+    
+    // 清除上一个 preset 缓存的模型列表，并恢复输入框状态
+    availableModels.value = []
+    isCustomModel.value = false
+  }
+}
+
+function onModelSelect(e) {
+  if (e.target.value === '__custom__') {
+    isCustomModel.value = true
+    llmDraft.model = ''
+  }
+}
+
+function serializeLlm() {
+  return {
+    provider: llmDraft.provider,
+    preset: llmDraft.preset,
+    base_url: llmDraft.base_url,
+    api_key: llmDraft.api_key,
+    model: llmDraft.model,
+    timeout: llmDraft.timeout,
+    max_tokens: llmDraft.max_tokens,
+  }
+}
+
+async function saveLlm() {
+  savingLlm.value = true
+  try {
+    const saved = await store.saveLlmConfig(serializeLlm())
+    hydrateLlm(saved)
+    showLlmStatus(t('settings.llmSaved'), 'success')
+  } catch (e) {
+    showLlmStatus(e.message || t('settings.llmSaveFailed'), 'error')
+  } finally {
+    savingLlm.value = false
+  }
+}
+
+async function fetchModels() {
+  fetchingModels.value = true
+  try {
+    const models = await store.fetchLlmModels(llmDraft.base_url, llmDraft.api_key)
+    
+    if (llmDraft.model && llmDraft.model !== '__custom__' && !models.includes(llmDraft.model)) {
+      models.unshift(llmDraft.model)
+    }
+    
+    availableModels.value = models
+    isCustomModel.value = false
+    
+    showLlmStatus(t('settings.fetchModelsSuccess'), 'success')
+    if (models.length > 0 && !llmDraft.model) {
+      llmDraft.model = models[0]
+    }
+  } catch (e) {
+    showLlmStatus(e.message || t('settings.fetchModelsFailed'), 'error')
+  } finally {
+    fetchingModels.value = false
+  }
 }
 
 function parseList(text) {
@@ -745,5 +959,96 @@ tr:hover td {
   .settings-tabs button {
     width: 100%;
   }
+}
+
+.provider-hint {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.provider-fields {
+  margin-top: 14px;
+}
+
+.input-with-toggle {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.input-with-toggle input {
+  flex: 1;
+  padding-right: 36px;
+}
+
+.toggle-btn {
+  position: absolute;
+  right: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.toggle-btn:hover {
+  color: var(--text-secondary);
+}
+.model-input-group {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.model-input-group input, .model-input-group select {
+  flex: 1;
+}
+
+.fetch-btn {
+  white-space: nowrap;
+  padding: 0 12px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-muted);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-color);
+  transition: all 0.2s;
+}
+
+.fetch-btn:hover:not(:disabled) {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.fetch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  100% { transform: rotate(360deg); }
+}
+
+.status-text.success {
+  color: var(--success-color, #10b981);
 }
 </style>

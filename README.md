@@ -87,6 +87,32 @@ npm --prefix frontend run dev
 
 前端开发服务器会代理 `/api/*` 和 `/db/*` 请求到后端。生产构建则由后端直接提供前端静态文件。
 
+### 本地 LLM 助手调试
+
+AI 助手后端默认使用 `LLM_PROVIDER=mock`，不会调用外部模型。若要接入本机 `llama.cpp` server，先启动 `llama-server` 并监听 `8080`，再启动 Flask：
+
+```powershell
+$env:LLM_PROVIDER="llama.cpp"
+$env:LLAMA_CPP_BASE_URL="http://127.0.0.1:8080"
+$env:LLAMA_CPP_MODEL="local-model"
+python backend/api.py
+```
+
+`LLAMA_CPP_BASE_URL` 可填 `http://127.0.0.1:8080` 或已包含 `/v1` 的地址；后端会调用 `/v1/chat/completions`。
+
+若使用 LM Studio，本项目按当前服务器设置默认使用 `11235` 端口：
+
+```powershell
+$env:LLM_PROVIDER="lmstudio"
+$env:LMSTUDIO_BASE_URL="http://127.0.0.1:11235"
+$env:LMSTUDIO_MODEL="local-model"
+$env:LMSTUDIO_TIMEOUT="300"
+$env:LMSTUDIO_MAX_TOKENS="512"
+python backend/api.py
+```
+
+如果要从局域网可达地址访问，可把 `LMSTUDIO_BASE_URL` 改成 LM Studio 界面显示的地址，例如 `http://169.254.83.107:11235`。
+
 ---
 
 ## 测试

@@ -59,6 +59,7 @@ export const useAppStore = defineStore('app', () => {
   const querySingleSnKey = ref('')
   const settingsRawdata = ref({ files: [], reports: [] })
   const settingsRules = ref(null)
+  const llmConfig = ref(null)
   const checkItems = ref([])
   const lastQueryType = ref('')  // 'lookup' | 'wcfg' | 'failure'
   const faCache = ref({})  // key = sn → [{symptom, failure_mode, ...}]
@@ -268,6 +269,31 @@ export const useAppStore = defineStore('app', () => {
     settingsRules.value = data.rules
     invalidateCache()
     return data.rules
+  }
+
+  async function fetchLlmConfig() {
+    const data = await requestJson('/api/settings/llm')
+    llmConfig.value = data
+    return data
+  }
+
+  async function saveLlmConfig(config) {
+    const data = await requestJson('/api/settings/llm', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config)
+    })
+    llmConfig.value = data
+    return data
+  }
+
+  async function fetchLlmModels(baseUrl, apiKey) {
+    const data = await requestJson('/api/settings/llm/models', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base_url: baseUrl, api_key: apiKey })
+    })
+    return data.models || []
   }
 
   const exportDataKey = ref('')
@@ -568,10 +594,11 @@ export const useAppStore = defineStore('app', () => {
     fetchRawRecords, fetchCheckItems,
     queryWfList, queryByWfData, queryMultiSnData, querySingleSnData,
     queryByWfKey, queryMultiSnKey, querySingleSnKey,
-    settingsRawdata, settingsRules, checkItems,
+    settingsRawdata, settingsRules, llmConfig, checkItems,
     lastQueryType, faCache, faLastTags, faOptions,
     fetchRawdataSettings, deleteRawdataFile, parseRawdata,
     fetchSettingsRules, saveSettingsRules, resetSettingsRules,
+    fetchLlmConfig, saveLlmConfig, fetchLlmModels,
     wfSortKey, sortedWfKeys,
     invalidateCache, checkVersion, triggerRefresh, refreshCounter,
     clearQueryCache
