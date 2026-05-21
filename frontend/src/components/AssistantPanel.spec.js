@@ -8,7 +8,7 @@ const componentSource = readFileSync(resolve(__dirname, 'AssistantPanel.vue'), '
 const appSource = readFileSync(resolve(__dirname, '../App.vue'), 'utf8')
 
 assert.match(appSource, /import AssistantPanel from '@\/components\/AssistantPanel\.vue'/)
-assert.match(appSource, /<AssistantPanel \/>/)
+assert.match(appSource, /<AssistantPanel v-if="store\.aiEnabled" \/>/)
 
 assert.match(componentSource, /requestJson\('\/api\/assistant\/chat'/)
 assert.match(componentSource, /page_context: pageContext\(\)/)

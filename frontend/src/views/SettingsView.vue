@@ -152,7 +152,26 @@
     </section>
 
     <section v-else-if="tab === 'assistant'" class="rules-grid">
-      <div class="panel">
+      <div class="panel ai-feature-panel">
+        <div>
+          <div class="panel-title">
+            <RobotOutlined />
+            <span>{{ t('settings.aiFeature') }}</span>
+          </div>
+          <p class="panel-desc">{{ t('settings.aiFeatureDesc') }}</p>
+        </div>
+        <label class="switch-control">
+          <input
+            type="checkbox"
+            :checked="store.aiEnabled"
+            @change="store.setAiEnabled($event.target.checked)"
+          />
+          <span class="switch-track" aria-hidden="true"></span>
+          <span class="switch-label">{{ store.aiEnabled ? t('common.yes') : t('common.no') }}</span>
+        </label>
+      </div>
+
+      <div v-if="store.aiEnabled" class="panel">
         <div class="panel-title">
           <RobotOutlined />
           <span>{{ t('settings.llmProvider') }}</span>
@@ -262,7 +281,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import {
   CodeOutlined,
   DeleteOutlined,
@@ -361,12 +380,11 @@ async function loadAll() {
   loading.value = true
   statusText.value = ''
   try {
-    const [, llmData] = await Promise.all([
-      store.fetchSettingsRules(),
-      store.fetchLlmConfig(),
-    ])
+    const tasks = [store.fetchSettingsRules()]
+    if (store.aiEnabled) tasks.push(store.fetchLlmConfig())
+    const [, llmData] = await Promise.all(tasks)
     hydrateRules(store.settingsRules)
-    hydrateLlm(llmData)
+    if (llmData) hydrateLlm(llmData)
   } catch (e) {
     showStatus(e.message || t('settings.loadFailed'), 'error')
   } finally {
@@ -572,6 +590,16 @@ async function resetRules() {
   }
 }
 
+watch(() => store.aiEnabled, async (enabled) => {
+  if (enabled && !store.llmConfig) {
+    try {
+      hydrateLlm(await store.fetchLlmConfig())
+    } catch (e) {
+      showLlmStatus(e.message || t('settings.llmLoadFailed'), 'error')
+    }
+  }
+})
+
 onMounted(loadAll)
 </script>
 
@@ -596,6 +624,68 @@ onMounted(loadAll)
   margin: 0;
   color: var(--text-muted);
   font-size: 13px;
+}
+
+.ai-feature-panel {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.ai-feature-panel .panel-title {
+  margin-bottom: 6px;
+}
+
+.switch-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch-track {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-input);
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  transition: background var(--duration-fast), border-color var(--duration-fast);
+}
+
+.switch-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform var(--duration-fast), background var(--duration-fast);
+}
+
+.switch-control input:checked + .switch-track {
+  border-color: var(--accent-steel);
+  background: var(--accent-steel);
+}
+
+.switch-control input:checked + .switch-track::after {
+  background: #fff;
+  transform: translateX(20px);
 }
 
 .settings-tabs {

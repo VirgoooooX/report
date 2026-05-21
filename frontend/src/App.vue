@@ -4,7 +4,7 @@
     <div :class="['main', mainClass]">
       <router-view />
     </div>
-    <AssistantPanel />
+    <AssistantPanel v-if="store.aiEnabled" />
   </a-config-provider>
 </template>
 

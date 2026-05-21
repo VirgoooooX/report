@@ -7,6 +7,7 @@ export const useAppStore = defineStore('app', () => {
   // Preferences
   const language = ref(localStorage.getItem('dashboard-language') || 'zh-CN')
   const theme = ref(localStorage.getItem('dashboard-theme') || 'light')
+  const aiEnabled = ref(localStorage.getItem('dashboard-ai-enabled') !== 'false')
 
   function setLanguage(lang) {
     language.value = lang
@@ -22,6 +23,11 @@ export const useAppStore = defineStore('app', () => {
 
   function toggleTheme() {
     setTheme(theme.value === 'dark' ? 'light' : 'dark')
+  }
+
+  function setAiEnabled(enabled) {
+    aiEnabled.value = Boolean(enabled)
+    localStorage.setItem('dashboard-ai-enabled', aiEnabled.value ? 'true' : 'false')
   }
 
   function applyPreferences() {
@@ -582,7 +588,7 @@ export const useAppStore = defineStore('app', () => {
   }
 
   return {
-    language, theme, setLanguage, setTheme, toggleTheme, applyPreferences,
+    language, theme, aiEnabled, setLanguage, setTheme, toggleTheme, setAiEnabled, applyPreferences,
     projectName, reportDate, activeReport, wfNames, overviewData, summaryData, lastOverviewFetch, lastSummaryFetch, loading, error,
     dailyIssues, dailyIssuesConsistency, dailyIssuesReportDate,
     categories, categoryDetail, predictions, scheduleData, exportData,
